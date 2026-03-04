@@ -1,0 +1,289 @@
+# Spanish locale catalog for Iulita.ai
+
+[ApprovalAffirmative]
+other = "sí,si,confirmar,ok,aprobar,yes,y,confirm"
+
+[ApprovalNegative]
+other = "no,cancelar,rechazar,denegar,n,cancel,reject"
+
+[ApprovalPrompt]
+other = "Confirmar: ¿ejecutar {{.Tool}} con estos parámetros?\n{{.Params}}\nResponde sí para confirmar o no para cancelar."
+
+[ApprovalAdminPrompt]
+other = "[Se requiere aprobación del administrador] Confirmar: ¿ejecutar {{.Tool}} con estos parámetros?\n{{.Params}}\nResponde sí para confirmar o no para cancelar."
+
+[ApprovalCancelled]
+other = "Cancelado."
+
+[ApprovalExecuted]
+other = "Ejecutado {{.Tool}}: {{.Result}}"
+
+[ApprovalAwaiting]
+other = "Esperando confirmación del usuario antes de ejecutar {{.Tool}}. Se le ha pedido que responda sí/no."
+
+[TelegramHistoryCleared]
+other = "Historial borrado."
+
+[TelegramHistoryClearFailed]
+other = "Error al borrar el historial."
+
+[TelegramRegistrationNotAllowed]
+other = "No se permite el registro. Contacta al administrador."
+
+[TelegramRateLimited]
+other = "Demasiados mensajes. Por favor espera un momento."
+
+[TelegramErrorResponse]
+other = "Lo siento, algo salió mal."
+
+[TelegramVoicePrefix]
+other = "[Mensaje de voz]: "
+
+[TelegramClearCommand]
+other = "Borrar historial de conversación"
+
+[ConsolePlaceholder]
+other = "Escribe un mensaje..."
+
+[ConsoleThinking]
+other = "[pensando...]"
+
+[ConsoleProcessing]
+other = "procesando..."
+
+[ConsoleSkillRunning]
+other = "[habilidad: {{.Name}}]"
+
+[ConsoleSkillFailed]
+other = "[habilidad {{.Name}} falló]"
+
+[ConsoleErrorPrefix]
+other = "[error: {{.Error}}]"
+
+[ConsoleCompressing]
+other = "[comprimiendo...]"
+
+[ConsoleCompressDone]
+other = "{{.Count}} mensajes comprimidos en resumen"
+
+[ConsoleCompressFailed]
+other = "Compresión fallida: {{.Error}}"
+
+[ConsoleCompactUnavailable]
+other = "Compresión no disponible"
+
+[ConsoleWelcomeHint]
+other = "Escribe /help para comandos, Ctrl+C para salir."
+
+[ConsoleMsgCount]
+other = "{{.Count}} msgs"
+
+[ConsoleStatusBarRight]
+other = " /help | ctrl+c salir "
+
+[ConsoleUserLabel]
+other = "[tú]"
+
+[ConsoleBotLabel]
+other = "[iulita]"
+
+[ConsoleEnterManually]
+other = "Introducir manualmente"
+
+[ConsoleTypeAnswer]
+other = "Escribe tu respuesta:"
+
+[ConsoleTypeNumberOrAnswer]
+other = "Escribe un número o tu respuesta:"
+
+[CommandHelpHeader]
+other = "Comandos disponibles:"
+
+[CommandHelpFooter]
+other = "Todo lo demás se envía al asistente como mensaje."
+
+[CommandClearDesc]
+other = "Borrar historial del chat"
+
+[CommandHelpDesc]
+other = "Mostrar comandos disponibles"
+
+[CommandStatusDesc]
+other = "Mostrar estado del sistema"
+
+[CommandCompactDesc]
+other = "Comprimir contexto del chat"
+
+[CommandQuitDesc]
+other = "Salir de la consola"
+
+[CommandExitDesc]
+other = "Salir de la consola"
+
+[CommandStatusHeader]
+other = "Estado del sistema"
+
+[CommandStatusSkills]
+other = "Habilidades: {{.Enabled}} activas, {{.Disabled}} inactivas"
+
+[CommandStatusCost]
+other = "Costo diario: ${{.Cost}}"
+
+[CommandStatusSession]
+other = "Sesión: {{.Requests}} solicitudes, {{.In}} entrada / {{.Out}} salida tokens"
+
+[CommandStatusMessages]
+other = "Mensajes (esta sesión): {{.Count}}"
+
+[CommandStatusUnavailable]
+other = "Información de estado no disponible"
+
+[WeatherWMO0]
+other = "Cielo despejado"
+
+[WeatherWMO1]
+other = "Mayormente despejado"
+
+[WeatherWMO2]
+other = "Parcialmente nublado"
+
+[WeatherWMO3]
+other = "Nublado"
+
+[WeatherWMO45]
+other = "Niebla"
+
+[WeatherWMO48]
+other = "Niebla con escarcha"
+
+[WeatherWMO51]
+other = "Llovizna ligera"
+
+[WeatherWMO53]
+other = "Llovizna moderada"
+
+[WeatherWMO55]
+other = "Llovizna densa"
+
+[WeatherWMO56]
+other = "Llovizna helada ligera"
+
+[WeatherWMO57]
+other = "Llovizna helada densa"
+
+[WeatherWMO61]
+other = "Lluvia ligera"
+
+[WeatherWMO63]
+other = "Lluvia moderada"
+
+[WeatherWMO65]
+other = "Lluvia fuerte"
+
+[WeatherWMO66]
+other = "Lluvia helada ligera"
+
+[WeatherWMO67]
+other = "Lluvia helada fuerte"
+
+[WeatherWMO71]
+other = "Nevada ligera"
+
+[WeatherWMO73]
+other = "Nevada moderada"
+
+[WeatherWMO75]
+other = "Nevada fuerte"
+
+[WeatherWMO77]
+other = "Granos de nieve"
+
+[WeatherWMO80]
+other = "Chaparrones ligeros"
+
+[WeatherWMO81]
+other = "Chaparrones moderados"
+
+[WeatherWMO82]
+other = "Chaparrones violentos"
+
+[WeatherWMO85]
+other = "Chaparrones de nieve ligeros"
+
+[WeatherWMO86]
+other = "Chaparrones de nieve fuertes"
+
+[WeatherWMO95]
+other = "Tormenta"
+
+[WeatherWMO96]
+other = "Tormenta con granizo ligero"
+
+[WeatherWMO99]
+other = "Tormenta con granizo fuerte"
+
+[WeatherUnknownCode]
+other = "Código meteorológico {{.Code}}"
+
+[WeatherLocationPrompt]
+other = "¿Dónde quieres ver el clima?"
+
+[WeatherDetectAutomatically]
+other = "Detectar automáticamente (por IP)"
+
+[WeatherForTitle]
+other = "Clima en {{.Location}}"
+
+[WeatherLocationHint]
+other = "[Ubicación: {{.Location}} — presenta este nombre exacto al usuario]"
+
+[WeatherLocationImportant]
+other = "IMPORTANTE: Estos datos meteorológicos son para {{.Location}}. NO cambies el nombre de la ciudad."
+
+[WeatherNoLocation]
+other = "No se pudo determinar la ubicación: {{.Error}}. Especifica un nombre de ciudad."
+
+[WeatherSpecifyLocation]
+other = "Por favor, especifica una ubicación para el pronóstico."
+
+[WeatherFetchError]
+other = "No se pudo obtener el clima para {{.Location}}: {{.Error}}. El servicio puede no estar disponible temporalmente."
+
+[WeatherTableHeader]
+other = "| Fecha | Clima | Temp °C | Precip | Viento |"
+
+[WeatherTemperature]
+other = "Temperatura:"
+
+[WeatherPrecipitation]
+other = "Precipitación:"
+
+[WeatherWind]
+other = "Viento:"
+
+[WeatherHumidity]
+other = "Humedad:"
+
+[WeatherUVIndex]
+other = "Índice UV:"
+
+[LocaleSwitched]
+other = "Idioma cambiado a {{.Language}}."
+
+[LocaleUnknown]
+other = "Idioma desconocido: {{.Language}}. Soportados: English, Chinese, Russian, Spanish, French, Hebrew."
+
+[LocaleAlreadySet]
+other = "El idioma ya está en {{.Language}}."
+
+[AssistantLanguageDirective]
+other = "Responde en español. El idioma de tus respuestas debe coincidir con la preferencia del usuario."
+
+[AssistantCompressionPrompt]
+other = "Summarize the following conversation concisely. Preserve key facts, decisions, and context. Output only the summary."
+
+[AssistantSummaryPrefix]
+other = "[Resumen de la conversación anterior]\n"
+
+[ErrorUnknownSkill]
+other = "error: habilidad desconocida {{.Name}}"

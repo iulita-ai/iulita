@@ -1,0 +1,298 @@
+# Russian locale catalog for Iulita.ai
+
+# --- Approval flow ---
+[ApprovalAffirmative]
+other = "да,д,ок,подтвердить,подтверждаю,yes,y,ok,confirm"
+
+[ApprovalNegative]
+other = "нет,н,отмена,отменить,отказать,no,n,cancel,reject"
+
+[ApprovalPrompt]
+other = "Подтвердите: запустить {{.Tool}} с этими параметрами?\n{{.Params}}\nОтветьте да для подтверждения или нет для отмены."
+
+[ApprovalAdminPrompt]
+other = "[Требуется подтверждение администратора] Подтвердите: запустить {{.Tool}} с этими параметрами?\n{{.Params}}\nОтветьте да для подтверждения или нет для отмены."
+
+[ApprovalCancelled]
+other = "Отменено."
+
+[ApprovalExecuted]
+other = "Выполнено {{.Tool}}: {{.Result}}"
+
+[ApprovalAwaiting]
+other = "Ожидание подтверждения пользователя перед выполнением {{.Tool}}. Пользователю предложено ответить да/нет."
+
+# --- Telegram channel ---
+[TelegramHistoryCleared]
+other = "История очищена."
+
+[TelegramHistoryClearFailed]
+other = "Не удалось очистить историю."
+
+[TelegramRegistrationNotAllowed]
+other = "Регистрация не разрешена. Свяжитесь с администратором."
+
+[TelegramRateLimited]
+other = "Слишком много сообщений. Пожалуйста, подождите."
+
+[TelegramErrorResponse]
+other = "Извините, произошла ошибка."
+
+[TelegramVoicePrefix]
+other = "[Голосовое сообщение]: "
+
+[TelegramClearCommand]
+other = "Очистить историю разговора"
+
+# --- Console TUI ---
+[ConsolePlaceholder]
+other = "Введите сообщение..."
+
+[ConsoleThinking]
+other = "[думаю...]"
+
+[ConsoleProcessing]
+other = "обработка..."
+
+[ConsoleSkillRunning]
+other = "[навык: {{.Name}}]"
+
+[ConsoleSkillFailed]
+other = "[навык {{.Name}} не удался]"
+
+[ConsoleErrorPrefix]
+other = "[ошибка: {{.Error}}]"
+
+[ConsoleCompressing]
+other = "[сжатие...]"
+
+[ConsoleCompressDone]
+other = "Сжато {{.Count}} сообщений в сводку"
+
+[ConsoleCompressFailed]
+other = "Сжатие не удалось: {{.Error}}"
+
+[ConsoleCompactUnavailable]
+other = "Сжатие недоступно"
+
+[ConsoleWelcomeHint]
+other = "Введите /help для списка команд, Ctrl+C для выхода."
+
+[ConsoleMsgCount]
+other = "{{.Count}} сообщ."
+
+[ConsoleStatusBarRight]
+other = " /help | ctrl+c выход "
+
+[ConsoleUserLabel]
+other = "[вы]"
+
+[ConsoleBotLabel]
+other = "[iulita]"
+
+[ConsoleEnterManually]
+other = "Ввести вручную"
+
+[ConsoleTypeAnswer]
+other = "Введите ваш ответ:"
+
+[ConsoleTypeNumberOrAnswer]
+other = "Введите номер или ваш ответ:"
+
+# --- Console commands ---
+[CommandHelpHeader]
+other = "Доступные команды:"
+
+[CommandHelpFooter]
+other = "Всё остальное отправляется ассистенту как сообщение."
+
+[CommandClearDesc]
+other = "Очистить историю чата"
+
+[CommandHelpDesc]
+other = "Показать доступные команды"
+
+[CommandStatusDesc]
+other = "Показать состояние системы"
+
+[CommandCompactDesc]
+other = "Сжать контекст чата"
+
+[CommandQuitDesc]
+other = "Выйти из консоли"
+
+[CommandExitDesc]
+other = "Выйти из консоли"
+
+[CommandStatusHeader]
+other = "Состояние системы"
+
+[CommandStatusSkills]
+other = "Навыки: {{.Enabled}} включено, {{.Disabled}} выключено"
+
+[CommandStatusCost]
+other = "Расход за день: ${{.Cost}}"
+
+[CommandStatusSession]
+other = "Сессия: {{.Requests}} запросов, {{.In}} вх. / {{.Out}} исх. токенов"
+
+[CommandStatusMessages]
+other = "Сообщений (в сессии): {{.Count}}"
+
+[CommandStatusUnavailable]
+other = "Информация о состоянии недоступна"
+
+# --- Weather skill ---
+[WeatherWMO0]
+other = "Ясно"
+
+[WeatherWMO1]
+other = "Преимущественно ясно"
+
+[WeatherWMO2]
+other = "Переменная облачность"
+
+[WeatherWMO3]
+other = "Пасмурно"
+
+[WeatherWMO45]
+other = "Туман"
+
+[WeatherWMO48]
+other = "Изморозь"
+
+[WeatherWMO51]
+other = "Лёгкая морось"
+
+[WeatherWMO53]
+other = "Умеренная морось"
+
+[WeatherWMO55]
+other = "Сильная морось"
+
+[WeatherWMO56]
+other = "Лёгкая ледяная морось"
+
+[WeatherWMO57]
+other = "Сильная ледяная морось"
+
+[WeatherWMO61]
+other = "Небольшой дождь"
+
+[WeatherWMO63]
+other = "Умеренный дождь"
+
+[WeatherWMO65]
+other = "Сильный дождь"
+
+[WeatherWMO66]
+other = "Лёгкий ледяной дождь"
+
+[WeatherWMO67]
+other = "Сильный ледяной дождь"
+
+[WeatherWMO71]
+other = "Небольшой снег"
+
+[WeatherWMO73]
+other = "Умеренный снег"
+
+[WeatherWMO75]
+other = "Сильный снег"
+
+[WeatherWMO77]
+other = "Снежные зёрна"
+
+[WeatherWMO80]
+other = "Небольшой ливень"
+
+[WeatherWMO81]
+other = "Умеренный ливень"
+
+[WeatherWMO82]
+other = "Сильный ливень"
+
+[WeatherWMO85]
+other = "Небольшой снегопад"
+
+[WeatherWMO86]
+other = "Сильный снегопад"
+
+[WeatherWMO95]
+other = "Гроза"
+
+[WeatherWMO96]
+other = "Гроза с небольшим градом"
+
+[WeatherWMO99]
+other = "Гроза с сильным градом"
+
+[WeatherUnknownCode]
+other = "Код погоды {{.Code}}"
+
+[WeatherLocationPrompt]
+other = "Где показать погоду?"
+
+[WeatherDetectAutomatically]
+other = "Определить автоматически (по IP)"
+
+[WeatherForTitle]
+other = "Погода в {{.Location}}"
+
+[WeatherLocationHint]
+other = "[Местоположение: {{.Location}} — используйте именно это название города]"
+
+[WeatherLocationImportant]
+other = "ВАЖНО: Эти данные о погоде для {{.Location}}. НЕ меняйте название города."
+
+[WeatherNoLocation]
+other = "Не удалось определить местоположение: {{.Error}}. Укажите название города."
+
+[WeatherSpecifyLocation]
+other = "Пожалуйста, укажите город для прогноза погоды."
+
+[WeatherFetchError]
+other = "Не удалось получить погоду для {{.Location}}: {{.Error}}. Сервис может быть временно недоступен."
+
+# --- Weather table headers ---
+[WeatherTableHeader]
+other = "| Дата | Погода | Темп. °C | Осадки | Ветер |"
+
+[WeatherTemperature]
+other = "Температура:"
+
+[WeatherPrecipitation]
+other = "Осадки:"
+
+[WeatherWind]
+other = "Ветер:"
+
+[WeatherHumidity]
+other = "Влажность:"
+
+[WeatherUVIndex]
+other = "УФ индекс:"
+
+# --- Locale skill ---
+[LocaleSwitched]
+other = "Язык переключён на {{.Language}}."
+
+[LocaleUnknown]
+other = "Неизвестный язык: {{.Language}}. Поддерживаются: English, Chinese, Russian, Spanish, French, Hebrew."
+
+[LocaleAlreadySet]
+other = "Язык уже установлен как {{.Language}}."
+
+# --- Assistant ---
+[AssistantLanguageDirective]
+other = "Отвечай на русском языке. Язык ответов должен соответствовать предпочтениям пользователя."
+
+[AssistantCompressionPrompt]
+other = "Summarize the following conversation concisely. Preserve key facts, decisions, and context. Output only the summary."
+
+[AssistantSummaryPrefix]
+other = "[Краткое содержание предыдущего разговора]\n"
+
+# --- Error messages ---
+[ErrorUnknownSkill]
+other = "ошибка: неизвестный навык {{.Name}}"

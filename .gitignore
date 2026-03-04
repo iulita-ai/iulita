@@ -1,0 +1,43 @@
+# Binaries
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Config with secrets
+config.toml
+.envrc
+
+# External docs (not for public repo)
+docs_ext/
+
+# IDE
+.idea/
+.vscode/
+.claude/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+vendor/
+/iulita
+
+# Frontend
+node_modules/
+ui/node_modules/
+ui/dist/*
+!ui/dist/.gitkeep
+ui/coverage/
+/data/models/
+/iulita.log

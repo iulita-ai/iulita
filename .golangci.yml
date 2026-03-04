@@ -1,0 +1,91 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - dogsled
+    - durationcheck
+    - errorlint
+    - gocritic
+    - misspell
+    - nilerr
+    - nolintlint
+    - prealloc
+    - revive
+    - sqlclosecheck
+    - unconvert
+    - unparam
+    - gosec
+    - govet
+    - errcheck
+    - staticcheck
+  disable:
+    - gochecknoglobals
+    - gochecknoinits
+    - funlen
+    - cyclop
+  exclusions:
+    rules:
+      - path: "_test\\.go"
+        linters:
+          - errcheck
+          - gosec
+          - unparam
+          - bodyclose
+          - dogsled
+      - path: "internal/dashboard/static"
+        linters:
+          - all
+      - path: "_fuzz_test\\.go"
+        linters:
+          - all
+      - path: "internal/config"
+        linters:
+          - gosec
+        text: "G304"
+      - path: "internal/skill/shellexec"
+        linters:
+          - gosec
+  settings:
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+    revive:
+      rules:
+        - name: exported
+          arguments:
+            - "checkPrivateReceivers"
+            - "sayRepetitiveInsteadOfStutters"
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+      disabled-checks:
+        - whyNoLint
+        - hugeParam
+    misspell:
+      locale: US
+    gosec:
+      excludes:
+        - G401
+        - G501
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

@@ -1,0 +1,289 @@
+# Hebrew locale catalog for Iulita.ai (RTL)
+
+[ApprovalAffirmative]
+other = "כן,אישור,אוקיי,בסדר,מאשר,yes,y,ok,confirm"
+
+[ApprovalNegative]
+other = "לא,ביטול,דחייה,מסרב,no,n,cancel,reject"
+
+[ApprovalPrompt]
+other = "אישור: להריץ את {{.Tool}} עם הפרמטרים הבאים?\n{{.Params}}\nענה כן לאישור או לא לביטול."
+
+[ApprovalAdminPrompt]
+other = "[נדרש אישור מנהל] אישור: להריץ את {{.Tool}} עם הפרמטרים הבאים?\n{{.Params}}\nענה כן לאישור או לא לביטול."
+
+[ApprovalCancelled]
+other = "בוטל."
+
+[ApprovalExecuted]
+other = "בוצע {{.Tool}}: {{.Result}}"
+
+[ApprovalAwaiting]
+other = "ממתין לאישור המשתמש לפני הרצת {{.Tool}}. המשתמש התבקש להשיב כן/לא."
+
+[TelegramHistoryCleared]
+other = "ההיסטוריה נמחקה."
+
+[TelegramHistoryClearFailed]
+other = "מחיקת ההיסטוריה נכשלה."
+
+[TelegramRegistrationNotAllowed]
+other = "הרשמה אינה מותרת. צור קשר עם המנהל."
+
+[TelegramRateLimited]
+other = "יותר מדי הודעות. אנא המתן."
+
+[TelegramErrorResponse]
+other = "מצטער, משהו השתבש."
+
+[TelegramVoicePrefix]
+other = "[הודעה קולית]: "
+
+[TelegramClearCommand]
+other = "מחק היסטוריית שיחה"
+
+[ConsolePlaceholder]
+other = "הקלד הודעה..."
+
+[ConsoleThinking]
+other = "[חושב...]"
+
+[ConsoleProcessing]
+other = "מעבד..."
+
+[ConsoleSkillRunning]
+other = "[מיומנות: {{.Name}}]"
+
+[ConsoleSkillFailed]
+other = "[מיומנות {{.Name}} נכשלה]"
+
+[ConsoleErrorPrefix]
+other = "[שגיאה: {{.Error}}]"
+
+[ConsoleCompressing]
+other = "[דוחס...]"
+
+[ConsoleCompressDone]
+other = "דחס {{.Count}} הודעות לסיכום"
+
+[ConsoleCompressFailed]
+other = "הדחיסה נכשלה: {{.Error}}"
+
+[ConsoleCompactUnavailable]
+other = "דחיסה לא זמינה"
+
+[ConsoleWelcomeHint]
+other = "הקלד /help לפקודות, Ctrl+C ליציאה."
+
+[ConsoleMsgCount]
+other = "{{.Count}} הודעות"
+
+[ConsoleStatusBarRight]
+other = " /help | ctrl+c יציאה "
+
+[ConsoleUserLabel]
+other = "[אתה]"
+
+[ConsoleBotLabel]
+other = "[iulita]"
+
+[ConsoleEnterManually]
+other = "הזן ידנית"
+
+[ConsoleTypeAnswer]
+other = "הקלד את תשובתך:"
+
+[ConsoleTypeNumberOrAnswer]
+other = "הקלד מספר או תשובתך:"
+
+[CommandHelpHeader]
+other = "פקודות זמינות:"
+
+[CommandHelpFooter]
+other = "כל דבר אחר נשלח לעוזר כהודעה."
+
+[CommandClearDesc]
+other = "מחק היסטוריית צ'אט"
+
+[CommandHelpDesc]
+other = "הצג פקודות זמינות"
+
+[CommandStatusDesc]
+other = "הצג מצב המערכת"
+
+[CommandCompactDesc]
+other = "דחס הקשר צ'אט"
+
+[CommandQuitDesc]
+other = "צא מהקונסולה"
+
+[CommandExitDesc]
+other = "צא מהקונסולה"
+
+[CommandStatusHeader]
+other = "מצב המערכת"
+
+[CommandStatusSkills]
+other = "מיומנויות: {{.Enabled}} פעילות, {{.Disabled}} מושבתות"
+
+[CommandStatusCost]
+other = "עלות יומית: ${{.Cost}}"
+
+[CommandStatusSession]
+other = "סשן: {{.Requests}} בקשות, {{.In}} כניסה / {{.Out}} יציאה tokens"
+
+[CommandStatusMessages]
+other = "הודעות (סשן זה): {{.Count}}"
+
+[CommandStatusUnavailable]
+other = "מידע על מצב לא זמין"
+
+[WeatherWMO0]
+other = "שמיים בהירים"
+
+[WeatherWMO1]
+other = "בהיר ברובו"
+
+[WeatherWMO2]
+other = "מעונן חלקית"
+
+[WeatherWMO3]
+other = "מעונן"
+
+[WeatherWMO45]
+other = "ערפל"
+
+[WeatherWMO48]
+other = "ערפל כפור"
+
+[WeatherWMO51]
+other = "טפטוף קל"
+
+[WeatherWMO53]
+other = "טפטוף מתון"
+
+[WeatherWMO55]
+other = "טפטוף כבד"
+
+[WeatherWMO56]
+other = "טפטוף קפוא קל"
+
+[WeatherWMO57]
+other = "טפטוף קפוא כבד"
+
+[WeatherWMO61]
+other = "גשם קל"
+
+[WeatherWMO63]
+other = "גשם מתון"
+
+[WeatherWMO65]
+other = "גשם כבד"
+
+[WeatherWMO66]
+other = "גשם קפוא קל"
+
+[WeatherWMO67]
+other = "גשם קפוא כבד"
+
+[WeatherWMO71]
+other = "שלג קל"
+
+[WeatherWMO73]
+other = "שלג מתון"
+
+[WeatherWMO75]
+other = "שלג כבד"
+
+[WeatherWMO77]
+other = "גרגירי שלג"
+
+[WeatherWMO80]
+other = "ממטרים קלים"
+
+[WeatherWMO81]
+other = "ממטרים מתונים"
+
+[WeatherWMO82]
+other = "ממטרים חזקים"
+
+[WeatherWMO85]
+other = "ממטרי שלג קלים"
+
+[WeatherWMO86]
+other = "ממטרי שלג כבדים"
+
+[WeatherWMO95]
+other = "סופת רעמים"
+
+[WeatherWMO96]
+other = "סופת רעמים עם ברד קל"
+
+[WeatherWMO99]
+other = "סופת רעמים עם ברד כבד"
+
+[WeatherUnknownCode]
+other = "קוד מזג אוויר {{.Code}}"
+
+[WeatherLocationPrompt]
+other = "היכן להציג את מזג האוויר?"
+
+[WeatherDetectAutomatically]
+other = "זהה אוטומטית (לפי IP)"
+
+[WeatherForTitle]
+other = "מזג אוויר ב{{.Location}}"
+
+[WeatherLocationHint]
+other = "[מיקום: {{.Location}} — הצג למשתמש את שם העיר הזה בדיוק]"
+
+[WeatherLocationImportant]
+other = "חשוב: נתוני מזג אוויר אלה עבור {{.Location}}. אל תשנה את שם העיר."
+
+[WeatherNoLocation]
+other = "לא ניתן לזהות מיקום: {{.Error}}. נא לציין שם עיר."
+
+[WeatherSpecifyLocation]
+other = "נא לציין מיקום לתחזית מזג האוויר."
+
+[WeatherFetchError]
+other = "לא ניתן לקבל מזג אוויר עבור {{.Location}}: {{.Error}}. ייתכן שהשירות לא זמין זמנית."
+
+[WeatherTableHeader]
+other = "| תאריך | מזג אוויר | טמפ' °C | משקעים | רוח |"
+
+[WeatherTemperature]
+other = "טמפרטורה:"
+
+[WeatherPrecipitation]
+other = "משקעים:"
+
+[WeatherWind]
+other = "רוח:"
+
+[WeatherHumidity]
+other = "לחות:"
+
+[WeatherUVIndex]
+other = "מדד UV:"
+
+[LocaleSwitched]
+other = "השפה שונתה ל{{.Language}}."
+
+[LocaleUnknown]
+other = "שפה לא מוכרת: {{.Language}}. נתמכות: English, Chinese, Russian, Spanish, French, Hebrew."
+
+[LocaleAlreadySet]
+other = "השפה כבר מוגדרת כ{{.Language}}."
+
+[AssistantLanguageDirective]
+other = "השב בעברית. שפת התשובות חייבת להתאים להעדפת המשתמש."
+
+[AssistantCompressionPrompt]
+other = "Summarize the following conversation concisely. Preserve key facts, decisions, and context. Output only the summary."
+
+[AssistantSummaryPrefix]
+other = "[סיכום השיחה הקודמת]\n"
+
+[ErrorUnknownSkill]
+other = "שגיאה: מיומנות לא מוכרת {{.Name}}"

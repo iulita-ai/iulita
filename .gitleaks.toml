@@ -1,0 +1,40 @@
+# Gitleaks configuration for iulita project
+# https://github.com/gitleaks/gitleaks
+
+title = "iulita gitleaks config"
+
+[extend]
+useDefault = true
+
+# Paths to ignore during scanning
+[allowlist]
+paths = [
+    '''\.gitleaks\.toml$''',
+    '''\.gitleaksignore$''',
+    '''go\.sum$''',
+    '''vendor/''',
+    '''\.git/''',
+]
+
+# Additional custom rules for project-specific patterns
+[[rules]]
+id = "telegram-bot-token"
+description = "Telegram Bot Token"
+regex = '''[0-9]{8,10}:[a-zA-Z0-9_-]{35}'''
+tags = ["telegram", "token"]
+
+[[rules]]
+id = "anthropic-api-key"
+description = "Anthropic/Claude API Key"
+regex = '''sk-ant-api[0-9a-zA-Z_-]{20,}'''
+tags = ["anthropic", "api-key"]
+
+[[rules]]
+id = "toml-secret-value"
+description = "Secret value in TOML config"
+regex = '''(?i)(token|secret|password|api_key|apikey)\s*=\s*"[^"]{8,}"'''
+tags = ["config", "secret"]
+[rules.allowlist]
+paths = [
+    '''config\.toml\.example$''',
+]

@@ -1,0 +1,14 @@
+bin/
+*.db
+*.db-shm
+*.db-wal
+config.toml
+.git/
+.idea/
+.vscode/
+.claude/
+.serena/
+.DS_Store
+ui/node_modules/
+ui/dist/
+docs/

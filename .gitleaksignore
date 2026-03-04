@@ -1,0 +1,17 @@
+# Gitleaks ignore file
+# Add fingerprints of known false positives here
+# Format: commit-hash:file-path:rule-id:line-number
+#
+# Generate fingerprints by running:
+#   gitleaks detect --source . --verbose
+#
+# NEVER add actual secrets here — only verified false positives!
+
+# Fuzz test seed corpus uses dummy token values ("test-token", "sk-test")
+internal/config/config_fuzz_test.go:toml-secret-value:13
+
+# Fake RSA key in test file for credential type detection (not a real key)
+internal/skill/google/credentials_test.go:private-key:94
+
+# Dummy JWT secret in external skill handler tests (not a real secret)
+internal/dashboard/external_skill_handlers_test.go:toml-secret-value:99

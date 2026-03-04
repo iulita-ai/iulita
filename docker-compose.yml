@@ -1,0 +1,25 @@
+services:
+  iulita:
+    # Use pre-built image from GHCR (after first release):
+    # image: ghcr.io/iulita-ai/iulita:latest
+    #
+    # Or build locally:
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-dev}
+        COMMIT: ${COMMIT:-unknown}
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data                  # SQLite database + ONNX model cache
+      - ./config.toml:/app/config.toml:ro
+      - ./skills:/app/skills:ro
+    environment:
+      IULITA_CONFIG: /app/config.toml
+      # Or set directly instead of config.toml:
+      # IULITA_TELEGRAM_TOKEN: ""
+      # IULITA_CLAUDE_API_KEY: ""
+      # IULITA_PROXY_URL: "socks5://host.docker.internal:1080"
+      TZ: Europe/Helsinki
+    ports:
+      - "127.0.0.1:8080:8080"  # dashboard, localhost only

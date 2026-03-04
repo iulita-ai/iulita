@@ -1,0 +1,289 @@
+# Chinese (Mandarin) locale catalog for Iulita.ai
+
+[ApprovalAffirmative]
+other = "是,好,确认,同意,可以,yes,y,ok,confirm"
+
+[ApprovalNegative]
+other = "不,否,取消,拒绝,不行,no,n,cancel,reject"
+
+[ApprovalPrompt]
+other = "确认：使用以下参数运行 {{.Tool}}？\n{{.Params}}\n回复「是」确认或「否」取消。"
+
+[ApprovalAdminPrompt]
+other = "[需要管理员确认] 确认：使用以下参数运行 {{.Tool}}？\n{{.Params}}\n回复「是」确认或「否」取消。"
+
+[ApprovalCancelled]
+other = "已取消。"
+
+[ApprovalExecuted]
+other = "已执行 {{.Tool}}: {{.Result}}"
+
+[ApprovalAwaiting]
+other = "等待用户确认后执行 {{.Tool}}。已提示用户回复是/否。"
+
+[TelegramHistoryCleared]
+other = "历史记录已清除。"
+
+[TelegramHistoryClearFailed]
+other = "清除历史记录失败。"
+
+[TelegramRegistrationNotAllowed]
+other = "不允许注册。请联系管理员。"
+
+[TelegramRateLimited]
+other = "消息过多，请稍候。"
+
+[TelegramErrorResponse]
+other = "抱歉，出了点问题。"
+
+[TelegramVoicePrefix]
+other = "[语音消息]: "
+
+[TelegramClearCommand]
+other = "清除对话历史"
+
+[ConsolePlaceholder]
+other = "输入消息..."
+
+[ConsoleThinking]
+other = "[思考中...]"
+
+[ConsoleProcessing]
+other = "处理中..."
+
+[ConsoleSkillRunning]
+other = "[技能: {{.Name}}]"
+
+[ConsoleSkillFailed]
+other = "[技能 {{.Name}} 失败]"
+
+[ConsoleErrorPrefix]
+other = "[错误: {{.Error}}]"
+
+[ConsoleCompressing]
+other = "[压缩中...]"
+
+[ConsoleCompressDone]
+other = "已将 {{.Count}} 条消息压缩为摘要"
+
+[ConsoleCompressFailed]
+other = "压缩失败: {{.Error}}"
+
+[ConsoleCompactUnavailable]
+other = "压缩不可用"
+
+[ConsoleWelcomeHint]
+other = "输入 /help 查看命令，Ctrl+C 退出。"
+
+[ConsoleMsgCount]
+other = "{{.Count}} 条消息"
+
+[ConsoleStatusBarRight]
+other = " /help | ctrl+c 退出 "
+
+[ConsoleUserLabel]
+other = "[你]"
+
+[ConsoleBotLabel]
+other = "[iulita]"
+
+[ConsoleEnterManually]
+other = "手动输入"
+
+[ConsoleTypeAnswer]
+other = "输入您的答案："
+
+[ConsoleTypeNumberOrAnswer]
+other = "输入数字或您的答案："
+
+[CommandHelpHeader]
+other = "可用命令："
+
+[CommandHelpFooter]
+other = "其他内容将作为消息发送给助手。"
+
+[CommandClearDesc]
+other = "清除聊天记录"
+
+[CommandHelpDesc]
+other = "显示可用命令"
+
+[CommandStatusDesc]
+other = "显示系统状态"
+
+[CommandCompactDesc]
+other = "压缩聊天上下文"
+
+[CommandQuitDesc]
+other = "退出控制台"
+
+[CommandExitDesc]
+other = "退出控制台"
+
+[CommandStatusHeader]
+other = "系统状态"
+
+[CommandStatusSkills]
+other = "技能: {{.Enabled}} 启用, {{.Disabled}} 禁用"
+
+[CommandStatusCost]
+other = "今日费用: ${{.Cost}}"
+
+[CommandStatusSession]
+other = "会话: {{.Requests}} 请求, {{.In}} 输入 / {{.Out}} 输出 token"
+
+[CommandStatusMessages]
+other = "消息（本次会话）: {{.Count}}"
+
+[CommandStatusUnavailable]
+other = "状态信息不可用"
+
+[WeatherWMO0]
+other = "晴"
+
+[WeatherWMO1]
+other = "大部晴"
+
+[WeatherWMO2]
+other = "多云"
+
+[WeatherWMO3]
+other = "阴"
+
+[WeatherWMO45]
+other = "雾"
+
+[WeatherWMO48]
+other = "雾凇"
+
+[WeatherWMO51]
+other = "小毛毛雨"
+
+[WeatherWMO53]
+other = "中毛毛雨"
+
+[WeatherWMO55]
+other = "大毛毛雨"
+
+[WeatherWMO56]
+other = "小冻毛毛雨"
+
+[WeatherWMO57]
+other = "大冻毛毛雨"
+
+[WeatherWMO61]
+other = "小雨"
+
+[WeatherWMO63]
+other = "中雨"
+
+[WeatherWMO65]
+other = "大雨"
+
+[WeatherWMO66]
+other = "小冻雨"
+
+[WeatherWMO67]
+other = "大冻雨"
+
+[WeatherWMO71]
+other = "小雪"
+
+[WeatherWMO73]
+other = "中雪"
+
+[WeatherWMO75]
+other = "大雪"
+
+[WeatherWMO77]
+other = "雪粒"
+
+[WeatherWMO80]
+other = "小阵雨"
+
+[WeatherWMO81]
+other = "中阵雨"
+
+[WeatherWMO82]
+other = "大阵雨"
+
+[WeatherWMO85]
+other = "小阵雪"
+
+[WeatherWMO86]
+other = "大阵雪"
+
+[WeatherWMO95]
+other = "雷暴"
+
+[WeatherWMO96]
+other = "雷暴伴小冰雹"
+
+[WeatherWMO99]
+other = "雷暴伴大冰雹"
+
+[WeatherUnknownCode]
+other = "天气代码 {{.Code}}"
+
+[WeatherLocationPrompt]
+other = "要查看哪里的天气？"
+
+[WeatherDetectAutomatically]
+other = "自动检测（通过IP）"
+
+[WeatherForTitle]
+other = "{{.Location}}的天气"
+
+[WeatherLocationHint]
+other = "[地点: {{.Location}} — 向用户展示这个城市名]"
+
+[WeatherLocationImportant]
+other = "重要：此天气数据为{{.Location}}。请勿更改城市名。"
+
+[WeatherNoLocation]
+other = "无法确定位置: {{.Error}}。请指定城市名。"
+
+[WeatherSpecifyLocation]
+other = "请指定天气预报的城市。"
+
+[WeatherFetchError]
+other = "无法获取{{.Location}}的天气: {{.Error}}。服务可能暂时不可用。"
+
+[WeatherTableHeader]
+other = "| 日期 | 天气 | 温度 °C | 降水 | 风速 |"
+
+[WeatherTemperature]
+other = "温度:"
+
+[WeatherPrecipitation]
+other = "降水:"
+
+[WeatherWind]
+other = "风速:"
+
+[WeatherHumidity]
+other = "湿度:"
+
+[WeatherUVIndex]
+other = "紫外线指数:"
+
+[LocaleSwitched]
+other = "语言已切换为{{.Language}}。"
+
+[LocaleUnknown]
+other = "未知语言: {{.Language}}。支持: English, Chinese, Russian, Spanish, French, Hebrew。"
+
+[LocaleAlreadySet]
+other = "语言已设置为{{.Language}}。"
+
+[AssistantLanguageDirective]
+other = "用中文回复。回复语言必须与用户偏好一致。"
+
+[AssistantCompressionPrompt]
+other = "Summarize the following conversation concisely. Preserve key facts, decisions, and context. Output only the summary."
+
+[AssistantSummaryPrefix]
+other = "[之前对话摘要]\n"
+
+[ErrorUnknownSkill]
+other = "错误: 未知技能 {{.Name}}"

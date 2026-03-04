@@ -1,0 +1,338 @@
+[app]
+system_prompt = "You are Iulita, a helpful personal AI assistant. Be concise and helpful."
+# Default IANA timezone for date/time injection (e.g. "Europe/Helsinki", "Asia/Tokyo").
+# Can be overridden per-user via tech_facts "preferences.timezone".
+# If empty, falls back to UTC.
+default_timezone = ""
+# Auto-fetch and summarize URLs found in messages
+auto_link_summary = false
+# Max URLs to fetch per message
+max_links = 3
+
+[log]
+level = "info"
+encoding = "json"
+
+[proxy]
+# Proxy URL for all external requests (Claude API, Telegram API).
+# Supports http, https, socks5. Example: "socks5://127.0.0.1:1080"
+# If empty, standard HTTP_PROXY/HTTPS_PROXY/NO_PROXY env vars are used.
+# Set via IULITA_PROXY_URL env var.
+url = ""
+
+[telegram]
+# Set via IULITA_TELEGRAM_TOKEN env var
+token = ""
+# Telegram user IDs allowed to use the bot (empty = allow all)
+allowed_ids = []
+# Debounce window for merging rapid messages (Go duration: "1s", "1.5s").
+# When users send multiple messages quickly, they are merged into one LLM call.
+# Set to "" or "0" to disable. Recommended: "1.5s" for Telegram.
+debounce_window = "1.5s"
+# Per-chat rate limit: max messages per rate_window. 0 = unlimited.
+rate_limit = 0
+# Rate limiting window (Go duration). Default: "1m".
+rate_window = "1m"
+
+[claude]
+# Set via IULITA_CLAUDE_API_KEY env var
+api_key = ""
+model = "claude-sonnet-4-5-20250929"
+max_tokens = 4096
+# Context window size for the model (used for compression threshold)
+context_window = 200000
+# Per-message timeout (Go duration). Default: "120s".
+# Automatically increased when thinking is enabled.
+request_timeout = "120s"
+# Extended thinking level: "" or "off" = disabled, "low" (1K), "medium" (4K), "high" (16K)
+thinking = ""
+# Stream responses with incremental Telegram message editing
+streaming = false
+
+# [storage]
+# path defaults to XDG data dir (~/.local/share/iulita/iulita.db on Linux,
+# ~/Library/Application Support/iulita/iulita.db on macOS).
+# Uncomment to override:
+# path = "/custom/path/iulita.db"
+
+[server]
+# Personal dashboard (web UI for viewing facts, insights, reminders, etc.)
+# Serves embedded Vue SPA + REST API.
+# Automatically enabled when running with --server flag.
+# Set via IULITA_SERVER_ADDRESS env var.
+address = ":8080"
+
+[auth]
+# JWT authentication for the dashboard. When jwt_secret is set, auth is enabled.
+# On first run with auth enabled, a default admin/admin user is created.
+# Set via IULITA_AUTH_JWT_SECRET env var.
+jwt_secret = ""
+# Access token lifetime (Go duration). Default: "24h".
+token_expiry = "24h"
+# Refresh token lifetime (Go duration). Default: "168h" (7 days).
+refresh_expiry = "168h"
+# Allow self-registration via Telegram (auto-creates user on first message).
+allow_register = false
+# Enable multi-user mode (admin can create/manage users via dashboard).
+multi_user = false
+
+# ============================================================================
+# Skills Configuration
+# ============================================================================
+# All skill configs are unified under [skills.*].
+# Each internal skill has a default SKILL.md with system prompt text.
+# Config values here override the embedded defaults.
+
+[skills]
+# All internal skills are enabled by default. Disable individual skills via the admin dashboard.
+# Directory for external text-based skill files (markdown with YAML frontmatter).
+# Supports flat files (skills/tone.md) and directory format (skills/coding-style/SKILL.md).
+# Directory format can include optional config.yaml for default settings.
+dir = "skills"
+
+[skills.memory]
+# Temporal decay half-life in days for memory ranking.
+# Older facts and insights gradually lose relevance.
+# Set to 0 to disable decay (default: use raw access_count/quality ordering).
+# Recommended: 30 days.
+half_life_days = 30
+# MMR (Maximal Marginal Relevance) lambda for diversity in memory retrieval.
+# 0 = disabled (default), 0.7 = recommended. Higher favors relevance over diversity.
+mmr_lambda = 0
+# Vector search weight for hybrid search (0 = pure FTS, 0.5 = balanced, 1 = pure vector).
+# Requires embedding provider to be configured.
+vector_weight = 0
+# Keywords that force the "remember" tool via tool_choice. Case-insensitive.
+# When any trigger is found in a user message, Claude is forced to call the remember tool.
+# Keep keywords in the config (not in Go code) to support any language.
+triggers = ["remember", "save this", "note this", "don't forget"]
+# System prompt for memory skills (overrides embedded SKILL.md if set).
+system_prompt = """MEMORY RULES:
+- When the user asks you to remember, save, or note something, you MUST call the `remember` tool. Never just reply conversationally — always call the tool first, then confirm.
+- If the user says "remember this" referring to a previous message, extract the relevant content from conversation history and save it via the `remember` tool.
+- When recalling information, use the `recall` tool to search memory before answering from general knowledge."""
+
+[skills.insights]
+# Synthetic insight generation from cross-cluster fact analysis.
+# Insights find structural analogies between distant memory clusters.
+enabled = true
+# How often to run insight generation (Go duration: "24h", "12h", etc.)
+interval = "24h"
+# Minimum facts required before generating insights
+min_facts = 20
+# Maximum cross-cluster pairs to analyze per run
+max_pairs = 6
+# Time-to-live for insights (Go duration). Empty = no expiry.
+ttl = "720h"
+# Temporal decay half-life in days for insight ranking. 0 = disabled.
+half_life_days = 0
+# Minimum LLM quality score (1-5) to keep an insight. 0 = keep all.
+quality_threshold = 3
+# Send summary to Telegram when insights are generated
+delivery = false
+# Use a different model for this job. "ollama" uses Ollama if configured. Empty = main Claude.
+model = ""
+# System prompt for insight skills (overrides embedded SKILL.md if set).
+# system_prompt = "When the user asks about insights, use list_insights tool."
+
+[skills.web]
+# Brave Search API key for websearch/webfetch skills
+# Set via IULITA_SKILLS_WEB_API_KEY env var
+api_key = ""
+# System prompt for web search/fetch skills (overrides embedded SKILL.md if set).
+# system_prompt = "Use websearch for current events, prices, weather. Use webfetch to read specific URLs."
+
+[skills.shell_exec]
+# Sandboxed shell command execution skill.
+enabled = false
+# Whitelist of allowed command names (no paths, no sh -c).
+allowed_bins = []
+# Execution timeout (Go duration). Default: "10s".
+timeout = "10s"
+# Paths forbidden in command arguments (security hardening).
+# Arguments referencing these paths will be rejected.
+forbidden_paths = ["~/.ssh", "~/.gnupg", "/etc/shadow", "/etc/passwd"]
+# Working directory for commands. Empty = /tmp.
+workspace_dir = ""
+# System prompt for shell execution skill (overrides embedded SKILL.md if set).
+# system_prompt = "You can run shell commands via the shellexec tool. Only whitelisted commands are allowed."
+
+[skills.craft]
+# Craft document integration via REST API.
+# Create an API connection in Craft (Imagine tab → API) to get the URL and token.
+# api_url: full base URL (e.g. https://connect.craft.do/links/XXX/api/v1)
+# api_key: Bearer token for authentication.
+# Set via IULITA_SKILLS_CRAFT_API_URL and IULITA_SKILLS_CRAFT_API_KEY env vars.
+api_url = ""
+api_key = ""
+# System prompt for Craft skills (overrides embedded SKILL.md if set).
+# system_prompt = "Use craft_search to find documents, craft_read to view them, craft_write to create/append, craft_tasks for task management."
+
+[skills.google]
+# Google Workspace integration (Gmail, Calendar, Contacts, Tasks) via OAuth2.
+# Create OAuth 2.0 Client ID (type "Web application") in Google Cloud Console.
+# Enable APIs: Gmail, Calendar, People, Tasks.
+# Set via IULITA_SKILLS_GOOGLE_CLIENT_ID, IULITA_SKILLS_GOOGLE_CLIENT_SECRET, IULITA_SKILLS_GOOGLE_REDIRECT_URL env vars.
+client_id = ""
+client_secret = ""
+redirect_url = "http://localhost:8080/api/google/callback"
+
+# ============================================================================
+# Background Jobs (not skills)
+# ============================================================================
+
+[scheduler]
+# Unified task scheduler. When enabled, replaces individual insight/techfact schedulers.
+enabled = true
+# Poll interval for checking due jobs (Go duration).
+poll_interval = "30s"
+# Auth token for remote workers connecting via /api/tasks/* endpoints.
+# Leave empty to allow unauthenticated access (suitable for localhost-only).
+worker_token = ""
+# Max concurrent tasks for the local worker.
+concurrency = 2
+
+[techfacts]
+# Auto-generated metadata about user behavior (language, topics, patterns).
+# Lightweight per-message analysis runs always; deep LLM analysis runs on interval.
+enabled = true
+# How often to run deep LLM analysis (Go duration: "6h", "12h", etc.)
+interval = "6h"
+# Send summary to Telegram when analysis completes
+delivery = false
+# Use a different model for this job. "ollama" uses Ollama if configured. Empty = main Claude.
+model = ""
+
+[openai]
+# OpenAI-compatible provider for fallback or alternative LLM.
+# Set via IULITA_OPENAI_API_KEY env var.
+api_key = ""
+model = ""
+max_tokens = 4096
+# Custom base URL for compatible APIs (e.g. Azure, local models).
+base_url = ""
+# Use as automatic fallback when Claude fails.
+fallback = false
+
+[ollama]
+# Local LLM via Ollama for dev/background tasks. Leave empty to disable.
+url = ""
+model = ""
+
+[heartbeat]
+# Proactive periodic messages based on memory review.
+enabled = false
+# How often to check (Go duration: "6h", "12h", etc.)
+interval = "6h"
+# Chat IDs to send heartbeats to
+chat_ids = []
+
+[embedding]
+# Vector embedding provider for hybrid search.
+# Supported: "onnx" (local, pure Go, no external services) or empty (disabled).
+# When enabled, facts and insights are automatically embedded on save.
+# Existing facts/insights are backfilled at startup.
+provider = ""
+# HuggingFace model ID for ONNX (default: "KnightsAnalytics/all-MiniLM-L6-v2").
+model = ""
+# Directory for ONNX model files. Downloaded automatically on first run.
+# IMPORTANT: In Docker, mount this as a volume to persist the model across restarts.
+# Defaults to XDG data dir (e.g. ~/Library/Application Support/iulita/models/ on macOS).
+# In Docker, mount this as a volume to persist the model across restarts.
+# model_dir = "/custom/path/models"
+# API key (only for OpenAI embeddings, not needed for ONNX).
+api_key = ""
+
+[security]
+# Runtime config overrides stored in DB can be encrypted with AES-256-GCM.
+# Set the env var name that holds the 32-byte hex-encoded encryption key.
+# Generate key: openssl rand -hex 32
+# Default env var: IULITA_CONFIG_KEY. Leave empty to use default.
+# If the env var is not set, encryption is disabled (plaintext overrides still work).
+config_key_env = ""
+
+# ============================================================================
+# Cost Control
+# ============================================================================
+
+[cost]
+# Track and limit LLM API costs.
+enabled = false
+# Maximum daily spend in USD. 0 = unlimited.
+daily_limit_usd = 0
+# Warn when this fraction of the daily limit is reached (0-1). Default: 0.8.
+alert_threshold = 0.8
+
+# Per-model pricing ($ per 1M tokens). Add entries for your models.
+# [cost.prices."claude-sonnet-4-5-20250929"]
+# input = 3.0
+# output = 15.0
+# [cost.prices."llama3"]
+# input = 0
+# output = 0
+
+# ============================================================================
+# Model Routing
+# ============================================================================
+
+[routing]
+# Route requests to different providers based on task type.
+enabled = false
+# Default provider when no route matches: "claude", "ollama", "openai".
+default_provider = "claude"
+# Global action rate limit: max LLM/tool calls per hour. 0 = unlimited.
+max_actions_per_hour = 0
+# Auto-classify queries and route to optimal model.
+classification_enabled = false
+# Provider for query classification (should be fast/cheap, e.g. "ollama").
+classification_provider = "ollama"
+
+# Routing rules (hint -> provider mapping).
+# Hints can be set programmatically or via "hint:name" prefix in messages.
+# [[routing.routes]]
+# hint = "simple"
+# provider = "ollama"
+# temperature = 0.7
+# [[routing.routes]]
+# hint = "complex"
+# provider = "claude"
+# temperature = 0.3
+
+# ============================================================================
+# Caching
+# ============================================================================
+
+[cache]
+# Response cache: avoid re-computing identical LLM responses.
+response_enabled = false
+# TTL for cached responses (Go duration). Default: "60m".
+response_ttl = "60m"
+# Max cached responses. LRU eviction when exceeded.
+response_max_items = 1000
+# Embedding cache: avoid redundant ONNX/OpenAI embedding calls.
+embedding_enabled = true
+# Max cached embeddings. LRU eviction when exceeded.
+embedding_max_items = 10000
+
+# ============================================================================
+# Push Notifications
+# ============================================================================
+
+[notify]
+# Push notification provider: "pushover", "ntfy", or "" (disabled).
+provider = ""
+# Pushover (https://pushover.net)
+pushover_token = ""
+pushover_user_key = ""
+# Ntfy (https://ntfy.sh)
+ntfy_url = ""
+ntfy_token = ""
+
+# ============================================================================
+# Prometheus Metrics
+# ============================================================================
+
+[metrics]
+# Expose /metrics endpoint for Prometheus scraping.
+# Available at the same address as the dashboard server.
+enabled = false

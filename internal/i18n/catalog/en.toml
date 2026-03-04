@@ -1,0 +1,298 @@
+# English locale catalog for Iulita.ai
+
+# --- Approval flow ---
+[ApprovalAffirmative]
+other = "yes,y,confirm,ok,approve"
+
+[ApprovalNegative]
+other = "no,n,cancel,deny,reject"
+
+[ApprovalPrompt]
+other = "Confirm: run {{.Tool}} with these parameters?\n{{.Params}}\nReply yes to confirm or no to cancel."
+
+[ApprovalAdminPrompt]
+other = "[Admin approval required] Confirm: run {{.Tool}} with these parameters?\n{{.Params}}\nReply yes to confirm or no to cancel."
+
+[ApprovalCancelled]
+other = "Cancelled."
+
+[ApprovalExecuted]
+other = "Executed {{.Tool}}: {{.Result}}"
+
+[ApprovalAwaiting]
+other = "Awaiting user confirmation before executing {{.Tool}}. The user has been asked to reply yes/no."
+
+# --- Telegram channel ---
+[TelegramHistoryCleared]
+other = "History cleared."
+
+[TelegramHistoryClearFailed]
+other = "Failed to clear history."
+
+[TelegramRegistrationNotAllowed]
+other = "Registration is not allowed. Contact admin."
+
+[TelegramRateLimited]
+other = "Too many messages. Please wait a moment."
+
+[TelegramErrorResponse]
+other = "Sorry, something went wrong."
+
+[TelegramVoicePrefix]
+other = "[Voice message]: "
+
+[TelegramClearCommand]
+other = "Clear conversation history"
+
+# --- Console TUI ---
+[ConsolePlaceholder]
+other = "Type a message..."
+
+[ConsoleThinking]
+other = "[thinking...]"
+
+[ConsoleProcessing]
+other = "processing..."
+
+[ConsoleSkillRunning]
+other = "[skill: {{.Name}}]"
+
+[ConsoleSkillFailed]
+other = "[skill {{.Name}} failed]"
+
+[ConsoleErrorPrefix]
+other = "[error: {{.Error}}]"
+
+[ConsoleCompressing]
+other = "[compressing...]"
+
+[ConsoleCompressDone]
+other = "Compressed {{.Count}} messages into summary"
+
+[ConsoleCompressFailed]
+other = "Compact failed: {{.Error}}"
+
+[ConsoleCompactUnavailable]
+other = "Compact not available"
+
+[ConsoleWelcomeHint]
+other = "Type /help for commands, Ctrl+C to exit."
+
+[ConsoleMsgCount]
+other = "{{.Count}} msgs"
+
+[ConsoleStatusBarRight]
+other = " /help | ctrl+c quit "
+
+[ConsoleUserLabel]
+other = "[you]"
+
+[ConsoleBotLabel]
+other = "[iulita]"
+
+[ConsoleEnterManually]
+other = "Enter manually"
+
+[ConsoleTypeAnswer]
+other = "Type your answer:"
+
+[ConsoleTypeNumberOrAnswer]
+other = "Type a number or your answer:"
+
+# --- Console commands ---
+[CommandHelpHeader]
+other = "Available commands:"
+
+[CommandHelpFooter]
+other = "Everything else is sent to the assistant as a message."
+
+[CommandClearDesc]
+other = "Clear chat history"
+
+[CommandHelpDesc]
+other = "Show available commands"
+
+[CommandStatusDesc]
+other = "Show system status"
+
+[CommandCompactDesc]
+other = "Compress chat context"
+
+[CommandQuitDesc]
+other = "Exit console"
+
+[CommandExitDesc]
+other = "Exit console"
+
+[CommandStatusHeader]
+other = "System Status"
+
+[CommandStatusSkills]
+other = "Skills: {{.Enabled}} enabled, {{.Disabled}} disabled"
+
+[CommandStatusCost]
+other = "Daily cost: ${{.Cost}}"
+
+[CommandStatusSession]
+other = "Session: {{.Requests}} requests, {{.In}} in / {{.Out}} out tokens"
+
+[CommandStatusMessages]
+other = "Messages (this session): {{.Count}}"
+
+[CommandStatusUnavailable]
+other = "Status info not available"
+
+# --- Weather skill ---
+[WeatherWMO0]
+other = "Clear sky"
+
+[WeatherWMO1]
+other = "Mainly clear"
+
+[WeatherWMO2]
+other = "Partly cloudy"
+
+[WeatherWMO3]
+other = "Overcast"
+
+[WeatherWMO45]
+other = "Fog"
+
+[WeatherWMO48]
+other = "Depositing rime fog"
+
+[WeatherWMO51]
+other = "Light drizzle"
+
+[WeatherWMO53]
+other = "Moderate drizzle"
+
+[WeatherWMO55]
+other = "Dense drizzle"
+
+[WeatherWMO56]
+other = "Light freezing drizzle"
+
+[WeatherWMO57]
+other = "Dense freezing drizzle"
+
+[WeatherWMO61]
+other = "Slight rain"
+
+[WeatherWMO63]
+other = "Moderate rain"
+
+[WeatherWMO65]
+other = "Heavy rain"
+
+[WeatherWMO66]
+other = "Light freezing rain"
+
+[WeatherWMO67]
+other = "Heavy freezing rain"
+
+[WeatherWMO71]
+other = "Slight snow"
+
+[WeatherWMO73]
+other = "Moderate snow"
+
+[WeatherWMO75]
+other = "Heavy snow"
+
+[WeatherWMO77]
+other = "Snow grains"
+
+[WeatherWMO80]
+other = "Slight rain showers"
+
+[WeatherWMO81]
+other = "Moderate rain showers"
+
+[WeatherWMO82]
+other = "Violent rain showers"
+
+[WeatherWMO85]
+other = "Slight snow showers"
+
+[WeatherWMO86]
+other = "Heavy snow showers"
+
+[WeatherWMO95]
+other = "Thunderstorm"
+
+[WeatherWMO96]
+other = "Thunderstorm with slight hail"
+
+[WeatherWMO99]
+other = "Thunderstorm with heavy hail"
+
+[WeatherUnknownCode]
+other = "Weather code {{.Code}}"
+
+[WeatherLocationPrompt]
+other = "Where should I show the weather?"
+
+[WeatherDetectAutomatically]
+other = "Detect automatically (by IP)"
+
+[WeatherForTitle]
+other = "Weather for {{.Location}}"
+
+[WeatherLocationHint]
+other = "[Location: {{.Location}} — present this exact city name to the user]"
+
+[WeatherLocationImportant]
+other = "IMPORTANT: This weather data is for {{.Location}}. Do NOT change or substitute the city name."
+
+[WeatherNoLocation]
+other = "Unable to determine location: {{.Error}}. Please specify a city name."
+
+[WeatherSpecifyLocation]
+other = "Please specify a location for the weather forecast."
+
+[WeatherFetchError]
+other = "Unable to fetch weather for {{.Location}}: {{.Error}}. The service may be temporarily unavailable."
+
+# --- Weather table headers ---
+[WeatherTableHeader]
+other = "| Date | Weather | Temp °C | Precip | Wind |"
+
+[WeatherTemperature]
+other = "Temperature:"
+
+[WeatherPrecipitation]
+other = "Precipitation:"
+
+[WeatherWind]
+other = "Wind:"
+
+[WeatherHumidity]
+other = "Humidity:"
+
+[WeatherUVIndex]
+other = "UV Index:"
+
+# --- Locale skill ---
+[LocaleSwitched]
+other = "Language switched to {{.Language}}."
+
+[LocaleUnknown]
+other = "Unknown language: {{.Language}}. Supported: English, Chinese, Russian, Spanish, French, Hebrew."
+
+[LocaleAlreadySet]
+other = "Language is already set to {{.Language}}."
+
+# --- Assistant ---
+[AssistantLanguageDirective]
+other = "Respond in {{.Language}}. Your response language must match the user's preferred language."
+
+[AssistantCompressionPrompt]
+other = "Summarize the following conversation concisely. Preserve key facts, decisions, and context. Output only the summary."
+
+[AssistantSummaryPrefix]
+other = "[Summary of earlier conversation]\n"
+
+# --- Error messages ---
+[ErrorUnknownSkill]
+other = "error: unknown skill {{.Name}}"
