@@ -47,7 +47,7 @@ clean:
 
 ## Release
 
-RELEASE_TAG := v0.25.6
+RELEASE_TAG := v0.25.7
 
 release:
 	git tag $(RELEASE_TAG)
