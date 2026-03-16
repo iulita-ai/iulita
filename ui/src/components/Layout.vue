@@ -9,9 +9,17 @@
         collapse-mode="width"
         show-trigger
         :native-scrollbar="false"
+        @update:collapsed="(val: boolean) => { siderCollapsed = val }"
       >
-        <div class="p-4 text-center">
-          <n-text :depth="1" style="font-size: 18px; font-weight: 700">Iulita.ai</n-text>
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;min-height:64px;">
+          <img :src="logoUrl" alt="Iulita" style="width:36px;height:36px;flex-shrink:0;" />
+          <n-text
+            v-show="!siderCollapsed"
+            :depth="1"
+            style="font-size:18px;font-weight:700;white-space:nowrap;overflow:hidden;"
+          >
+            Iulita.ai
+          </n-text>
         </div>
         <n-menu
           :value="currentRoute"
@@ -41,7 +49,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h } from 'vue'
+import { computed, h, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useLocale } from '../composables/useLocale'
@@ -64,9 +72,11 @@ import {
 import { currentUser, clearTokens, isAdmin } from '../api'
 import { useSkillStatus } from '../composables/useSkillStatus'
 import LanguagePicker from './LanguagePicker.vue'
+import logoUrl from '../assets/logo.svg'
 
 const { t } = useI18n()
 const { direction } = useLocale()
+const siderCollapsed = ref(false)
 const router = useRouter()
 const route = useRoute()
 

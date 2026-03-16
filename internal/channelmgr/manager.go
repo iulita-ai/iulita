@@ -387,6 +387,20 @@ func (m *Manager) RunningIDs() []string {
 	return ids
 }
 
+// SetBotPhoto sets the profile photo for the Telegram channel identified by instanceID.
+func (m *Manager) SetBotPhoto(ctx context.Context, instanceID string, data []byte) error {
+	m.mu.RLock()
+	mc, ok := m.running[instanceID]
+	m.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("channel instance %q is not running", instanceID)
+	}
+	if mc.tg == nil {
+		return fmt.Errorf("channel instance %q is not a Telegram channel", instanceID)
+	}
+	return mc.tg.SetBotPhoto(ctx, data)
+}
+
 // --- SendMessage / StartStream (channel.MessageSender + channel.StreamingSender) ---
 
 // SendMessage routes the message to the channel instance associated with chatID.

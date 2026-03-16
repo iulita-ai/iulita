@@ -36,6 +36,11 @@ vendor/
 # Frontend
 node_modules/
 ui/node_modules/
+
+# VitePress docs site
+docs/node_modules/
+docs/.vitepress/dist/
+docs/.vitepress/cache/
 ui/dist/*
 !ui/dist/.gitkeep
 ui/coverage/

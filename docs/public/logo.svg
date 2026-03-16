@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4A1A8A"/>
+      <stop offset="50%" stop-color="#6C3FC7"/>
+      <stop offset="100%" stop-color="#8B5CF6"/>
+    </linearGradient>
+    <linearGradient id="eyeLeft" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00F0FF"/>
+      <stop offset="100%" stop-color="#0080FF"/>
+    </linearGradient>
+    <linearGradient id="eyeRight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0080FF"/>
+      <stop offset="100%" stop-color="#00F0FF"/>
+    </linearGradient>
+    <radialGradient id="glowL" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#00F0FF" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#00F0FF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowR" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#00F0FF" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#00F0FF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="circuit" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00F0FF" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#8B5CF6" stop-opacity="0.2"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect x="16" y="16" width="480" height="480" rx="96" ry="96" fill="url(#bg)"/>
+
+  <!-- Circuit pattern (AI hint) -->
+  <g stroke="url(#circuit)" stroke-width="1.5" fill="none" stroke-linecap="round">
+    <!-- Left side circuits -->
+    <path d="M80,200 L80,170 L110,170"/>
+    <circle cx="110" cy="170" r="3" fill="#00F0FF" fill-opacity="0.4"/>
+    <path d="M70,240 L100,240 L100,210"/>
+    <circle cx="100" cy="210" r="2.5" fill="#00F0FF" fill-opacity="0.3"/>
+    <path d="M75,310 L105,310 L105,340 L130,340"/>
+    <circle cx="130" cy="340" r="3" fill="#00F0FF" fill-opacity="0.4"/>
+    <path d="M85,370 L115,370"/>
+    <circle cx="115" cy="370" r="2" fill="#00F0FF" fill-opacity="0.3"/>
+
+    <!-- Right side circuits -->
+    <path d="M432,200 L432,170 L402,170"/>
+    <circle cx="402" cy="170" r="3" fill="#00F0FF" fill-opacity="0.4"/>
+    <path d="M442,240 L412,240 L412,210"/>
+    <circle cx="412" cy="210" r="2.5" fill="#00F0FF" fill-opacity="0.3"/>
+    <path d="M437,310 L407,310 L407,340 L382,340"/>
+    <circle cx="382" cy="340" r="3" fill="#00F0FF" fill-opacity="0.4"/>
+    <path d="M427,370 L397,370"/>
+    <circle cx="397" cy="370" r="2" fill="#00F0FF" fill-opacity="0.3"/>
+
+    <!-- Top circuits -->
+    <path d="M200,65 L200,85 L220,85"/>
+    <circle cx="220" cy="85" r="2.5" fill="#00F0FF" fill-opacity="0.3"/>
+    <path d="M312,65 L312,85 L292,85"/>
+    <circle cx="292" cy="85" r="2.5" fill="#00F0FF" fill-opacity="0.3"/>
+  </g>
+
+  <!-- Owl body/head shape -->
+  <path d="M256,100
+           C178,100 120,160 120,240
+           L120,320
+           C120,380 160,420 200,430
+           L220,432 L240,450 L256,460 L272,450 L292,432 L312,430
+           C352,420 392,380 392,320
+           L392,240
+           C392,160 334,100 256,100Z"
+        fill="#FFFFFF" fill-opacity="0.12"/>
+
+  <!-- Owl head outline -->
+  <path d="M256,105
+           C182,105 125,158 125,235
+           L125,315
+           C125,372 162,410 200,422
+           L228,426 L244,445 L256,454 L268,445 L284,426 L312,422
+           C350,410 387,372 387,315
+           L387,235
+           C387,158 330,105 256,105Z"
+        fill="none" stroke="#FFFFFF" stroke-width="3" stroke-opacity="0.3"/>
+
+  <!-- Ear tufts (left) -->
+  <path d="M160,175 L130,95 L185,155" fill="#FFFFFF" fill-opacity="0.15" stroke="#FFFFFF" stroke-width="2.5" stroke-opacity="0.4" stroke-linejoin="round"/>
+  <!-- Ear tufts (right) -->
+  <path d="M352,175 L382,95 L327,155" fill="#FFFFFF" fill-opacity="0.15" stroke="#FFFFFF" stroke-width="2.5" stroke-opacity="0.4" stroke-linejoin="round"/>
+
+  <!-- Eye glow -->
+  <circle cx="200" cy="250" r="55" fill="url(#glowL)"/>
+  <circle cx="312" cy="250" r="55" fill="url(#glowR)"/>
+
+  <!-- Eye sockets -->
+  <circle cx="200" cy="250" r="42" fill="#1A0A3E" stroke="#00D4FF" stroke-width="2.5" stroke-opacity="0.6"/>
+  <circle cx="312" cy="250" r="42" fill="#1A0A3E" stroke="#00D4FF" stroke-width="2.5" stroke-opacity="0.6"/>
+
+  <!-- Irises -->
+  <circle cx="200" cy="250" r="28" fill="url(#eyeLeft)"/>
+  <circle cx="312" cy="250" r="28" fill="url(#eyeRight)"/>
+
+  <!-- Pupils -->
+  <circle cx="206" cy="246" r="12" fill="#0A0520"/>
+  <circle cx="318" cy="246" r="12" fill="#0A0520"/>
+
+  <!-- Eye highlights -->
+  <circle cx="212" cy="240" r="6" fill="#FFFFFF" fill-opacity="0.8"/>
+  <circle cx="324" cy="240" r="6" fill="#FFFFFF" fill-opacity="0.8"/>
+  <circle cx="195" cy="255" r="3" fill="#FFFFFF" fill-opacity="0.4"/>
+  <circle cx="307" cy="255" r="3" fill="#FFFFFF" fill-opacity="0.4"/>
+
+  <!-- Scanning line through eyes (AI element) -->
+  <line x1="150" y1="250" x2="362" y2="250" stroke="#00F0FF" stroke-width="1" stroke-opacity="0.3" stroke-dasharray="4,6"/>
+
+  <!-- Beak -->
+  <path d="M244,295 L256,320 L268,295" fill="none" stroke="#FFA94D" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Forehead mark (wisdom/AI symbol) -->
+  <path d="M240,190 L256,175 L272,190" fill="none" stroke="#00F0FF" stroke-width="2" stroke-opacity="0.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="256" cy="178" r="3" fill="#00F0FF" fill-opacity="0.5"/>
+
+  <!-- Wing patterns (left) -->
+  <g stroke="#FFFFFF" stroke-opacity="0.2" stroke-width="1.5" fill="none">
+    <path d="M140,280 C140,320 150,360 175,395"/>
+    <path d="M152,275 C152,310 160,345 182,378"/>
+    <path d="M164,270 C164,300 170,330 188,360"/>
+  </g>
+
+  <!-- Wing patterns (right) -->
+  <g stroke="#FFFFFF" stroke-opacity="0.2" stroke-width="1.5" fill="none">
+    <path d="M372,280 C372,320 362,360 337,395"/>
+    <path d="M360,275 C360,310 352,345 330,378"/>
+    <path d="M348,270 C348,300 342,330 324,360"/>
+  </g>
+
+  <!-- Feet -->
+  <g stroke="#FFA94D" stroke-width="2.5" stroke-linecap="round" fill="none">
+    <path d="M220,432 L210,455 M210,455 L200,462 M210,455 L212,465 M210,455 L220,462"/>
+    <path d="M292,432 L302,455 M302,455 L312,462 M302,455 L300,465 M302,455 L292,462"/>
+  </g>
+</svg>

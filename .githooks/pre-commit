@@ -162,4 +162,29 @@ if [ "$LARGE_FILES" -eq 1 ]; then
     echo -e "${YELLOW}Consider adding large files to .gitignore${NC}"
 fi
 
-echo -e "${GREEN}✓ All security checks passed${NC}"
+# ============================================================
+# 5. Run golangci-lint on changed Go files
+# ============================================================
+GO_FILES=$(echo "$STAGED_FILES" | grep '\.go$' || true)
+if [ -n "$GO_FILES" ]; then
+    if command -v golangci-lint &>/dev/null; then
+        echo "🔍 Running golangci-lint on changed Go files..."
+        # Create a patch from staged changes for --new-from-patch
+        PATCH_FILE=$(mktemp)
+        git diff --cached > "$PATCH_FILE"
+        if [ -s "$PATCH_FILE" ]; then
+            if ! golangci-lint run --new-from-patch="$PATCH_FILE" --new=false ./... 2>&1; then
+                rm -f "$PATCH_FILE"
+                echo -e "${RED}✗ golangci-lint found issues in changed files${NC}"
+                exit 1
+            fi
+            echo -e "${GREEN}✓ golangci-lint passed${NC}"
+        fi
+        rm -f "$PATCH_FILE"
+    else
+        echo -e "${YELLOW}⚠ golangci-lint not installed. Skipping Go lint.${NC}"
+        echo "  Install: brew install golangci-lint"
+    fi
+fi
+
+echo -e "${GREEN}✓ All pre-commit checks passed${NC}"

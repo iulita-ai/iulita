@@ -348,7 +348,18 @@
     "deleteConfirm": "Delete channel \"{name}\" ({id})?",
     "deleted": "Channel deleted",
     "deleteFailed": "Failed to delete channel",
-    "toggleFailed": "Failed to toggle channel"
+    "toggleFailed": "Failed to toggle channel",
+    "setPhoto": "Set Photo",
+    "setBotPhoto": "Set Bot Avatar",
+    "setBotPhotoDesc": "Choose the built-in Iulita logo or upload a custom image.",
+    "builtInLogo": "Built-in Logo",
+    "useBuiltIn": "Use Iulita Logo",
+    "customImage": "Custom Image",
+    "uploadCustom": "Upload Image",
+    "photoSet": "Bot avatar set successfully",
+    "photoFailed": "Failed to set bot avatar",
+    "photoUploading": "Uploading avatar...",
+    "applyPhoto": "Upload"
   },
   "externalSkills": {
     "title": "External Skills",

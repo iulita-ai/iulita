@@ -270,6 +270,7 @@ func New(cfg Config) *Server {
 		channels.Put("/:id", s.handleUpdateChannelInstance)
 		channels.Delete("/:id", s.handleDeleteChannelInstance)
 		channels.Get("/:id/bindings", s.handleListChannelBindings)
+		channels.Post("/:id/set-photo", s.handleSetBotPhoto)
 	}
 
 	// Agent jobs API (admin only — user-defined scheduled LLM tasks)
