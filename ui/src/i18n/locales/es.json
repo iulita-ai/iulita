@@ -348,7 +348,18 @@
     "deleteConfirm": "Eliminar canal \"{name}\" ({id})?",
     "deleted": "Canal eliminado",
     "deleteFailed": "Error al eliminar canal",
-    "toggleFailed": "Error al alternar canal"
+    "toggleFailed": "Error al alternar canal",
+    "setPhoto": "Foto",
+    "setBotPhoto": "Avatar del bot",
+    "setBotPhotoDesc": "Elige el logotipo integrado de Iulita o sube una imagen personalizada.",
+    "builtInLogo": "Logotipo integrado",
+    "useBuiltIn": "Usar logotipo de Iulita",
+    "customImage": "Imagen personalizada",
+    "uploadCustom": "Subir imagen",
+    "photoSet": "Avatar del bot establecido correctamente",
+    "photoFailed": "Error al establecer el avatar del bot",
+    "photoUploading": "Subiendo avatar...",
+    "applyPhoto": "Subir"
   },
   "externalSkills": {
     "title": "Habilidades externas",

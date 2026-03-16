@@ -348,7 +348,18 @@
     "deleteConfirm": "Удалить канал \"{name}\" ({id})?",
     "deleted": "Канал удалён",
     "deleteFailed": "Не удалось удалить канал",
-    "toggleFailed": "Не удалось переключить канал"
+    "toggleFailed": "Не удалось переключить канал",
+    "setPhoto": "Аватар",
+    "setBotPhoto": "Аватар бота",
+    "setBotPhotoDesc": "Выберите встроенный логотип Iulita или загрузите своё изображение.",
+    "builtInLogo": "Встроенный логотип",
+    "useBuiltIn": "Использовать логотип Iulita",
+    "customImage": "Своё изображение",
+    "uploadCustom": "Загрузить изображение",
+    "photoSet": "Аватар бота успешно установлен",
+    "photoFailed": "Не удалось установить аватар бота",
+    "photoUploading": "Загрузка аватара...",
+    "applyPhoto": "Загрузить"
   },
   "externalSkills": {
     "title": "Внешние навыки",

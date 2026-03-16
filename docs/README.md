@@ -2,6 +2,8 @@
 
 Complete documentation for the Iulita personal AI assistant.
 
+The documentation site is available at [iulita.ai](https://iulita.ai).
+
 ## Languages
 
 - [English](en/)
@@ -28,3 +30,11 @@ Complete documentation for the Iulita personal AI assistant.
 | [Dashboard](en/dashboard.md) | REST API, Vue 3 SPA, WebSocket, Prometheus metrics |
 | [Security](en/security.md) | JWT, SSRF protection, approval flow, encryption, rate limiting |
 | [Deployment](en/deployment.md) | Docker, reverse proxy, monitoring, backup, development |
+
+## Development
+
+```bash
+make docs       # install dependencies
+make docs-dev   # start dev server (http://localhost:5173)
+make docs-build # build for production
+```

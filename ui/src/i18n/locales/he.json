@@ -348,7 +348,18 @@
     "deleteConfirm": "למחוק ערוץ \"{name}\" ({id})?",
     "deleted": "ערוץ נמחק",
     "deleteFailed": "מחיקת ערוץ נכשלה",
-    "toggleFailed": "החלפת מצב ערוץ נכשלה"
+    "toggleFailed": "החלפת מצב ערוץ נכשלה",
+    "setPhoto": "תמונה",
+    "setBotPhoto": "תמונת הבוט",
+    "setBotPhotoDesc": "בחר את הלוגו המובנה של Iulita או העלה תמונה מותאמת אישית.",
+    "builtInLogo": "לוגו מובנה",
+    "useBuiltIn": "השתמש בלוגו Iulita",
+    "customImage": "תמונה מותאמת אישית",
+    "uploadCustom": "העלה תמונה",
+    "photoSet": "תמונת הבוט הוגדרה בהצלחה",
+    "photoFailed": "הגדרת תמונת הבוט נכשלה",
+    "photoUploading": "מעלה תמונה...",
+    "applyPhoto": "העלה"
   },
   "externalSkills": {
     "title": "כישורים חיצוניים",

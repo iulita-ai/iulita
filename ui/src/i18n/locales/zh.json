@@ -348,7 +348,18 @@
     "deleteConfirm": "删除频道 \"{name}\" ({id})？",
     "deleted": "频道已删除",
     "deleteFailed": "删除频道失败",
-    "toggleFailed": "切换频道失败"
+    "toggleFailed": "切换频道失败",
+    "setPhoto": "设置头像",
+    "setBotPhoto": "设置机器人头像",
+    "setBotPhotoDesc": "选择内置的 Iulita 标志或上传自定义图片。",
+    "builtInLogo": "内置标志",
+    "useBuiltIn": "使用 Iulita 标志",
+    "customImage": "自定义图片",
+    "uploadCustom": "上传图片",
+    "photoSet": "机器人头像设置成功",
+    "photoFailed": "设置机器人头像失败",
+    "photoUploading": "上传头像中...",
+    "applyPhoto": "上传"
   },
   "externalSkills": {
     "title": "外部技能",

@@ -74,6 +74,62 @@
       </template>
     </n-modal>
 
+    <!-- Set bot photo modal -->
+    <n-modal v-model:show="showPhotoModal" preset="dialog" :title="t('channels.setBotPhoto')" style="width: 480px">
+      <n-space vertical :size="16">
+        <n-text :depth="2">{{ t('channels.setBotPhotoDesc') }}</n-text>
+
+        <n-card :title="t('channels.builtInLogo')" size="small">
+          <n-space align="center" :size="16">
+            <img src="/logo-512x512.png" alt="Iulita" style="width:64px;height:64px;border-radius:50%;" />
+            <n-button
+              type="primary"
+              :loading="settingPhoto"
+              :disabled="settingPhoto"
+              @click="handleSetBuiltInPhoto"
+            >
+              {{ t('channels.useBuiltIn') }}
+            </n-button>
+          </n-space>
+        </n-card>
+
+        <n-card :title="t('channels.customImage')" size="small">
+          <n-space vertical :size="12">
+            <n-space align="center" :size="16">
+              <img
+                v-if="customPhotoPreview"
+                :src="customPhotoPreview"
+                alt="Preview"
+                style="width:64px;height:64px;border-radius:50%;object-fit:cover;"
+              />
+              <div v-else style="width:64px;height:64px;border-radius:50%;background:#333;display:flex;align-items:center;justify-content:center;">
+                <n-text :depth="3" style="font-size:12px;">?</n-text>
+              </div>
+              <n-upload
+                :show-file-list="false"
+                accept="image/png,image/jpeg"
+                :custom-request="handleCustomPhotoSelect"
+              >
+                <n-button>{{ t('channels.uploadCustom') }}</n-button>
+              </n-upload>
+            </n-space>
+            <n-button
+              v-if="customPhotoFile"
+              type="primary"
+              :loading="settingPhoto"
+              :disabled="settingPhoto"
+              @click="handleSetCustomPhoto"
+            >
+              {{ t('channels.applyPhoto') }}
+            </n-button>
+          </n-space>
+        </n-card>
+      </n-space>
+      <template #action>
+        <n-button @click="showPhotoModal = false">{{ t('common.cancel') }}</n-button>
+      </template>
+    </n-modal>
+
     <!-- Bindings modal -->
     <n-modal v-model:show="showBindingsModal" preset="dialog" :title="`Bindings: ${bindingsInstanceId}`" style="width: 700px">
       <n-data-table
@@ -91,7 +147,7 @@ import { ref, h, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NSpace, NPageHeader, NDataTable, NButton, NSwitch, NTag, NText,
-  NModal, NForm, NFormItem, NInput, NSelect, useMessage,
+  NModal, NForm, NFormItem, NInput, NSelect, NCard, NUpload, useMessage,
 } from 'naive-ui'
 import type { DataTableColumn } from 'naive-ui'
 import { api } from '../api'
@@ -132,6 +188,55 @@ const showBindingsModal = ref(false)
 const loadingBindings = ref(false)
 const bindingsInstanceId = ref('')
 const bindings = ref<ChannelBinding[]>([])
+
+// Set photo modal
+const showPhotoModal = ref(false)
+const settingPhoto = ref(false)
+const photoInstanceId = ref('')
+const customPhotoFile = ref<File | null>(null)
+const customPhotoPreview = ref<string | null>(null)
+
+function openSetPhoto(row: ChannelInstance) {
+  photoInstanceId.value = row.id
+  customPhotoFile.value = null
+  customPhotoPreview.value = null
+  showPhotoModal.value = true
+}
+
+function handleCustomPhotoSelect({ file }: { file: { file: File | null } }) {
+  if (!file.file) return
+  customPhotoFile.value = file.file
+  customPhotoPreview.value = URL.createObjectURL(file.file)
+}
+
+async function handleSetBuiltInPhoto() {
+  settingPhoto.value = true
+  try {
+    const res = await fetch('/logo-512x512.png')
+    const blob = await res.blob()
+    await api.setChannelPhoto(photoInstanceId.value, blob)
+    message.success(t('channels.photoSet'))
+    showPhotoModal.value = false
+  } catch (e: any) {
+    message.error(e.message || t('channels.photoFailed'))
+  } finally {
+    settingPhoto.value = false
+  }
+}
+
+async function handleSetCustomPhoto() {
+  if (!customPhotoFile.value) return
+  settingPhoto.value = true
+  try {
+    await api.setChannelPhoto(photoInstanceId.value, customPhotoFile.value)
+    message.success(t('channels.photoSet'))
+    showPhotoModal.value = false
+  } catch (e: any) {
+    message.error(e.message || t('channels.photoFailed'))
+  } finally {
+    settingPhoto.value = false
+  }
+}
 
 // Reset config when channel type changes in create form
 watch(() => createForm.value.type, (t) => {
@@ -209,10 +314,13 @@ const columns: DataTableColumn<ChannelInstance>[] = [
   {
     title: t('common.actions'),
     key: 'actions',
-    width: 180,
+    width: 260,
     render: (row) => h(NSpace, { size: 'small' }, () => [
       h(NButton, { size: 'small', quaternary: true, onClick: () => openEdit(row) }, () => t('common.edit')),
       h(NButton, { size: 'small', quaternary: true, onClick: () => openBindings(row) }, () => t('channels.bindings')),
+      row.type === 'telegram'
+        ? h(NButton, { size: 'small', quaternary: true, type: 'info', onClick: () => openSetPhoto(row) }, () => t('channels.setPhoto'))
+        : null,
       row.source === 'dashboard'
         ? h(NButton, { size: 'small', quaternary: true, type: 'error', onClick: () => handleDelete(row) }, () => t('common.delete'))
         : null,

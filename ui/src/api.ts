@@ -766,6 +766,28 @@ export const api = {
     put<ChannelInstance>(`/api/channels/${id}`, data),
   deleteChannelInstance: (id: string) => del<{ status: string }>(`/api/channels/${id}`),
   listChannelBindings: (id: string) => get<ChannelBinding[]>(`/api/channels/${id}/bindings`),
+  setChannelPhoto: async (id: string, file: File | Blob) => {
+    const form = new FormData()
+    form.append('photo', file)
+    const res = await fetch(`/api/channels/${id}/set-photo`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: form,
+    })
+    try {
+      return await handleResponse<{ ok: boolean }>(res)
+    } catch (e: any) {
+      if (e.message === 'TOKEN_REFRESHED') {
+        const retry = await fetch(`/api/channels/${id}/set-photo`, {
+          method: 'POST',
+          headers: authHeaders(),
+          body: form,
+        })
+        return handleResponse<{ ok: boolean }>(retry)
+      }
+      throw e
+    }
+  },
 
   // Agent jobs (admin)
   listAgentJobs: () => get<AgentJob[]>('/api/agent-jobs/'),

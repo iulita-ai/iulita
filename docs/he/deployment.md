@@ -144,7 +144,7 @@ server {
 
 ### Caddy
 
-```caddyfile
+```txt
 iulita.example.com {
     reverse_proxy localhost:8080
 }

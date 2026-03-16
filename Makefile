@@ -1,4 +1,4 @@
-.PHONY: build run clean tidy setup-hooks check-secrets ui build-go dev version release console server test test-go test-ui test-coverage
+.PHONY: build run clean tidy setup-hooks check-secrets ui build-go dev version release console server test test-go test-ui test-coverage docs docs-dev docs-build
 
 APP_NAME := iulita
 BUILD_DIR := bin
@@ -47,12 +47,23 @@ clean:
 
 ## Release
 
-RELEASE_TAG := v0.25.7
+RELEASE_TAG := v0.26.0
 
 release:
 	git tag $(RELEASE_TAG)
 	git push origin $(RELEASE_TAG)
 	@echo "Tagged and pushed $(RELEASE_TAG)"
+
+## Docs
+
+docs:
+	cd docs && npm ci
+
+docs-dev:
+	cd docs && npm run docs:dev
+
+docs-build:
+	cd docs && npm run docs:build
 
 ## Security
 
