@@ -39,7 +39,7 @@ func (s *Server) handleSetBotPhoto(c *fiber.Ctx) error {
 	if err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "cannot open uploaded file")
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck // best-effort close
 
 	data, err := io.ReadAll(f)
 	if err != nil {

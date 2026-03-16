@@ -38,17 +38,19 @@ func (c *Channel) SetBotPhoto(_ context.Context, data []byte) error {
 	if err != nil {
 		return fmt.Errorf("setMyProfilePhoto: creating form file: %w", err)
 	}
-	if _, err := part.Write(data); err != nil {
-		return fmt.Errorf("setMyProfilePhoto: writing data: %w", err)
+	if _, writeErr := part.Write(data); writeErr != nil {
+		return fmt.Errorf("setMyProfilePhoto: writing data: %w", writeErr)
 	}
-	w.Close()
+	if closeErr := w.Close(); closeErr != nil {
+		return fmt.Errorf("setMyProfilePhoto: closing multipart: %w", closeErr)
+	}
 
 	c.logger.Info("SetBotPhoto multipart built",
 		zap.Int("total_body_size", buf.Len()),
 		zap.String("content_type", w.FormDataContentType()))
 
-	url := fmt.Sprintf("https://api.telegram.org/bot%s/setMyProfilePhoto", c.bot.Token)
-	req, err := http.NewRequest(http.MethodPost, url, &buf)
+	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/setMyProfilePhoto", c.bot.Token)
+	req, err := http.NewRequest(http.MethodPost, apiURL, &buf)
 	if err != nil {
 		return fmt.Errorf("setMyProfilePhoto: creating request: %w", err)
 	}
@@ -58,9 +60,12 @@ func (c *Channel) SetBotPhoto(_ context.Context, data []byte) error {
 	if err != nil {
 		return fmt.Errorf("setMyProfilePhoto: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // best-effort close
 
-	body, _ := io.ReadAll(resp.Body)
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return fmt.Errorf("setMyProfilePhoto: reading response: %w", readErr)
+	}
 	c.logger.Info("SetBotPhoto response",
 		zap.Int("status", resp.StatusCode),
 		zap.String("body", string(body)))
