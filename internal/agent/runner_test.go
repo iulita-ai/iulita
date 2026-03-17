@@ -174,7 +174,7 @@ func TestRunnerBudgetExhaustion(t *testing.T) {
 }
 
 func TestRunnerTimeout(t *testing.T) {
-	// Provider blocks until context is cancelled.
+	// Provider blocks until context is canceled.
 	provider := &stubProvider{
 		errors: []error{context.DeadlineExceeded},
 	}
@@ -203,7 +203,7 @@ func TestRunnerContextCancellation(t *testing.T) {
 	result := runner.Run(ctx, AgentSpec{
 		ID:   "test",
 		Type: AgentTypeGeneric,
-		Task: "cancelled",
+		Task: "canceled",
 	}, Budget{}, nil)
 
 	if result.Err == nil {

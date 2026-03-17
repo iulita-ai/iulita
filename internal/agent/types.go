@@ -6,8 +6,9 @@ import (
 )
 
 // AgentType identifies a predefined sub-agent persona.
-type AgentType string
+type AgentType string //nolint:revive // agent.AgentType is more readable than agent.Type in external usage
 
+// AgentType constants define the available sub-agent personas.
 const (
 	AgentTypeResearcher AgentType = "researcher"
 	AgentTypeAnalyst    AgentType = "analyst"
@@ -29,9 +30,6 @@ const (
 	EventAgentCompleted       = "agent_completed"
 	EventAgentFailed          = "agent_failed"
 )
-
-// ErrMaxDepthExceeded is returned when a sub-agent tries to spawn further sub-agents.
-var ErrMaxDepthExceeded = errors.New("max agent depth exceeded")
 
 // Budget defines resource constraints for a sub-agent run or an entire orchestration.
 type Budget struct {
@@ -74,7 +72,7 @@ func (b Budget) EffectiveMaxAgents() int {
 	return DefaultMaxAgents
 }
 
-// AgentSpec is a single agent task as provided by the orchestrate skill input.
+// AgentSpec is a single agent task as provided by the orchestrate skill input. //nolint:revive // agent.AgentSpec is more readable than agent.Spec
 type AgentSpec struct {
 	ID        string    `json:"id"`
 	Type      AgentType `json:"type"`
@@ -83,7 +81,7 @@ type AgentSpec struct {
 	Tools     []string  `json:"tools,omitempty"`      // optional: explicit tool name allowlist
 }
 
-// AgentResult holds the outcome of a single sub-agent run.
+// AgentResult holds the outcome of a single sub-agent run. //nolint:revive // agent.AgentResult is more readable than agent.Result
 type AgentResult struct {
 	ID       string
 	Type     AgentType
@@ -95,7 +93,7 @@ type AgentResult struct {
 }
 
 // AgentTypeProfile holds the per-type configuration.
-type AgentTypeProfile struct {
+type AgentTypeProfile struct { //nolint:revive // agent.AgentTypeProfile is more readable than agent.TypeProfile
 	SystemPrompt string
 	RouteHint    string   // default provider hint
 	DefaultTools []string // tool names; nil = all registered tools

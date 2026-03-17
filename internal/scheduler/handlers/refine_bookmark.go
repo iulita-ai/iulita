@@ -30,8 +30,10 @@ func NewRefineBookmarkHandler(store storage.Repository, provider llm.Provider, l
 	return &RefineBookmarkHandler{store: store, provider: provider, logger: logger}
 }
 
+// Type returns the task type identifier for bookmark refinement.
 func (h *RefineBookmarkHandler) Type() string { return bookmark.TaskTypeRefineBookmark }
 
+// Handle executes the bookmark refinement task by summarizing content via LLM.
 func (h *RefineBookmarkHandler) Handle(ctx context.Context, payload string) (string, error) {
 	var p bookmark.RefinePayload
 	if err := json.Unmarshal([]byte(payload), &p); err != nil {

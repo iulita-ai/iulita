@@ -42,6 +42,7 @@ func New(store storage.Repository, logger *zap.Logger) Service {
 	return &service{store: store, logger: logger}
 }
 
+// Save implements Service.Save.
 func (s *service) Save(ctx context.Context, chatID, userID, content string) (int64, error) {
 	if content == "" {
 		return 0, fmt.Errorf("bookmark content is empty")

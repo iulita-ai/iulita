@@ -125,12 +125,15 @@ func (s *Skill) OnConfigChanged(key, value string) {
 	}
 }
 
+// Name returns the skill name.
 func (s *Skill) Name() string { return "orchestrate" }
 
+// Description returns a human-readable description of the skill.
 func (s *Skill) Description() string {
 	return "Launch multiple specialized sub-agents in parallel to work on different aspects of a complex task"
 }
 
+// InputSchema returns the JSON schema for the skill's input.
 func (s *Skill) InputSchema() json.RawMessage {
 	return json.RawMessage(`{
 		"type": "object",
@@ -224,17 +227,17 @@ func (s *Skill) Execute(ctx context.Context, input json.RawMessage) (string, err
 func formatResults(results []agent.AgentResult) string {
 	var b strings.Builder
 	for _, r := range results {
-		fmt.Fprintf(&b, "## Agent: %s (%s)\n", r.ID, r.Type)
+		_, _ = fmt.Fprintf(&b, "## Agent: %s (%s)\n", r.ID, r.Type)
 		if r.Err != nil {
-			fmt.Fprintf(&b, "> Error: %v\n\n", r.Err)
+			_, _ = fmt.Fprintf(&b, "> Error: %v\n\n", r.Err)
 			if r.Output != "" {
-				fmt.Fprintf(&b, "Partial output:\n%s\n\n", r.Output)
+				_, _ = fmt.Fprintf(&b, "Partial output:\n%s\n\n", r.Output)
 			}
 		} else {
 			b.WriteString(r.Output)
 			b.WriteString("\n\n")
 		}
-		fmt.Fprintf(&b, "_Turns: %d | Tokens: %d | Duration: %s_\n\n", r.Turns, r.Tokens, r.Duration.Round(time.Millisecond))
+		_, _ = fmt.Fprintf(&b, "_Turns: %d | Tokens: %d | Duration: %s_\n\n", r.Turns, r.Tokens, r.Duration.Round(time.Millisecond))
 	}
 	return b.String()
 }

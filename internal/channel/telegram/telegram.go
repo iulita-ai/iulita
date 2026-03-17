@@ -403,11 +403,11 @@ func (c *Channel) handleClear(ctx context.Context, tgChatID int64, chatID string
 	if err := c.clearFn(ctx, chatID); err != nil {
 		c.logger.Error("failed to clear history", zap.Error(err), zap.String("chat_id", chatID))
 		reply := tgbotapi.NewMessage(tgChatID, i18n.T(localeCtx, "TelegramHistoryClearFailed"))
-		c.bot.Send(reply)
+		_, _ = c.bot.Send(reply)
 		return
 	}
 	reply := tgbotapi.NewMessage(tgChatID, i18n.T(localeCtx, "TelegramHistoryCleared"))
-	c.bot.Send(reply)
+	_, _ = c.bot.Send(reply)
 }
 
 // SendMessage sends a proactive message to a chat. Implements channel.MessageSender.
@@ -470,7 +470,7 @@ func (c *Channel) StartStream(_ context.Context, chatID string, replyTo int) (fu
 		c.statusMsgs.remove(chatID)
 		// Edit status message to streaming placeholder.
 		edit := tgbotapi.NewEditMessageText(tgChatID, msgID, "...")
-		c.bot.Send(edit)
+		_, _ = c.bot.Send(edit)
 	} else {
 		// For long tasks: finalize the status message with total time, then send fresh response.
 		if entry, ok := c.statusMsgs.get(chatID); ok && entry.isConsumed() {
@@ -505,7 +505,7 @@ func (c *Channel) StartStream(_ context.Context, chatID string, replyTo int) (fu
 		if _, err := c.bot.Send(edit); err != nil {
 			// Retry without markdown.
 			edit.ParseMode = ""
-			c.bot.Send(edit)
+			_, _ = c.bot.Send(edit)
 		}
 	}
 
@@ -515,9 +515,9 @@ func (c *Channel) StartStream(_ context.Context, chatID string, replyTo int) (fu
 // NotifyStatus sends a live status message to the chat, or updates it in-place.
 // Implements channel.StatusNotifier.
 func (c *Channel) NotifyStatus(_ context.Context, chatID string, event channel.StatusEvent) error {
-	tgChatID, err := strconv.ParseInt(chatID, 10, 64)
-	if err != nil {
-		return nil // not a Telegram chat ID
+	tgChatID, parseErr := strconv.ParseInt(chatID, 10, 64)
+	if parseErr != nil {
+		return nil //nolint:nilerr // non-numeric chatIDs are silently ignored (not a Telegram chat)
 	}
 
 	// Handle special event types before formatting.
@@ -650,7 +650,7 @@ func (c *Channel) downloadFile(ctx context.Context, fileID string) ([]byte, erro
 	if err != nil {
 		return nil, fmt.Errorf("downloading file: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
@@ -663,10 +663,10 @@ func (c *Channel) downloadFile(ctx context.Context, fileID string) ([]byte, erro
 	return data, nil
 }
 
-// keepTyping sends the "typing..." action every 4 seconds until ctx is cancelled.
+// keepTyping sends the "typing..." action every 4 seconds until ctx is canceled.
 func (c *Channel) keepTyping(ctx context.Context, chatID int64) {
 	typing := tgbotapi.NewChatAction(chatID, tgbotapi.ChatTyping)
-	c.bot.Send(typing) // send immediately
+	_, _ = c.bot.Send(typing) // send immediately
 
 	ticker := time.NewTicker(4 * time.Second)
 	defer ticker.Stop()
@@ -676,7 +676,7 @@ func (c *Channel) keepTyping(ctx context.Context, chatID int64) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			c.bot.Send(typing)
+			_, _ = c.bot.Send(typing)
 		}
 	}
 }

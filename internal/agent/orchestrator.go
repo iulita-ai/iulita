@@ -43,7 +43,7 @@ func NewOrchestrator(
 
 // Run launches all specs in parallel (bounded by budget.MaxAgents).
 // It returns all results regardless of individual agent errors.
-// The returned error is non-nil only if the context was cancelled before any agent could run.
+// The returned error is non-nil only if the context was canceled before any agent could run.
 func (o *Orchestrator) Run(ctx context.Context, chatID string, specs []AgentSpec, budget Budget) ([]AgentResult, error) {
 	if len(specs) == 0 {
 		return nil, nil
@@ -120,7 +120,7 @@ func (o *Orchestrator) Run(ctx context.Context, chatID string, specs []AgentSpec
 			results[i] = runner.Run(agentCtx, spec, budget, sharedTokens)
 
 			// Emit completion or failure using a fresh context so events
-			// are delivered even if the parent context was cancelled or expired.
+			// are delivered even if the parent context was canceled or expired.
 			statusCtx := context.Background()
 			if results[i].Err != nil {
 				o.emitStatus(statusCtx, chatID, EventAgentFailed, map[string]string{
@@ -139,7 +139,7 @@ func (o *Orchestrator) Run(ctx context.Context, chatID string, specs []AgentSpec
 		})
 	}
 
-	_ = eg.Wait()
+	_ = eg.Wait() //nolint:errcheck // individual errors stored in AgentResult.Err, errgroup error is always nil
 
 	totalDuration := time.Since(start)
 
@@ -184,7 +184,7 @@ func (o *Orchestrator) emitStatus(ctx context.Context, chatID, eventType string,
 	if o.notifier == nil {
 		return
 	}
-	_ = o.notifier.NotifyStatus(ctx, chatID, channel.StatusEvent{
+	_ = o.notifier.NotifyStatus(ctx, chatID, channel.StatusEvent{ //nolint:errcheck // status notifications are best-effort
 		Type: eventType,
 		Data: data,
 	})

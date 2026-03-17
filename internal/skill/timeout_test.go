@@ -77,7 +77,7 @@ func TestDefaultDeadlineExtender_CancelWorks(t *testing.T) {
 	extCancel()
 
 	if extended.Err() == nil {
-		t.Error("extended should be cancelled after extCancel()")
+		t.Error("extended should be canceled after extCancel()")
 	}
 }
 
@@ -92,6 +92,6 @@ func TestDeadlineExtender_ParentCancelDoesNotAffectExtended(t *testing.T) {
 
 	// Extended should NOT be affected (WithoutCancel breaks the chain).
 	if extended.Err() != nil {
-		t.Errorf("extended should not be cancelled when parent is, got: %v", extended.Err())
+		t.Errorf("extended should not be canceled when parent is, got: %v", extended.Err())
 	}
 }

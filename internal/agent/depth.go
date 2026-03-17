@@ -17,7 +17,10 @@ func WithDepth(ctx context.Context, depth int) context.Context {
 // DepthFrom extracts the current agent depth from the context.
 // Returns 0 if not set (parent assistant level).
 func DepthFrom(ctx context.Context) int {
-	v, _ := ctx.Value(depthKey{}).(int)
+	v, ok := ctx.Value(depthKey{}).(int)
+	if !ok {
+		return 0
+	}
 	return v
 }
 
@@ -30,6 +33,9 @@ func WithCurrentTime(ctx context.Context, currentTime string) context.Context {
 // CurrentTimeFrom extracts the current time string from the context.
 // Returns empty string if not set.
 func CurrentTimeFrom(ctx context.Context) string {
-	v, _ := ctx.Value(currentTimeKey{}).(string)
+	v, ok := ctx.Value(currentTimeKey{}).(string)
+	if !ok {
+		return ""
+	}
 	return v
 }

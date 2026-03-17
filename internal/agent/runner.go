@@ -263,7 +263,7 @@ func (r *Runner) emitStatus(ctx context.Context, eventType string, data map[stri
 	if r.notifier == nil {
 		return
 	}
-	_ = r.notifier.NotifyStatus(ctx, r.chatID, channel.StatusEvent{
+	_ = r.notifier.NotifyStatus(ctx, r.chatID, channel.StatusEvent{ //nolint:errcheck // status notifications are best-effort
 		Type: eventType,
 		Data: data,
 	})
