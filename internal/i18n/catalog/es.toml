@@ -287,3 +287,16 @@ other = "[Resumen de la conversación anterior]\n"
 
 [ErrorUnknownSkill]
 other = "error: habilidad desconocida {{.Name}}"
+
+# --- Bookmark / Remember button ---
+[BookmarkButton]
+other = "💾 Guardar"
+
+[BookmarkSaved]
+other = "✅ Guardado"
+
+[BookmarkAlreadySaved]
+other = "Ya guardado"
+
+[BookmarkError]
+other = "❌ Error"

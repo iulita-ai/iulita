@@ -175,6 +175,18 @@ Utilise l'API unifiee v1 (`api.todoist.com/api/v1`). Authentification par jeton 
 | `craft_tasks` | Gerer les taches Craft |
 | `craft_search` | Rechercher des documents Craft |
 
+### Orchestration multi-agent
+
+| Outil | Entree | Description |
+|-------|--------|-------------|
+| `orchestrate` | `agents[]`, `timeout`, `max_tokens` | Lancer plusieurs sous-agents specialises en parallele. |
+
+**Types d'agents** : `researcher`, `analyst`, `planner`, `coder`, `summarizer`, `generic` — chacun avec un prompt systeme specialise et un sous-ensemble d'outils.
+
+Les sous-agents s'executent en parallele via `errgroup`, partagent un budget de tokens atomique et ne peuvent pas generer d'autres sous-agents (profondeur max = 1). Les competences necessitant une approbation (ApprovalManual, ApprovalPrompt) sont filtrees des listes d'outils.
+
+Voir [Orchestration multi-agent](multi-agent.md) pour les details complets.
+
 ### Gestion des competences
 
 | Outil | Entree | Description |

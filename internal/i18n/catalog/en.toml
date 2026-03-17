@@ -296,3 +296,16 @@ other = "[Summary of earlier conversation]\n"
 # --- Error messages ---
 [ErrorUnknownSkill]
 other = "error: unknown skill {{.Name}}"
+
+# --- Bookmark / Remember button ---
+[BookmarkButton]
+other = "💾 Save"
+
+[BookmarkSaved]
+other = "✅ Saved"
+
+[BookmarkAlreadySaved]
+other = "Already saved"
+
+[BookmarkError]
+other = "❌ Error"

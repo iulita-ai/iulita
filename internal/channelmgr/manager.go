@@ -8,12 +8,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"go.uber.org/zap"
 
+	"github.com/iulita-ai/iulita/internal/bookmark"
 	"github.com/iulita-ai/iulita/internal/channel"
 	consolech "github.com/iulita-ai/iulita/internal/channel/console"
 	discordch "github.com/iulita-ai/iulita/internal/channel/discord"
@@ -104,6 +106,7 @@ type Manager struct {
 
 	transcriber telegram.TranscriptionProvider
 
+	bookmarkSvc       bookmark.Service       // nil = no bookmark feature
 	commandRegistrar  CommandRegistrar       // set via SetCommandRegistrar
 	handler           channel.MessageHandler // set by StartAll
 	startCtx          context.Context        // captured from StartAll for hot-reload restarts
@@ -154,6 +157,12 @@ func (m *Manager) SetConsoleStatusProvider(sp *consolech.StatusProvider) {
 // SetConsoleCompactFunc sets the compact function for console /compact command.
 func (m *Manager) SetConsoleCompactFunc(fn consolech.CompactFunc) {
 	m.consoleCompactFn = fn
+}
+
+// SetBookmarkService attaches a bookmark service for the "remember" button feature.
+// It will be injected into Telegram and WebChat channels on startup.
+func (m *Manager) SetBookmarkService(svc bookmark.Service) {
+	m.bookmarkSvc = svc
 }
 
 // SetConsoleOnExit sets a callback invoked when the console TUI exits.
@@ -423,18 +432,73 @@ func (m *Manager) StartStream(ctx context.Context, chatID string, replyTo int) (
 	return sender.StartStream(ctx, chatID, replyTo)
 }
 
-// NotifyStatus delegates to the webchat or console channel.
+// StartStreamWithBookmark opens a streaming session with a bookmark button.
+// Falls back to regular StartStream if the channel doesn't support bookmarks.
+func (m *Manager) StartStreamWithBookmark(ctx context.Context, chatID string, replyTo int, userID string) (func(string), func(string), error) {
+	sender := m.senderFor(ctx, chatID)
+	if sender == nil {
+		return nil, nil, fmt.Errorf("no running channel available for streaming to chat %s", chatID)
+	}
+	if bss, ok := sender.(channel.BookmarkStreamingSender); ok {
+		return bss.StartStreamWithBookmark(ctx, chatID, replyTo, userID)
+	}
+	return sender.StartStream(ctx, chatID, replyTo)
+}
+
+// NotifyStatus delegates status events to the appropriate channel (Telegram, WebChat, or Console).
 func (m *Manager) NotifyStatus(ctx context.Context, chatID string, event channel.StatusEvent) error {
 	if chatID == "console" {
 		if con := m.GetConsole(); con != nil {
 			return con.NotifyStatus(ctx, chatID, event)
 		}
+		return nil
 	}
-	wc := m.GetWebChat()
-	if wc == nil {
-		return nil // no web chat running
+
+	// Try to find the owning channel instance via DB lookup.
+	mc := m.findRunningForChat(ctx, chatID)
+	if mc != nil {
+		if mc.tg != nil {
+			return mc.tg.NotifyStatus(ctx, chatID, event)
+		}
+		if mc.web != nil {
+			return mc.web.NotifyStatus(ctx, chatID, event)
+		}
 	}
-	return wc.NotifyStatus(ctx, chatID, event)
+
+	// DB lookup may fail (e.g. channel_instance_id not populated in user_channels).
+	// For numeric chatIDs (Telegram), try the first running Telegram instance.
+	if _, err := strconv.ParseInt(chatID, 10, 64); err == nil {
+		m.mu.RLock()
+		for _, rmc := range m.running {
+			if rmc.tg != nil {
+				m.mu.RUnlock()
+				return rmc.tg.NotifyStatus(ctx, chatID, event)
+			}
+		}
+		m.mu.RUnlock()
+	}
+
+	// Fallback: try webchat (covers web:* chat IDs that may not have a DB record yet).
+	if wc := m.GetWebChat(); wc != nil {
+		return wc.NotifyStatus(ctx, chatID, event)
+	}
+	return nil
+}
+
+// findRunningForChat returns the ManagedChannel for a chatID.
+// Uses a per-request DB lookup via lookupInstanceForChat.
+// The DB query is a simple indexed lookup (<1ms in WAL mode) and is cached by
+// SQLite's page cache, so repeated calls for the same chatID within a request
+// are effectively free after the first one.
+func (m *Manager) findRunningForChat(ctx context.Context, chatID string) *ManagedChannel {
+	instanceID := m.lookupInstanceForChat(ctx, chatID)
+	if instanceID == "" {
+		return nil
+	}
+	m.mu.RLock()
+	mc := m.running[instanceID]
+	m.mu.RUnlock()
+	return mc
 }
 
 // PrompterFor returns a PromptAsker for the given chatID by delegating to the
@@ -536,12 +600,18 @@ func (m *Manager) startInstance(parentCtx context.Context, instance domain.Chann
 		if m.commandRegistrar != nil {
 			m.commandRegistrar(tg)
 		}
+		if m.bookmarkSvc != nil {
+			tg.SetBookmarkService(m.bookmarkSvc)
+		}
 		mc.tg = tg
 		startFn = tg.Start
 
 	case domain.ChannelTypeWeb:
 		web := webchat.New(m.logger)
 		web.SetInstanceID(instance.ID)
+		if m.bookmarkSvc != nil {
+			web.SetBookmarkService(m.bookmarkSvc)
+		}
 		mc.web = web
 		startFn = web.Start
 

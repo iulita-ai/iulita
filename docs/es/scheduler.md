@@ -32,6 +32,7 @@ Worker
     ├── HeartbeatHandler
     ├── ReminderFireHandler
     ├── AgentJobHandler
+    ├── RefineBookmarkHandler
     └── TodoSyncHandler
 ```
 
@@ -180,6 +181,18 @@ Elimina perspectivas donde `expires_at < now`. TTL predeterminado es 30 dias.
 Consulta `GetDueAgentJobs(now)` para tareas LLM programadas por el usuario. Actualiza `next_run` inmediatamente (antes de la ejecucion) para prevenir duplicados.
 
 **Manejador**: Llama `provider.Complete` con el prompt definido por el usuario. Opcionalmente entrega el resultado a un chat configurado.
+
+### Refinamiento de Marcadores (`bookmark.refine`)
+
+- **Disparador**: bajo demanda (creado por `bookmark.Service.Save`)
+- **Tipo de tarea**: `bookmark.refine`
+- **Capacidades**: `llm,storage`
+- **Intentos maximos**: 2
+- **Eliminar despues de ejecucion**: si
+
+**Manejador**: Recibe `{fact_id, content, chat_id, user_id}`. Llama al LLM con un prompt de resumen para extraer 1-3 oraciones concisas. Actualiza el contenido del dato si el refinamiento es significativamente mas corto (<90% del original). Maneja correctamente datos ya eliminados.
+
+**No es un trabajo programado** — las tareas se crean bajo demanda cuando los usuarios hacen clic en el boton de marcador. El worker las recoge en el siguiente ciclo de consulta (cada 5 segundos).
 
 ### Sincronizacion de Todos (`todo_sync`)
 

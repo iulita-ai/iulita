@@ -287,3 +287,16 @@ other = "[Résumé de la conversation précédente]\n"
 
 [ErrorUnknownSkill]
 other = "erreur : compétence inconnue {{.Name}}"
+
+# --- Bookmark / Remember button ---
+[BookmarkButton]
+other = "💾 Sauvegarder"
+
+[BookmarkSaved]
+other = "✅ Sauvegardé"
+
+[BookmarkAlreadySaved]
+other = "Déjà sauvegardé"
+
+[BookmarkError]
+other = "❌ Erreur"

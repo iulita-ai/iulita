@@ -36,8 +36,9 @@ Web Chat ────┼→ Channel Manager → Assistant → LLM Provider Chain
 | Channels | `internal/channel/` | Input adapters: Console TUI, Telegram, WebChat |
 | Channel Manager | `internal/channelmgr/` | Channel lifecycle, routing, hot-reload |
 | LLM Providers | `internal/llm/` | Claude, Ollama, OpenAI, ONNX embeddings |
-| Skills | `internal/skill/` | 20+ tool implementations |
+| Skills | `internal/skill/` | 30+ tool implementations |
 | Skill Manager | `internal/skillmgr/` | External skills: ClawhHub marketplace, URL, local |
+| Bookmark | `internal/bookmark/` | Quick-save assistant responses as facts + background refinement |
 | Storage | `internal/storage/sqlite/` | SQLite with FTS5, vectors, WAL mode |
 | Scheduler | `internal/scheduler/` | Task queue with cron/interval support |
 | Dashboard | `internal/dashboard/` | GoFiber REST API + embedded Vue 3 SPA |
@@ -48,6 +49,7 @@ Web Chat ────┼→ Channel Manager → Assistant → LLM Provider Chain
 | Domain | `internal/domain/` | Pure domain models |
 | Memory | `internal/memory/` | TF-IDF clustering, memory export/import |
 | Metrics | `internal/metrics/` | Prometheus counters and histograms |
+| Agent | `internal/agent/` | Sub-agent runner, orchestrator, budget enforcement |
 | Events | `internal/eventbus/` | Publish/subscribe event bus |
 | Cost | `internal/cost/` | LLM cost tracking with daily limits |
 | Rate Limit | `internal/ratelimit/` | Per-chat and global rate limiters |
@@ -205,6 +207,12 @@ type StreamingSender interface {
     MessageSender
     StartStream(ctx context.Context, chatID string, replyTo int) (editFn, doneFn func(string), err error)
 }
+
+// Optional — channels implement this to add bookmark buttons to streamed responses
+type BookmarkStreamingSender interface {
+    StreamingSender
+    StartStreamWithBookmark(ctx context.Context, chatID string, replyTo int, userID string) (editFn, doneFn func(string), err error)
+}
 ```
 
 ### Storage
@@ -244,6 +252,8 @@ The event bus (`internal/eventbus/`) implements a typed publish/subscribe patter
 | `FactSaved` | Storage | WebSocket hub |
 | `InsightCreated` | Storage | WebSocket hub |
 | `ConfigChanged` | Config store | Config reload handler → skills |
+| `AgentOrchestrationStarted` | Orchestrator | Metrics, WebSocket hub |
+| `AgentOrchestrationDone` | Orchestrator | Metrics, WebSocket hub |
 
 ## LLM Provider Chain
 
@@ -288,6 +298,7 @@ internal/
     console/             # bubbletea TUI
     telegram/            # Telegram bot
     webchat/             # WebSocket web chat
+  bookmark/              # quick-save assistant responses as facts
   channelmgr/            # channel lifecycle manager
   config/                # TOML + env + keyring config, setup wizard
   domain/                # domain models
@@ -295,11 +306,14 @@ internal/
   i18n/                  # internationalization (6 languages, TOML catalogs)
   llm/                   # LLM providers (Claude, Ollama, OpenAI, ONNX)
   scheduler/             # task queue (scheduler + worker)
+  agent/                 # multi-agent orchestration (runner, orchestrator, budget)
   skill/                 # skill implementations
   skillmgr/              # external skill manager (ClawhHub, URL, local)
   storage/sqlite/        # SQLite repository, FTS5, vectors, migrations
   dashboard/             # GoFiber REST API + Vue SPA
   web/                   # web search (Brave, DuckDuckGo, SSRF protection)
+  transcription/         # audio/voice transcription
+  doctor/                # diagnostic checks (--doctor flag)
   memory/                # TF-IDF clustering, export/import
   eventbus/              # publish/subscribe event bus
   cost/                  # LLM cost tracking

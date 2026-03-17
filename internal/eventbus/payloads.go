@@ -29,12 +29,12 @@ type SkillExecutedPayload struct {
 
 // LLMUsagePayload is published after each LLM completion.
 type LLMUsagePayload struct {
-	ChatID                 string
-	InputTokens            int64
-	OutputTokens           int64
-	CacheReadInputTokens   int64
+	ChatID                   string
+	InputTokens              int64
+	OutputTokens             int64
+	CacheReadInputTokens     int64
 	CacheCreationInputTokens int64
-	Iteration              int
+	Iteration                int
 }
 
 // TaskCompletedPayload is published when a background task finishes successfully.
@@ -78,4 +78,19 @@ type FactDeletedPayload struct {
 // ConfigChangedPayload is published when a config override is set or deleted.
 type ConfigChangedPayload struct {
 	Key string
+}
+
+// OrchestrationStartedPayload is published when a multi-agent orchestration begins.
+type OrchestrationStartedPayload struct {
+	ChatID     string
+	AgentCount int
+}
+
+// OrchestrationDonePayload is published when all sub-agents in an orchestration finish.
+type OrchestrationDonePayload struct {
+	ChatID       string
+	AgentCount   int
+	SuccessCount int
+	TotalTokens  int64
+	DurationMs   int64
 }

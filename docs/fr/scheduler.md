@@ -32,6 +32,7 @@ Worker
     ├── HeartbeatHandler
     ├── ReminderFireHandler
     ├── AgentJobHandler
+    ├── RefineBookmarkHandler
     └── TodoSyncHandler
 ```
 
@@ -180,6 +181,18 @@ Supprime les observations ou `expires_at < now`. TTL par defaut de 30 jours.
 Sonde `GetDueAgentJobs(now)` pour les taches LLM planifiees par l'utilisateur. Met a jour `next_run` immediatement (avant l'execution) pour eviter les doublons.
 
 **Gestionnaire** : appelle `provider.Complete` avec le prompt defini par l'utilisateur. Livre optionnellement le resultat a un chat configure.
+
+### Raffinement de signets (`bookmark.refine`)
+
+- **Declencheur** : a la demande (cree par `bookmark.Service.Save`)
+- **Type de tache** : `bookmark.refine`
+- **Capacites** : `llm,storage`
+- **Tentatives max** : 2
+- **Suppression apres execution** : oui
+
+**Gestionnaire** : Recoit `{fact_id, content, chat_id, user_id}`. Appelle le LLM avec un prompt de resume pour extraire 1-3 phrases concises. Met a jour le contenu du fait si le raffinement est significativement plus court (<90% de l'original). Gere correctement les faits deja supprimes.
+
+**Ce n'est pas une tache planifiee** — les taches sont creees a la demande lorsque les utilisateurs cliquent sur le bouton de signet. Le worker les recupere au prochain cycle de sondage (toutes les 5 secondes).
 
 ### Synchronisation des taches (`todo_sync`)
 

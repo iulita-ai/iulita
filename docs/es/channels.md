@@ -90,13 +90,18 @@ Bot de Telegram con funcionalidad completa, incluyendo streaming, debouncing y p
 - **Prompts interactivos**: teclados inline para interacciones de habilidades (ubicacion del clima, etc.)
 - **Soporte de medios**: fotos (tamano mas grande), documentos (limite de 30MB), voz/audio (con transcripcion)
 - **Comandos integrados**: `/clear` (limpiar historial), comandos personalizados registrados
+- **Boton de marcador**: boton 💾 de teclado inline en cada respuesta del asistente; al hacer clic se guarda la respuesta completa como dato con refinamiento LLM en segundo plano
+- **Mensajes de estado en tiempo real**: actualizaciones de estado durante la ejecucion de herramientas y orquestacion de agentes, mostrando la habilidad actual y el progreso de los agentes
 
 ### Pipeline de Procesamiento de Mensajes
 
 ```
 Actualizacion entrante de Telegram
     │
-    ├── Callback query? → enrutar al manejador de prompts
+    ├── Callback query?
+    │   ├── "noop" → confirmar silenciosamente
+    │   ├── "remember:*" → manejador de marcadores (guardar dato + retroalimentacion ✅)
+    │   └── otro → enrutar al manejador de prompts
     ├── No es un mensaje? → omitir
     ├── Usuario no esta en la lista blanca? → rechazar
     ├── Comando /clear? → manejar directamente
@@ -166,7 +171,8 @@ Web chat basado en WebSocket embebido en el panel de control.
   "text": "user message",
   "chat_id": "web:abc123",
   "prompt_id": "prompt_123_1",       // solo para respuestas de prompts
-  "prompt_answer": "option_id"       // solo para respuestas de prompts
+  "prompt_answer": "option_id",      // solo para respuestas de prompts
+  "remember_message_id": "nano_ts"   // solo para solicitudes de marcadores
 }
 ```
 
@@ -179,6 +185,22 @@ Web chat basado en WebSocket embebido en el panel de control.
 | `stream_done` | Stream finalizado | `text`, `message_id`, `timestamp` |
 | `status` | Eventos de procesamiento | `status`, `skill_name`, `success`, `duration_ms` |
 | `prompt` | Pregunta interactiva | `text`, `prompt_id`, `options[]` |
+| `remember_ack` | Confirmacion de marcador | `remember_ack.message_id`, `remember_ack.fact_id`, `remember_ack.status` |
+
+### Protocolo de Marcadores
+
+La funcion de marcadores permite a los usuarios guardar respuestas del asistente como datos mediante un boton de la interfaz.
+
+**Flujo:**
+1. El servidor envia `message` o `stream_done` con `message_id` (marca de tiempo en nanosegundos Unix)
+2. El servidor almacena en cache el contenido con clave `(message_id, chatID)` durante 10 minutos
+3. El frontend muestra el icono 💾 al pasar el raton sobre los mensajes del asistente
+4. El usuario hace clic → envia `{"remember_message_id": "<message_id>"}`
+5. El servidor valida la propiedad (`chatID` debe coincidir con la entrada en cache), guarda como dato con `source_type="bookmark"`, encola refinamiento LLM en segundo plano
+6. El servidor envia `{"type": "remember_ack", "remember_ack": {"message_id": "...", "status": "saved", "fact_id": 42}}`
+7. El frontend actualiza el icono a ✅
+
+**Valores de status**: `saved`, `error`, `expired` (mensaje ya no esta en cache)
 
 ### Autenticacion
 
@@ -245,3 +267,9 @@ Los canales reciben notificaciones `StatusEvent` para retroalimentacion de UX:
 | `stream_start` | Antes de que comience el streaming | Preparar interfaz de streaming |
 | `error` | En caso de error | Mostrar mensaje de error |
 | `locale_changed` | Despues de la habilidad set_language | Actualizar locale de la interfaz |
+| `orchestration_started` | Antes de lanzar sub-agentes | Mostrar cantidad de agentes |
+| `agent_started` | Por agente, antes de ejecutar | Mostrar nombre + tipo de agente |
+| `agent_progress` | Por agente, despues de cada turno LLM | Actualizar contador de turnos |
+| `agent_completed` | Por agente, en exito | Mostrar duracion + tokens |
+| `agent_failed` | Por agente, en error | Mostrar mensaje de error |
+| `orchestration_done` | Despues de que todos terminen | Mostrar estadisticas resumen |

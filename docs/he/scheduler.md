@@ -32,6 +32,7 @@ Worker
     ├── HeartbeatHandler
     ├── ReminderFireHandler
     ├── AgentJobHandler
+    ├── RefineBookmarkHandler
     └── TodoSyncHandler
 ```
 
@@ -180,6 +181,18 @@ pending → claimed (על ידי worker) → running → completed / failed
 סוקר `GetDueAgentJobs(now)` למשימות LLM מתוזמנות מוגדרות משתמש. מעדכן `next_run` מיידית (לפני ביצוע) כדי למנוע כפילויות.
 
 **מטפל**: קורא `provider.Complete` עם הפרומפט שהוגדר על ידי המשתמש. אופציונלית מעביר את התוצאה לצ'אט מוגדר.
+
+### עידון סימניות (`bookmark.refine`)
+
+- **טריגר**: לפי דרישה (נוצר על ידי `bookmark.Service.Save`)
+- **סוג משימה**: `bookmark.refine`
+- **יכולות**: `llm,storage`
+- **ניסיונות מקסימום**: 2
+- **מחיקה לאחר ריצה**: כן
+
+**מטפל**: מקבל `{fact_id, content, chat_id, user_id}`. קורא ל-LLM עם פרומפט סיכום לחילוץ 1-3 משפטים תמציתיים. מעדכן את תוכן העובדה אם העידון קצר משמעותית (<90% מהמקור). מטפל בחינניות בעובדות שכבר נמחקו.
+
+**לא משימה מתוזמנת** — משימות נוצרות לפי דרישה כשמשתמשים לוחצים על כפתור הסימניה. ה-worker אוסף אותן במחזור הסקירה הבא (כל 5 שניות).
 
 ### סנכרון Todo (`todo_sync`)
 

@@ -237,7 +237,17 @@
     "answered": "Respondido",
     "emptyState": "Envie un mensaje para comenzar a chatear",
     "placeholder": "Escriba un mensaje...",
-    "error": "Error: {error}"
+    "error": "Error: {error}",
+    "bookmarkSave": "Guardar en memoria",
+    "bookmarkSaved": "Guardado!",
+    "bookmarkError": "Error al guardar",
+    "bookmarkExpired": "Mensaje expirado",
+    "orchestrationStarted": "Lanzando {count} agentes...",
+    "orchestrationDone": "Todos los agentes finalizaron ({success}/{total} exitosos)",
+    "agentStarted": "{id} ({type}) iniciado",
+    "agentCompleted": "{id} completado",
+    "agentFailed": "{id} falló",
+    "agentProgress": "{id}: turno {turn}"
   },
   "facts": {
     "title": "Hechos",

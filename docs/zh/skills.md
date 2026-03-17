@@ -175,6 +175,18 @@ Web 搜索链为 `Brave → DuckDuckGo`，通过 `FallbackSearcher` 实现。Duc
 | `craft_tasks` | 管理 Craft 任务 |
 | `craft_search` | 搜索 Craft 文档 |
 
+### 多智能体编排
+
+| 工具 | 输入 | 描述 |
+|------|------|------|
+| `orchestrate` | `agents[]`、`timeout`、`max_tokens` | 并行启动多个专业化子智能体。 |
+
+**智能体类型**：`researcher`、`analyst`、`planner`、`coder`、`summarizer`、`generic` — 每种都有专业化的系统提示词和工具子集。
+
+子智能体通过 `errgroup` 并行执行，共享原子令牌预算，不能生成更多子智能体（最大深度 = 1）。需要审批的技能（ApprovalManual、ApprovalPrompt）从子智能体工具列表中过滤。
+
+详见[多智能体编排](multi-agent.md)。
+
 ### 技能管理
 
 | 工具 | 输入 | 描述 |

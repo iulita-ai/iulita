@@ -36,8 +36,9 @@ Web Chat ────┼→ Channel Manager → Assistant → LLM Provider Chain
 | Canales | `internal/channel/` | Adaptadores de entrada: Consola TUI, Telegram, WebChat |
 | Gestor de canales | `internal/channelmgr/` | Ciclo de vida de canales, enrutamiento, recarga en caliente |
 | Proveedores LLM | `internal/llm/` | Claude, Ollama, OpenAI, embeddings ONNX |
-| Habilidades | `internal/skill/` | Mas de 20 implementaciones de herramientas |
+| Habilidades | `internal/skill/` | Mas de 30 implementaciones de herramientas |
 | Gestor de habilidades | `internal/skillmgr/` | Habilidades externas: marketplace ClawhHub, URL, local |
+| Marcadores | `internal/bookmark/` | Guardado rapido de respuestas del asistente como datos + refinamiento en segundo plano |
 | Almacenamiento | `internal/storage/sqlite/` | SQLite con FTS5, vectores, modo WAL |
 | Planificador | `internal/scheduler/` | Cola de tareas con soporte cron/intervalo |
 | Panel de control | `internal/dashboard/` | API REST GoFiber + SPA Vue 3 embebida |
@@ -48,6 +49,7 @@ Web Chat ────┼→ Channel Manager → Assistant → LLM Provider Chain
 | Dominio | `internal/domain/` | Modelos de dominio puros |
 | Memoria | `internal/memory/` | Clustering TF-IDF, exportacion/importacion de memoria |
 | Metricas | `internal/metrics/` | Contadores e histogramas Prometheus |
+| Agente | `internal/agent/` | Runner de sub-agentes, orquestador, control de presupuesto |
 | Eventos | `internal/eventbus/` | Bus de eventos publicar/suscribir |
 | Costos | `internal/cost/` | Seguimiento de costos LLM con limites diarios |
 | Limite de tasa | `internal/ratelimit/` | Limitadores de tasa por chat y globales |
@@ -205,6 +207,12 @@ type StreamingSender interface {
     MessageSender
     StartStream(ctx context.Context, chatID string, replyTo int) (editFn, doneFn func(string), err error)
 }
+
+// Opcional — los canales implementan esto para agregar botones de marcador a las respuestas en streaming
+type BookmarkStreamingSender interface {
+    StreamingSender
+    StartStreamWithBookmark(ctx context.Context, chatID string, replyTo int, userID string) (editFn, doneFn func(string), err error)
+}
 ```
 
 ### Storage
@@ -244,6 +252,8 @@ El bus de eventos (`internal/eventbus/`) implementa un patron tipado de publicar
 | `FactSaved` | Storage | Hub WebSocket |
 | `InsightCreated` | Storage | Hub WebSocket |
 | `ConfigChanged` | Config store | Manejador de recarga de config → habilidades |
+| `AgentOrchestrationStarted` | Orquestador | Metricas, hub WebSocket |
+| `AgentOrchestrationDone` | Orquestador | Metricas, hub WebSocket |
 
 ## Cadena de Proveedores LLM
 
@@ -288,6 +298,7 @@ internal/
     console/             # TUI bubbletea
     telegram/            # bot de Telegram
     webchat/             # web chat WebSocket
+  bookmark/              # guardado rapido de respuestas del asistente como datos
   channelmgr/            # gestor de ciclo de vida de canales
   config/                # configuracion TOML + env + llavero, asistente de configuracion
   domain/                # modelos de dominio
@@ -295,11 +306,14 @@ internal/
   i18n/                  # internacionalizacion (6 idiomas, catalogos TOML)
   llm/                   # proveedores LLM (Claude, Ollama, OpenAI, ONNX)
   scheduler/             # cola de tareas (planificador + worker)
+  agent/                 # orquestacion multi-agente (runner, orquestador, presupuesto)
   skill/                 # implementaciones de habilidades
   skillmgr/              # gestor de habilidades externas (ClawhHub, URL, local)
   storage/sqlite/        # repositorio SQLite, FTS5, vectores, migraciones
   dashboard/             # API REST GoFiber + SPA Vue
   web/                   # busqueda web (Brave, DuckDuckGo, proteccion SSRF)
+  transcription/         # transcripcion de audio/voz
+  doctor/                # verificaciones de diagnostico (flag --doctor)
   memory/                # clustering TF-IDF, exportacion/importacion
   eventbus/              # bus de eventos publicar/suscribir
   cost/                  # seguimiento de costos LLM

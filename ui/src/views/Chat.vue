@@ -70,18 +70,42 @@
         <!-- Regular message -->
         <div
           v-else
-          :style="{
-            maxWidth: '75%',
-            padding: '8px 12px',
-            borderRadius: '12px',
-            background: msg.role === 'user' ? '#18a058' : '#e8e8e8',
-            color: msg.role === 'user' ? '#fff' : '#333',
-          }"
+          class="msg-wrap"
+          @mouseenter="hoveredMsgId = msg.id"
+          @mouseleave="hoveredMsgId = null"
         >
-          <div style="white-space: pre-wrap; word-break: break-word;">{{ msg.text }}</div>
-          <div :style="{ fontSize: '11px', marginTop: '4px', opacity: 0.6, textAlign: msg.role === 'user' ? 'right' : 'left' }">
-            {{ msg.timestamp }}
+          <div
+            :style="{
+              maxWidth: '100%',
+              padding: '8px 12px',
+              borderRadius: '12px',
+              background: msg.role === 'user' ? '#18a058' : '#e8e8e8',
+              color: msg.role === 'user' ? '#fff' : '#333',
+            }"
+          >
+            <div style="white-space: pre-wrap; word-break: break-word;">{{ msg.text }}</div>
+            <div :style="{ fontSize: '11px', marginTop: '4px', opacity: 0.6, textAlign: msg.role === 'user' ? 'right' : 'left' }">
+              {{ msg.timestamp }}
+            </div>
           </div>
+          <button
+            v-if="msg.role === 'assistant' && msg.messageId"
+            class="bookmark-btn"
+            :class="{
+              visible: hoveredMsgId === msg.id || msg.bookmarkState === 'saved' || msg.bookmarkState === 'saving',
+              saved: msg.bookmarkState === 'saved',
+              error: msg.bookmarkState === 'error',
+              saving: msg.bookmarkState === 'saving',
+            }"
+            :disabled="msg.bookmarkState === 'saved' || msg.bookmarkState === 'saving'"
+            :title="msg.bookmarkState === 'saved' ? t('chat.bookmarkSaved') : t('chat.bookmarkSave')"
+            @click.stop="bookmarkMessage(msg)"
+          >
+            <span v-if="msg.bookmarkState === 'saving'">&#x23F3;</span>
+            <span v-else-if="msg.bookmarkState === 'saved'">&#x2705;</span>
+            <span v-else-if="msg.bookmarkState === 'error'">&#x274C;</span>
+            <span v-else>&#x1F4BE;</span>
+          </button>
         </div>
       </div>
 
@@ -119,9 +143,15 @@
               </n-tag>
             </n-space>
           </div>
+          <!-- Agent orchestration progress -->
+          <AgentProgress
+            v-if="orchestrationActive || agentList.length > 0"
+            :agents="agentList"
+            :orchestration-active="orchestrationActive"
+          />
           <!-- Streaming text or thinking dots -->
           <div v-if="streamingText" style="white-space: pre-wrap; word-break: break-word;">{{ streamingText }}</div>
-          <div v-else class="thinking-dots">
+          <div v-else-if="!orchestrationActive" class="thinking-dots">
             <span></span><span></span><span></span>
           </div>
         </div>
@@ -147,12 +177,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, onMounted } from 'vue'
+import { ref, reactive, nextTick, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocale } from '../composables/useLocale'
 import { NPageHeader, NTag, NText, NInput, NInputGroup, NButton, NEmpty, NSpin, NSpace, NCard } from 'naive-ui'
 import { useWebSocket } from '../composables/useWebSocket'
 import { currentUser, getAccessToken, api } from '../api'
+import AgentProgress from '../components/AgentProgress.vue'
+import type { AgentInfo } from '../components/agentTypes'
 
 const { t } = useI18n()
 const { setLocale } = useLocale()
@@ -163,6 +195,8 @@ interface ChatMessage {
   role: 'user' | 'assistant' | 'prompt'
   text: string
   timestamp: string
+  messageId?: string // WS message_id for bookmark correlation
+  bookmarkState?: 'idle' | 'saving' | 'saved' | 'error'
   promptId?: string
   options?: { id: string; label: string }[]
 }
@@ -171,6 +205,10 @@ interface CompletedSkill {
   name: string
   duration: number
 }
+
+// Agent orchestration state.
+const orchestrationActive = ref(false)
+const agentList = ref<AgentInfo[]>([])
 
 const PAGE_SIZE = 50
 const MAX_MESSAGES = 500
@@ -186,6 +224,7 @@ const loadingHistory = ref(false)
 const activePromptId = ref<string | null>(null)
 const loadingOlder = ref(false)
 const allLoaded = ref(false)
+const hoveredMsgId = ref<string | null>(null)
 
 const user = currentUser()
 const token = getAccessToken()
@@ -308,10 +347,18 @@ function trimMessages() {
   }
 }
 
+let orchestrationCleanupTimer: ReturnType<typeof setTimeout> | null = null
+
 function resetProcessingState() {
   processing.value = false
   activeSkills.value = []
   completedSkills.value = []
+  orchestrationActive.value = false
+  agentList.value = []
+  if (orchestrationCleanupTimer) {
+    clearTimeout(orchestrationCleanupTimer)
+    orchestrationCleanupTimer = null
+  }
 }
 
 function sendMessage() {
@@ -363,6 +410,59 @@ on('status', (payload: any) => {
         setLocale(payload.data.locale)
       }
       break
+    case 'orchestration_started':
+      orchestrationActive.value = true
+      agentList.value = []
+      // Clear any pending cleanup timer from a previous orchestration.
+      if (orchestrationCleanupTimer) {
+        clearTimeout(orchestrationCleanupTimer)
+        orchestrationCleanupTimer = null
+      }
+      break
+    case 'orchestration_done':
+      orchestrationActive.value = false
+      // Clear agent list after a brief delay so user can see final state.
+      orchestrationCleanupTimer = setTimeout(() => {
+        agentList.value = []
+        orchestrationCleanupTimer = null
+      }, 3000)
+      break
+    case 'agent_started':
+      if (payload.data?.agent_id) {
+        agentList.value.push({
+          id: payload.data.agent_id,
+          type: payload.data.agent_type || 'generic',
+          status: 'running',
+        })
+      }
+      break
+    case 'agent_progress':
+      if (payload.data?.agent_id) {
+        const ag = agentList.value.find(a => a.id === payload.data.agent_id)
+        if (ag) {
+          ag.turn = parseInt(payload.data.turn || '0', 10)
+        }
+      }
+      break
+    case 'agent_completed':
+      if (payload.data?.agent_id) {
+        const ag = agentList.value.find(a => a.id === payload.data.agent_id)
+        if (ag) {
+          ag.status = 'completed'
+          ag.durationMs = parseInt(payload.data.duration_ms || '0', 10)
+          ag.tokens = parseInt(payload.data.tokens || '0', 10)
+        }
+      }
+      break
+    case 'agent_failed':
+      if (payload.data?.agent_id) {
+        const ag = agentList.value.find(a => a.id === payload.data.agent_id)
+        if (ag) {
+          ag.status = 'failed'
+          ag.error = payload.data.error || 'Unknown error'
+        }
+      }
+      break
     case 'error':
       resetProcessingState()
       messages.value.push({
@@ -386,6 +486,8 @@ on('message', (payload: any) => {
     role: 'assistant',
     text: payload.text,
     timestamp: payload.timestamp ? formatTime(payload.timestamp) : new Date().toLocaleTimeString(),
+    messageId: payload.message_id || undefined,
+    bookmarkState: payload.message_id ? 'idle' : undefined,
   })
   trimMessages()
   if (isNearBottom()) scrollToBottom(true)
@@ -406,6 +508,8 @@ on('stream_done', (payload: any) => {
     role: 'assistant',
     text: payload.text,
     timestamp: payload.timestamp ? formatTime(payload.timestamp) : new Date().toLocaleTimeString(),
+    messageId: payload.message_id || undefined,
+    bookmarkState: payload.message_id ? 'idle' : undefined,
   })
   trimMessages()
   if (isNearBottom()) scrollToBottom(true)
@@ -425,6 +529,31 @@ on('prompt', (payload: any) => {
   trimMessages()
   if (isNearBottom()) scrollToBottom(true)
 })
+
+// Bookmark acknowledgment from server
+on('remember_ack', (payload: any) => {
+  const ack = payload.remember_ack || payload
+  const msg = messages.value.find(m => m.messageId === ack.message_id)
+  if (msg) {
+    if (ack.status === 'saved') {
+      msg.bookmarkState = 'saved'
+    } else {
+      msg.bookmarkState = 'error'
+      // Auto-reset to idle after 3 seconds so user can retry
+      setTimeout(() => {
+        if (msg.bookmarkState === 'error') {
+          msg.bookmarkState = 'idle'
+        }
+      }, 3000)
+    }
+  }
+})
+
+function bookmarkMessage(msg: ChatMessage) {
+  if (!msg.messageId || msg.bookmarkState === 'saved' || msg.bookmarkState === 'saving') return
+  msg.bookmarkState = 'saving'
+  send({ remember_message_id: msg.messageId })
+}
 
 function answerPrompt(promptId: string, optionId: string, label: string) {
   activePromptId.value = null
@@ -460,9 +589,52 @@ onMounted(async () => {
   await loadHistory()
   connect()
 })
+
+onUnmounted(() => {
+  if (orchestrationCleanupTimer) {
+    clearTimeout(orchestrationCleanupTimer)
+    orchestrationCleanupTimer = null
+  }
+})
 </script>
 
 <style scoped>
+.msg-wrap {
+  position: relative;
+  max-width: 75%;
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 4px;
+}
+.bookmark-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  padding: 2px 4px;
+  border-radius: 4px;
+  line-height: 1;
+}
+.bookmark-btn:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.05);
+}
+.bookmark-btn.visible {
+  opacity: 1;
+}
+.bookmark-btn.saved {
+  opacity: 0.7;
+  cursor: default;
+}
+.bookmark-btn.error {
+  opacity: 1;
+}
+.bookmark-btn.saving {
+  opacity: 1;
+  cursor: wait;
+}
 .thinking-dots {
   display: flex;
   gap: 4px;

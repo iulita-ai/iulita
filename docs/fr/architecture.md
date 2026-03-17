@@ -36,8 +36,9 @@ Web Chat ────┼→ Channel Manager → Assistant → LLM Provider Chain
 | Canaux | `internal/channel/` | Adaptateurs d'entree : Console TUI, Telegram, WebChat |
 | Gestionnaire de canaux | `internal/channelmgr/` | Cycle de vie des canaux, routage, rechargement a chaud |
 | Fournisseurs LLM | `internal/llm/` | Claude, Ollama, OpenAI, embeddings ONNX |
-| Competences | `internal/skill/` | 20+ implementations d'outils |
+| Competences | `internal/skill/` | 30+ implementations d'outils |
 | Gestionnaire de competences | `internal/skillmgr/` | Competences externes : marketplace ClawhHub, URL, local |
+| Signets | `internal/bookmark/` | Sauvegarde rapide des reponses de l'assistant comme faits + raffinement en arriere-plan |
 | Stockage | `internal/storage/sqlite/` | SQLite avec FTS5, vecteurs, mode WAL |
 | Planificateur | `internal/scheduler/` | File de taches avec support cron/intervalle |
 | Tableau de bord | `internal/dashboard/` | API REST GoFiber + SPA Vue 3 embarquee |
@@ -48,6 +49,7 @@ Web Chat ────┼→ Channel Manager → Assistant → LLM Provider Chain
 | Domaine | `internal/domain/` | Modeles de domaine purs |
 | Memoire | `internal/memory/` | Clustering TF-IDF, export/import de memoire |
 | Metriques | `internal/metrics/` | Compteurs et histogrammes Prometheus |
+| Agent | `internal/agent/` | Runner de sous-agents, orchestrateur, controle de budget |
 | Evenements | `internal/eventbus/` | Bus d'evenements publication/abonnement |
 | Couts | `internal/cost/` | Suivi des couts LLM avec limites quotidiennes |
 | Limitation de debit | `internal/ratelimit/` | Limiteurs de debit par chat et globaux |
@@ -205,6 +207,12 @@ type StreamingSender interface {
     MessageSender
     StartStream(ctx context.Context, chatID string, replyTo int) (editFn, doneFn func(string), err error)
 }
+
+// Optionnel — les canaux implementent ceci pour ajouter des boutons de signet aux reponses en streaming
+type BookmarkStreamingSender interface {
+    StreamingSender
+    StartStreamWithBookmark(ctx context.Context, chatID string, replyTo int, userID string) (editFn, doneFn func(string), err error)
+}
 ```
 
 ### Storage
@@ -244,6 +252,8 @@ Le bus d'evenements (`internal/eventbus/`) implemente un patron publication/abon
 | `FactSaved` | Storage | Hub WebSocket |
 | `InsightCreated` | Storage | Hub WebSocket |
 | `ConfigChanged` | Magasin de configuration | Gestionnaire de rechargement → competences |
+| `AgentOrchestrationStarted` | Orchestrateur | Metriques, hub WebSocket |
+| `AgentOrchestrationDone` | Orchestrateur | Metriques, hub WebSocket |
 
 ## Chaine de fournisseurs LLM
 
@@ -288,6 +298,7 @@ internal/
     console/             # TUI bubbletea
     telegram/            # bot Telegram
     webchat/             # chat web WebSocket
+  bookmark/              # sauvegarde rapide des reponses de l'assistant comme faits
   channelmgr/            # gestionnaire de cycle de vie des canaux
   config/                # configuration TOML + env + trousseau, assistant de configuration
   domain/                # modeles de domaine
@@ -295,11 +306,14 @@ internal/
   i18n/                  # internationalisation (6 langues, catalogues TOML)
   llm/                   # fournisseurs LLM (Claude, Ollama, OpenAI, ONNX)
   scheduler/             # file de taches (planificateur + worker)
+  agent/                 # orchestration multi-agent (runner, orchestrateur, budget)
   skill/                 # implementations des competences
   skillmgr/              # gestionnaire de competences externes (ClawhHub, URL, local)
   storage/sqlite/        # depot SQLite, FTS5, vecteurs, migrations
   dashboard/             # API REST GoFiber + SPA Vue
   web/                   # recherche web (Brave, DuckDuckGo, protection SSRF)
+  transcription/         # transcription audio/voix
+  doctor/                # verifications de diagnostic (drapeau --doctor)
   memory/                # clustering TF-IDF, export/import
   eventbus/              # bus d'evenements publication/abonnement
   cost/                  # suivi des couts LLM

@@ -90,13 +90,18 @@ Bot Telegram complet avec streaming, regroupement et invites interactives.
 - **Invites interactives** : claviers en ligne pour les interactions de competences (localisation meteo, etc.)
 - **Support multimedia** : photos (plus grande taille), documents (limite 30 Mo), voix/audio (avec transcription)
 - **Commandes integrees** : `/clear` (effacer l'historique), commandes enregistrees personnalisees
+- **Bouton de signet** : bouton 💾 de clavier en ligne sur chaque reponse de l'assistant ; un clic sauvegarde la reponse complete comme fait avec raffinement LLM en arriere-plan
+- **Messages de statut en temps reel** : mises a jour du statut pendant l'execution des outils et l'orchestration des agents, affichant la competence en cours et la progression des agents
 
 ### Pipeline de traitement des messages
 
 ```
 Mise a jour Telegram entrante
     │
-    ├── Requete callback ? → router vers le gestionnaire d'invites
+    ├── Requete callback ?
+    │   ├── "noop" → acquitter silencieusement
+    │   ├── "remember:*" → gestionnaire de signets (sauvegarder fait + retour ✅)
+    │   └── autre → router vers le gestionnaire d'invites
     ├── Pas un message ? → ignorer
     ├── Utilisateur pas dans la liste blanche ? → rejeter
     ├── Commande /clear ? → traiter directement
@@ -166,7 +171,8 @@ Chat web base sur WebSocket integre dans le tableau de bord.
   "text": "user message",
   "chat_id": "web:abc123",
   "prompt_id": "prompt_123_1",       // uniquement pour les reponses aux invites
-  "prompt_answer": "option_id"       // uniquement pour les reponses aux invites
+  "prompt_answer": "option_id",      // uniquement pour les reponses aux invites
+  "remember_message_id": "nano_ts"   // uniquement pour les requetes de signets
 }
 ```
 
@@ -179,6 +185,22 @@ Chat web base sur WebSocket integre dans le tableau de bord.
 | `stream_done` | Stream finalise | `text`, `message_id`, `timestamp` |
 | `status` | Evenements de traitement | `status`, `skill_name`, `success`, `duration_ms` |
 | `prompt` | Question interactive | `text`, `prompt_id`, `options[]` |
+| `remember_ack` | Confirmation de signet | `remember_ack.message_id`, `remember_ack.fact_id`, `remember_ack.status` |
+
+### Protocole de signets
+
+La fonctionnalite de signets permet aux utilisateurs de sauvegarder les reponses de l'assistant comme faits via un bouton de l'interface.
+
+**Flux :**
+1. Le serveur envoie `message` ou `stream_done` avec `message_id` (horodatage Unix en nanosecondes)
+2. Le serveur met en cache le contenu avec la cle `(message_id, chatID)` pendant 10 minutes
+3. Le frontend affiche l'icone 💾 au survol des messages de l'assistant
+4. L'utilisateur clique → envoie `{"remember_message_id": "<message_id>"}`
+5. Le serveur valide la propriete (`chatID` doit correspondre a l'entree en cache), sauvegarde comme fait avec `source_type="bookmark"`, met en file le raffinement LLM en arriere-plan
+6. Le serveur envoie `{"type": "remember_ack", "remember_ack": {"message_id": "...", "status": "saved", "fact_id": 42}}`
+7. Le frontend met a jour l'icone vers ✅
+
+**Valeurs de status** : `saved`, `error`, `expired` (message plus en cache)
 
 ### Authentification
 
@@ -245,3 +267,9 @@ Les canaux recoivent des notifications `StatusEvent` pour le retour d'experience
 | `stream_start` | Avant le debut du streaming | Preparer l'interface de streaming |
 | `error` | En cas d'erreur | Afficher le message d'erreur |
 | `locale_changed` | Apres la competence set_language | Mettre a jour la locale de l'interface |
+| `orchestration_started` | Avant le lancement des sous-agents | Afficher le nombre d'agents |
+| `agent_started` | Par agent, avant l'execution | Afficher le nom + type d'agent |
+| `agent_progress` | Par agent, apres chaque tour LLM | Mettre a jour le compteur de tours |
+| `agent_completed` | Par agent, en cas de succes | Afficher la duree + tokens |
+| `agent_failed` | Par agent, en cas d'erreur | Afficher le message d'erreur |
+| `orchestration_done` | Apres la fin de tous les agents | Afficher les statistiques |

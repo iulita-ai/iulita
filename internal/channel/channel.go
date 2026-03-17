@@ -61,6 +61,15 @@ type StreamingSender interface {
 	StartStream(ctx context.Context, chatID string, replyTo int) (editFn func(text string), doneFn func(text string), err error)
 }
 
+// BookmarkStreamingSender extends StreamingSender to attach a "remember" button
+// to streamed responses. Channels that support this implement it alongside StreamingSender.
+type BookmarkStreamingSender interface {
+	StreamingSender
+	// StartStreamWithBookmark is like StartStream but attaches a bookmark button
+	// to the final message. userID is the iulita user UUID for scoping the saved fact.
+	StartStreamWithBookmark(ctx context.Context, chatID string, replyTo int, userID string) (editFn func(text string), doneFn func(text string), err error)
+}
+
 // StatusNotifier sends processing status updates to a specific chat.
 // Used for real-time feedback (thinking, skill execution) in web chat.
 type StatusNotifier interface {

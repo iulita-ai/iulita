@@ -13,6 +13,7 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"
 
+	"github.com/iulita-ai/iulita/internal/bookmark"
 	"github.com/iulita-ai/iulita/internal/channel"
 	"github.com/iulita-ai/iulita/internal/i18n"
 	"github.com/iulita-ai/iulita/internal/ratelimit"
@@ -44,6 +45,9 @@ type Channel struct {
 	store          storage.Repository    // nil = no locale lookup
 	transcriber    TranscriptionProvider // nil = voice messages ignored
 	prompts        *promptState          // interactive skill prompts
+	rememberSvc    bookmark.Service      // nil = no bookmark feature
+	remembers      *rememberState        // pending bookmark buttons
+	statusMsgs     *statusState          // live status messages per chat
 	logger         *zap.Logger
 	wg             sync.WaitGroup // tracks in-flight message processing
 }
@@ -109,6 +113,8 @@ func New(token string, allowedIDs []int64, clearFn ClearFunc, debounceWindow tim
 		commands:       make(map[string]CommandFunc),
 		debounceWindow: debounceWindow,
 		prompts:        newPromptState(),
+		remembers:      newRememberState(),
+		statusMsgs:     newStatusState(),
 		logger:         logger,
 	}, nil
 }
@@ -136,6 +142,9 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 	processMsg := func(msg channel.IncomingMessage) {
 		tgChatID, _ := strconv.ParseInt(msg.ChatID, 10, 64)
 
+		// Pre-register replyTo for status message threading.
+		c.statusMsgs.setReplyTo(msg.ChatID, msg.MessageID)
+
 		handlerCtx := context.WithoutCancel(ctx)
 		typingCtx, stopTyping := context.WithCancel(handlerCtx)
 		go c.keepTyping(typingCtx, tgChatID)
@@ -144,13 +153,27 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 		response, err := handler(handlerCtx, msg)
 		stopTyping()
 		c.wg.Done()
+
+		// Check if remember skill was used (skip bookmark button if so).
+		skipBookmark := false
+		if entry, ok := c.statusMsgs.get(msg.ChatID); ok {
+			entry.mu.Lock()
+			skipBookmark = entry.skipBookmark
+			entry.mu.Unlock()
+		}
+
+		c.deleteStatusMessage(msg.ChatID, tgChatID)
 		if err != nil {
 			c.logger.Error("handler error", zap.Error(err), zap.String("chat_id", msg.ChatID))
 			localeCtx := i18n.WithLocale(handlerCtx, i18n.ResolveLocale(msg.Locale, msg.LanguageCode))
 			response = i18n.T(localeCtx, "TelegramErrorResponse")
 		}
 
-		c.sendResponse(tgChatID, response, msg.MessageID)
+		if c.rememberSvc != nil && response != "" && !skipBookmark && err == nil {
+			c.sendResponseWithBookmark(tgChatID, response, msg.MessageID, msg.ChatID, msg.ResolvedUserID, msg.Locale)
+		} else {
+			c.sendResponse(tgChatID, response, msg.MessageID)
+		}
 	}
 
 	debounce := newDebouncer(c.debounceWindow, processMsg)
@@ -160,6 +183,9 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 
 	// Health monitor: periodic bot.GetMe() check.
 	go c.healthMonitor(ctx)
+
+	// Cleanup stale remember entries.
+	go c.remembers.startCleanup(ctx)
 
 	for {
 		select {
@@ -173,9 +199,13 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 			return ctx.Err()
 
 		case update := <-updates:
-			// Handle inline keyboard callback queries (interactive prompts).
+			// Handle inline keyboard callback queries (bookmark + interactive prompts).
 			if update.CallbackQuery != nil && update.CallbackQuery.From != nil {
 				if c.isAllowed(update.CallbackQuery.From.ID) {
+					// Bookmark button takes priority.
+					if c.rememberSvc != nil && c.HandleRememberCallback(update.CallbackQuery) {
+						continue
+					}
 					if c.prompts.HandleCallback(c.bot, update.CallbackQuery) {
 						continue
 					}
@@ -432,16 +462,30 @@ func (c *Channel) StartStream(_ context.Context, chatID string, replyTo int) (fu
 		return nil, nil, fmt.Errorf("invalid chat ID: %w", err)
 	}
 
-	msg := tgbotapi.NewMessage(tgChatID, "...")
-	if replyTo > 0 {
-		msg.ReplyToMessageID = replyTo
+	// Reuse the status message if it was consumed by stream_start AND the task was quick.
+	// For long tasks (>30s), keep the status message as a separate log and send a fresh response.
+	var msgID int
+	if entry, ok := c.statusMsgs.get(chatID); ok && entry.isConsumed() && !entry.isLongTask() {
+		msgID = entry.getMsgID()
+		c.statusMsgs.remove(chatID)
+		// Edit status message to streaming placeholder.
+		edit := tgbotapi.NewEditMessageText(tgChatID, msgID, "...")
+		c.bot.Send(edit)
+	} else {
+		// For long tasks: finalize the status message with total time, then send fresh response.
+		if entry, ok := c.statusMsgs.get(chatID); ok && entry.isConsumed() {
+			c.finalizeStatusMessage(chatID, entry)
+		}
+		msg := tgbotapi.NewMessage(tgChatID, "...")
+		if replyTo > 0 {
+			msg.ReplyToMessageID = replyTo
+		}
+		sent, sendErr := c.bot.Send(msg)
+		if sendErr != nil {
+			return nil, nil, fmt.Errorf("sending initial stream message: %w", sendErr)
+		}
+		msgID = sent.MessageID
 	}
-	sent, err := c.bot.Send(msg)
-	if err != nil {
-		return nil, nil, fmt.Errorf("sending initial stream message: %w", err)
-	}
-
-	msgID := sent.MessageID
 	var lastEdit time.Time
 
 	editFn := func(text string) {
@@ -466,6 +510,119 @@ func (c *Channel) StartStream(_ context.Context, chatID string, replyTo int) (fu
 	}
 
 	return editFn, doneFn, nil
+}
+
+// NotifyStatus sends a live status message to the chat, or updates it in-place.
+// Implements channel.StatusNotifier.
+func (c *Channel) NotifyStatus(_ context.Context, chatID string, event channel.StatusEvent) error {
+	tgChatID, err := strconv.ParseInt(chatID, 10, 64)
+	if err != nil {
+		return nil // not a Telegram chat ID
+	}
+
+	// Handle special event types before formatting.
+
+	// stream_start: atomically mark the status message as consumed (streaming will take over).
+	if event.Type == "stream_start" {
+		c.statusMsgs.getAndMarkConsumed(chatID)
+		return nil
+	}
+
+	// skip_bookmark: signal that remember was used, no bookmark button needed.
+	if event.Type == "skip_bookmark" {
+		if entry, ok := c.statusMsgs.get(chatID); ok {
+			entry.mu.Lock()
+			entry.skipBookmark = true
+			entry.mu.Unlock()
+		}
+		return nil
+	}
+
+	line, replaces := formatStatusLine(event)
+	if line == "" {
+		return nil // unknown event type
+	}
+
+	// Get or create status entry.
+	entry, exists := c.statusMsgs.get(chatID)
+	if !exists || entry.msgID == 0 {
+		// Send initial status message (entry may be a pre-created placeholder with replyTo).
+		msg := tgbotapi.NewMessage(tgChatID, line)
+		// Preserve reply threading from the pre-registered replyTo.
+		if entry != nil && entry.replyTo > 0 {
+			msg.ReplyToMessageID = entry.replyTo
+		}
+		sent, sendErr := c.bot.Send(msg)
+		if sendErr != nil {
+			c.logger.Debug("failed to send status message", zap.Error(sendErr))
+			return nil
+		}
+		entry = c.statusMsgs.create(chatID, tgChatID, sent.MessageID)
+		entry.addLine(line)
+		return nil
+	}
+
+	// Update existing status message.
+	if replaces {
+		entry.updateLastLine(line)
+	} else {
+		entry.addLine(line)
+	}
+
+	// Rate-limited edit.
+	if entry.canEdit() {
+		edit := tgbotapi.NewEditMessageText(tgChatID, entry.msgID, entry.renderText())
+		if _, editErr := c.bot.Send(edit); editErr != nil {
+			c.logger.Debug("status edit failed", zap.Error(editErr))
+		}
+		entry.markEdited()
+	}
+
+	return nil
+}
+
+// deleteStatusMessage removes the live status message for a chat.
+// If the message was consumed by streaming, this is a no-op.
+// Runs the actual delete in a goroutine to avoid blocking the response.
+func (c *Channel) deleteStatusMessage(chatID string, tgChatID int64) {
+	entry, ok := c.statusMsgs.get(chatID)
+	if !ok {
+		return
+	}
+	c.statusMsgs.remove(chatID)
+
+	if entry.isConsumed() {
+		return // streaming took ownership
+	}
+
+	msgID := entry.getMsgID()
+	sentAt := entry.sentAt
+
+	// Delete in background to avoid blocking the actual response.
+	go func() {
+		// Ensure the message was visible for at least minStatusDisplay.
+		if elapsed := time.Since(sentAt); elapsed < minStatusDisplay {
+			time.Sleep(minStatusDisplay - elapsed)
+		}
+		del := tgbotapi.NewDeleteMessage(tgChatID, msgID)
+		if _, err := c.bot.Request(del); err != nil {
+			c.logger.Debug("failed to delete status message", zap.Error(err))
+		}
+	}()
+}
+
+// finalizeStatusMessage updates the status message with total elapsed time
+// and removes it from tracking. Used for long tasks where the status message
+// is kept as a separate log alongside the response.
+func (c *Channel) finalizeStatusMessage(chatID string, entry *statusEntry) {
+	elapsed := time.Since(entry.sentAt)
+	entry.addLine(fmt.Sprintf("\n✅ Done in %s", elapsed.Round(time.Second)))
+
+	edit := tgbotapi.NewEditMessageText(entry.tgChatID, entry.getMsgID(), entry.renderText())
+	if _, err := c.bot.Send(edit); err != nil {
+		c.logger.Debug("failed to finalize status message", zap.Error(err))
+	}
+	c.statusMsgs.remove(chatID)
 }
 
 // isSupportedDocument returns true if the MIME type is accepted for document forwarding.

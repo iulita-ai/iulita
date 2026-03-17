@@ -237,7 +237,17 @@
     "answered": "Отвечено",
     "emptyState": "Отправьте сообщение, чтобы начать чат",
     "placeholder": "Введите сообщение...",
-    "error": "Ошибка: {error}"
+    "error": "Ошибка: {error}",
+    "bookmarkSave": "Сохранить в память",
+    "bookmarkSaved": "Сохранено!",
+    "bookmarkError": "Ошибка сохранения",
+    "bookmarkExpired": "Сообщение устарело",
+    "orchestrationStarted": "Запуск {count} агентов...",
+    "orchestrationDone": "Все агенты завершили работу ({success}/{total} успешно)",
+    "agentStarted": "{id} ({type}) запущен",
+    "agentCompleted": "{id} завершил работу",
+    "agentFailed": "{id} ошибка",
+    "agentProgress": "{id}: шаг {turn}"
   },
   "facts": {
     "title": "Факты",

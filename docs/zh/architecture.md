@@ -36,8 +36,9 @@ Web Chat ────┼→ Channel Manager → Assistant → LLM Provider Chain
 | 通道 | `internal/channel/` | 输入适配器：控制台 TUI、Telegram、WebChat |
 | 通道管理器 | `internal/channelmgr/` | 通道生命周期、路由、热重载 |
 | LLM 提供商 | `internal/llm/` | Claude、Ollama、OpenAI、ONNX 嵌入 |
-| 技能 | `internal/skill/` | 20 多个工具实现 |
+| 技能 | `internal/skill/` | 30 多个工具实现 |
 | 技能管理器 | `internal/skillmgr/` | 外部技能：ClawhHub 市场、URL、本地 |
+| 书签 | `internal/bookmark/` | 快速保存助手回复为事实 + 后台精炼 |
 | 存储 | `internal/storage/sqlite/` | SQLite，支持 FTS5、向量、WAL 模式 |
 | 调度器 | `internal/scheduler/` | 支持 cron/间隔的任务队列 |
 | 仪表盘 | `internal/dashboard/` | GoFiber REST API + 嵌入式 Vue 3 SPA |
@@ -48,6 +49,7 @@ Web Chat ────┼→ Channel Manager → Assistant → LLM Provider Chain
 | 领域 | `internal/domain/` | 纯领域模型 |
 | 记忆 | `internal/memory/` | TF-IDF 聚类，记忆导出/导入 |
 | 指标 | `internal/metrics/` | Prometheus 计数器和直方图 |
+| 智能体 | `internal/agent/` | 子智能体运行器、编排器、预算控制 |
 | 事件 | `internal/eventbus/` | 发布/订阅事件总线 |
 | 费用 | `internal/cost/` | LLM 费用跟踪，含每日限额 |
 | 限流 | `internal/ratelimit/` | 速率限制 |
@@ -205,6 +207,12 @@ type StreamingSender interface {
     MessageSender
     StartStream(ctx context.Context, chatID string, replyTo int) (editFn, doneFn func(string), err error)
 }
+
+// 可选 — 通道实现此接口以在流式回复中添加书签按钮
+type BookmarkStreamingSender interface {
+    StreamingSender
+    StartStreamWithBookmark(ctx context.Context, chatID string, replyTo int, userID string) (editFn, doneFn func(string), err error)
+}
 ```
 
 ### Storage
@@ -244,6 +252,8 @@ type Repository interface {
 | `FactSaved` | 存储 | WebSocket hub |
 | `InsightCreated` | 存储 | WebSocket hub |
 | `ConfigChanged` | 配置存储 | 配置重载处理器 → 技能 |
+| `AgentOrchestrationStarted` | 编排器 | 指标、WebSocket hub |
+| `AgentOrchestrationDone` | 编排器 | 指标、WebSocket hub |
 
 ## LLM 提供商链
 
@@ -288,6 +298,7 @@ internal/
     console/             # bubbletea TUI
     telegram/            # Telegram 机器人
     webchat/             # WebSocket Web 聊天
+  bookmark/              # 快速保存助手回复为事实
   channelmgr/            # 通道生命周期管理器
   config/                # TOML + 环境变量 + 密钥链配置，设置向导
   domain/                # 领域模型
@@ -295,11 +306,14 @@ internal/
   i18n/                  # 国际化（6 种语言，TOML 目录）
   llm/                   # LLM 提供商（Claude、Ollama、OpenAI、ONNX）
   scheduler/             # 任务队列（调度器 + 工作器）
+  agent/                 # 多智能体编排（运行器、编排器、预算）
   skill/                 # 技能实现
   skillmgr/              # 外部技能管理器（ClawhHub、URL、本地）
   storage/sqlite/        # SQLite 仓库、FTS5、向量、迁移
   dashboard/             # GoFiber REST API + Vue SPA
   web/                   # Web 搜索（Brave、DuckDuckGo、SSRF 防护）
+  transcription/         # 音频/语音转录
+  doctor/                # 诊断检查（--doctor 标志）
   memory/                # TF-IDF 聚类、导出/导入
   eventbus/              # 发布/订阅事件总线
   cost/                  # LLM 费用跟踪

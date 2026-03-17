@@ -237,7 +237,17 @@
     "answered": "Answered",
     "emptyState": "Send a message to start chatting",
     "placeholder": "Type a message...",
-    "error": "Error: {error}"
+    "error": "Error: {error}",
+    "bookmarkSave": "Save to memory",
+    "bookmarkSaved": "Saved!",
+    "bookmarkError": "Save failed",
+    "bookmarkExpired": "Message expired",
+    "orchestrationStarted": "Launching {count} agents...",
+    "orchestrationDone": "All agents finished ({success}/{total} succeeded)",
+    "agentStarted": "{id} ({type}) started",
+    "agentCompleted": "{id} completed",
+    "agentFailed": "{id} failed",
+    "agentProgress": "{id}: turn {turn}"
   },
   "facts": {
     "title": "Facts",

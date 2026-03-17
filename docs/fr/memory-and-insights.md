@@ -61,6 +61,44 @@ L'assistant effectue egalement une **recherche hybride** a chaque message (pas s
 
 L'outil `forget` supprime un fait par ID. Le declencheur FTS (`facts_ad`) le retire automatiquement de l'index plein texte. Le `ON DELETE CASCADE` sur `fact_vectors` supprime l'embedding.
 
+## Signets (sauvegarde rapide)
+
+En plus du flux « remember » par chat, les utilisateurs peuvent mettre en signet n'importe quelle reponse de l'assistant en un seul clic.
+
+### Fonctionnement
+
+1. **Telegram** : un bouton 💾 de clavier en ligne apparait sous chaque reponse de l'assistant (y compris les messages multi-morceaux)
+2. **WebChat** : une icone 💾 apparait au survol des messages de l'assistant
+3. Un clic sur le bouton sauvegarde **immediatement** la reponse complete comme fait avec `source_type="bookmark"`
+4. Une tache de planificateur en arriere-plan (`bookmark.refine`) envoie le contenu a un LLM pour resume
+5. Si le LLM produit une version significativement plus courte (<90% de la longueur originale), le contenu du fait est mis a jour
+
+### Signet vs Remember
+
+| Aspect | Signet (bouton 💾) | Remember (« remember that... ») |
+|--------|---------------------|-------------------------------|
+| Declencheur | Clic sur bouton | Message de chat |
+| Contenu | Reponse complete de l'assistant | Faits cles extraits par LLM |
+| Vitesse | Instantane (<5ms) | 2-5 secondes (appel LLM) |
+| Cout en jetons | Differe (raffinement en arriere-plan) | Immediat |
+| Type de source | `bookmark` | `user` |
+| Verification des doublons | Aucune (sauvegarde tel quel) | Verification FTS des 3 premiers mots |
+
+### Raffinement en arriere-plan
+
+La tache du planificateur `bookmark.refine` :
+- **Capacites** : `llm,storage`
+- **Tentatives max** : 2
+- **Suppression apres execution** : oui (usage unique)
+- Extrait 1-3 phrases concises de la reponse mise en signet
+- Ignore la mise a jour si le LLM retourne un resultat vide ou si le raffinement n'est pas plus court
+- Gere correctement les faits supprimes (l'utilisateur peut les avoir supprimes avant le raffinement)
+
+### Securite
+
+- **Telegram** : l'expediteur du callback est verifie par rapport au destinataire du message (verification `tgUserID`)
+- **WebChat** : le cache de messages stocke le proprietaire `chatID` ; la propriete est validee avant la sauvegarde
+
 ## Decroissance temporelle
 
 Les faits et les observations decroissent au fil du temps selon une decroissance exponentielle (radioactive) :
