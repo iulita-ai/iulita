@@ -650,7 +650,7 @@ func (c *Channel) downloadFile(ctx context.Context, fileID string) ([]byte, erro
 	if err != nil {
 		return nil, fmt.Errorf("downloading file: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck,gosec
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
