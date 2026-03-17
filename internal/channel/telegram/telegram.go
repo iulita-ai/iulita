@@ -403,11 +403,11 @@ func (c *Channel) handleClear(ctx context.Context, tgChatID int64, chatID string
 	if err := c.clearFn(ctx, chatID); err != nil {
 		c.logger.Error("failed to clear history", zap.Error(err), zap.String("chat_id", chatID))
 		reply := tgbotapi.NewMessage(tgChatID, i18n.T(localeCtx, "TelegramHistoryClearFailed"))
-		_, _ = c.bot.Send(reply)
+		c.bot.Send(reply) //nolint:errcheck
 		return
 	}
 	reply := tgbotapi.NewMessage(tgChatID, i18n.T(localeCtx, "TelegramHistoryCleared"))
-	_, _ = c.bot.Send(reply)
+	c.bot.Send(reply) //nolint:errcheck
 }
 
 // SendMessage sends a proactive message to a chat. Implements channel.MessageSender.
@@ -470,7 +470,7 @@ func (c *Channel) StartStream(_ context.Context, chatID string, replyTo int) (fu
 		c.statusMsgs.remove(chatID)
 		// Edit status message to streaming placeholder.
 		edit := tgbotapi.NewEditMessageText(tgChatID, msgID, "...")
-		_, _ = c.bot.Send(edit)
+		c.bot.Send(edit) //nolint:errcheck
 	} else {
 		// For long tasks: finalize the status message with total time, then send fresh response.
 		if entry, ok := c.statusMsgs.get(chatID); ok && entry.isConsumed() {
@@ -505,7 +505,7 @@ func (c *Channel) StartStream(_ context.Context, chatID string, replyTo int) (fu
 		if _, err := c.bot.Send(edit); err != nil {
 			// Retry without markdown.
 			edit.ParseMode = ""
-			_, _ = c.bot.Send(edit)
+			c.bot.Send(edit) //nolint:errcheck
 		}
 	}
 
@@ -666,7 +666,7 @@ func (c *Channel) downloadFile(ctx context.Context, fileID string) ([]byte, erro
 // keepTyping sends the "typing..." action every 4 seconds until ctx is canceled.
 func (c *Channel) keepTyping(ctx context.Context, chatID int64) {
 	typing := tgbotapi.NewChatAction(chatID, tgbotapi.ChatTyping)
-	_, _ = c.bot.Send(typing) // send immediately
+	c.bot.Send(typing) //nolint:errcheck // send immediately
 
 	ticker := time.NewTicker(4 * time.Second)
 	defer ticker.Stop()
@@ -676,7 +676,7 @@ func (c *Channel) keepTyping(ctx context.Context, chatID int64) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			_, _ = c.bot.Send(typing)
+			c.bot.Send(typing) //nolint:errcheck
 		}
 	}
 }

@@ -79,7 +79,7 @@ func (h *RefineBookmarkHandler) Handle(ctx context.Context, payload string) (str
 		return "", fmt.Errorf("updating fact content: %w", err)
 	}
 
-	result, _ := json.Marshal(map[string]any{
+	result, _ := json.Marshal(map[string]any{ //nolint:errcheck
 		"fact_id":      p.FactID,
 		"refined":      true,
 		"original_len": len(p.Content),

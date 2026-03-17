@@ -250,7 +250,10 @@ func (c *Channel) handleRemember(conn *websocket.Conn, chatID, userID, messageID
 		return
 	}
 
-	cached := raw.(cachedMsg)
+	cached, ok := raw.(cachedMsg)
+	if !ok {
+		return
+	}
 	// Verify the requesting user owns this message.
 	if cached.chatID != chatID {
 		c.logger.Warn("bookmark ownership mismatch",

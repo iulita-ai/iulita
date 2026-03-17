@@ -72,8 +72,8 @@ func (b Budget) EffectiveMaxAgents() int {
 	return DefaultMaxAgents
 }
 
-// AgentSpec is a single agent task as provided by the orchestrate skill input. //nolint:revive // agent.AgentSpec is more readable than agent.Spec
-type AgentSpec struct {
+// AgentSpec is a single agent task as provided by the orchestrate skill input.
+type AgentSpec struct { //nolint:revive // agent.AgentSpec is more readable than agent.Spec
 	ID        string    `json:"id"`
 	Type      AgentType `json:"type"`
 	Task      string    `json:"task"`
@@ -81,8 +81,8 @@ type AgentSpec struct {
 	Tools     []string  `json:"tools,omitempty"`      // optional: explicit tool name allowlist
 }
 
-// AgentResult holds the outcome of a single sub-agent run. //nolint:revive // agent.AgentResult is more readable than agent.Result
-type AgentResult struct {
+// AgentResult holds the outcome of a single sub-agent run.
+type AgentResult struct { //nolint:revive // agent.AgentResult is more readable than agent.Result
 	ID       string
 	Type     AgentType
 	Output   string

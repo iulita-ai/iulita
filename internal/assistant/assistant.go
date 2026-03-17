@@ -474,6 +474,12 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 
 	// Agentic loop: call LLM, execute tools, repeat until text response.
 	var lastResp llm.Response
+	var extCancelFn context.CancelFunc // tracks deadline extension from TimeoutDeclarer skills
+	defer func() {
+		if extCancelFn != nil {
+			extCancelFn()
+		}
+	}()
 	compressedThisTurn := false
 	for i := 0; i < maxIterations; i++ {
 		// ForceTool only applies to the first iteration.
@@ -616,7 +622,10 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 				if td, ok := s.(skill.TimeoutDeclarer); ok {
 					if extender := skill.DeadlineExtenderFrom(ctx); extender != nil {
 						extended, extCancel := extender(ctx, td.RequestTimeout())
-						defer extCancel()
+						if extCancelFn != nil {
+							extCancelFn() // cancel previous extension if any
+						}
+						extCancelFn = extCancel
 						ctx = extended // replaces loop-level ctx
 						a.logger.Info("extended request timeout for skill",
 							zap.String("skill", tc.Name),

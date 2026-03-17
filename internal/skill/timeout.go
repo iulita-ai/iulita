@@ -20,7 +20,10 @@ func WithDeadlineExtender(ctx context.Context, fn DeadlineExtender) context.Cont
 // DeadlineExtenderFrom retrieves the DeadlineExtender from context.
 // Returns nil if not set.
 func DeadlineExtenderFrom(ctx context.Context) DeadlineExtender {
-	fn, _ := ctx.Value(ctxDeadlineExtenderKey{}).(DeadlineExtender)
+	fn, ok := ctx.Value(ctxDeadlineExtenderKey{}).(DeadlineExtender)
+	if !ok {
+		return nil
+	}
 	return fn
 }
 

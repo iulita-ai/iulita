@@ -434,7 +434,7 @@ func (m *Manager) StartStream(ctx context.Context, chatID string, replyTo int) (
 
 // StartStreamWithBookmark opens a streaming session with a bookmark button.
 // Falls back to regular StartStream if the channel doesn't support bookmarks.
-func (m *Manager) StartStreamWithBookmark(ctx context.Context, chatID string, replyTo int, userID string) (func(string), func(string), error) {
+func (m *Manager) StartStreamWithBookmark(ctx context.Context, chatID string, replyTo int, userID string) (func(string), func(string), error) { //nolint:gocritic // naming return values reduces readability here
 	sender := m.senderFor(ctx, chatID)
 	if sender == nil {
 		return nil, nil, fmt.Errorf("no running channel available for streaming to chat %s", chatID)

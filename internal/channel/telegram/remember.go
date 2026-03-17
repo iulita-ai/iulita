@@ -88,7 +88,7 @@ func (c *Channel) SetBookmarkService(svc bookmark.Service) {
 func (c *Channel) HandleRememberCallback(cq *tgbotapi.CallbackQuery) bool {
 	// Acknowledge "noop" callbacks (from already-saved ✅ button).
 	if cq.Data == "noop" {
-		c.bot.Request(tgbotapi.NewCallback(cq.ID, ""))
+		c.bot.Request(tgbotapi.NewCallback(cq.ID, "")) //nolint:errcheck
 		return true
 	}
 
@@ -101,7 +101,7 @@ func (c *Channel) HandleRememberCallback(cq *tgbotapi.CallbackQuery) bool {
 		// Already handled or expired.
 		tag := i18n.ResolveLocale("", "en")
 		cb := tgbotapi.NewCallback(cq.ID, i18n.Tl(tag, "BookmarkAlreadySaved"))
-		c.bot.Request(cb)
+		c.bot.Request(cb) //nolint:errcheck
 		return true
 	}
 
@@ -111,7 +111,7 @@ func (c *Channel) HandleRememberCallback(cq *tgbotapi.CallbackQuery) bool {
 			zap.Int64("requested_by", cq.From.ID),
 			zap.Int64("owned_by", entry.tgUserID))
 		cb := tgbotapi.NewCallback(cq.ID, "")
-		c.bot.Request(cb)
+		c.bot.Request(cb) //nolint:errcheck
 		return true
 	}
 
@@ -124,13 +124,13 @@ func (c *Channel) HandleRememberCallback(cq *tgbotapi.CallbackQuery) bool {
 			zap.Error(err),
 			zap.String("chat_id", entry.chatID))
 		cb := tgbotapi.NewCallback(cq.ID, i18n.Tl(tag, "BookmarkError"))
-		c.bot.Request(cb)
+		c.bot.Request(cb) //nolint:errcheck
 		return true
 	}
 
 	// Acknowledge the callback with a toast.
 	cb := tgbotapi.NewCallback(cq.ID, i18n.Tl(tag, "BookmarkSaved"))
-	c.bot.Request(cb)
+	c.bot.Request(cb) //nolint:errcheck
 
 	// Update button to show ✅.
 	savedLabel := i18n.Tl(tag, "BookmarkSaved")
@@ -144,14 +144,14 @@ func (c *Channel) HandleRememberCallback(cq *tgbotapi.CallbackQuery) bool {
 		),
 	)
 	editKB := tgbotapi.NewEditMessageReplyMarkup(entry.tgChatID, entry.msgID, savedKB)
-	c.bot.Send(editKB)
+	c.bot.Send(editKB) //nolint:errcheck
 
 	// Remove the keyboard after a short delay.
 	go func() {
 		time.Sleep(3 * time.Second)
 		emptyKB := tgbotapi.NewEditMessageReplyMarkup(entry.tgChatID, entry.msgID,
 			tgbotapi.InlineKeyboardMarkup{InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{}})
-		c.bot.Send(emptyKB)
+		c.bot.Send(emptyKB) //nolint:errcheck
 	}()
 
 	return true
@@ -221,7 +221,7 @@ func (c *Channel) sendSingleMessageWithBookmark(chatID int64, text string, reply
 }
 
 // StartStreamWithBookmark implements channel.BookmarkStreamingSender.
-func (c *Channel) StartStreamWithBookmark(ctx context.Context, chatID string, replyTo int, userID string) (func(string), func(string), error) {
+func (c *Channel) StartStreamWithBookmark(ctx context.Context, chatID string, replyTo int, userID string) (func(string), func(string), error) { //nolint:gocritic // naming return values reduces readability here
 	tgChatID, err := strconv.ParseInt(chatID, 10, 64)
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid chat ID: %w", err)
@@ -233,7 +233,7 @@ func (c *Channel) StartStreamWithBookmark(ctx context.Context, chatID string, re
 		msgID = entry.getMsgID()
 		c.statusMsgs.remove(chatID)
 		edit := tgbotapi.NewEditMessageText(tgChatID, msgID, "...")
-		c.bot.Send(edit)
+		c.bot.Send(edit) //nolint:errcheck
 	} else {
 		if entry, ok := c.statusMsgs.get(chatID); ok && entry.isConsumed() {
 			c.finalizeStatusMessage(chatID, entry)
@@ -307,7 +307,7 @@ func (c *Channel) StartStreamWithBookmark(ctx context.Context, chatID string, re
 		if _, err := c.bot.Send(edit); err != nil {
 			// Retry without markdown.
 			edit.ParseMode = ""
-			c.bot.Send(edit)
+			c.bot.Send(edit) //nolint:errcheck
 		}
 	}
 
