@@ -237,7 +237,17 @@
     "answered": "נענה",
     "emptyState": "שלח הודעה כדי להתחיל לשוחח",
     "placeholder": "הקלד הודעה...",
-    "error": "שגיאה: {error}"
+    "error": "שגיאה: {error}",
+    "bookmarkSave": "שמור בזיכרון",
+    "bookmarkSaved": "!נשמר",
+    "bookmarkError": "שגיאה בשמירה",
+    "bookmarkExpired": "ההודעה פגה",
+    "orchestrationStarted": "מפעיל {count} סוכנים...",
+    "orchestrationDone": "כל הסוכנים סיימו ({success}/{total} הצליחו)",
+    "agentStarted": "{id} ({type}) הופעל",
+    "agentCompleted": "{id} סיים",
+    "agentFailed": "{id} נכשל",
+    "agentProgress": "{id}: סיבוב {turn}"
   },
   "facts": {
     "title": "עובדות",

@@ -237,7 +237,17 @@
     "answered": "已回答",
     "emptyState": "发送消息开始聊天",
     "placeholder": "输入消息...",
-    "error": "错误：{error}"
+    "error": "错误：{error}",
+    "bookmarkSave": "保存到记忆",
+    "bookmarkSaved": "已保存！",
+    "bookmarkError": "保存失败",
+    "bookmarkExpired": "消息已过期",
+    "orchestrationStarted": "正在启动 {count} 个代理...",
+    "orchestrationDone": "所有代理已完成（{success}/{total} 成功）",
+    "agentStarted": "{id}（{type}）已启动",
+    "agentCompleted": "{id} 已完成",
+    "agentFailed": "{id} 失败",
+    "agentProgress": "{id}：第 {turn} 轮"
   },
   "facts": {
     "title": "事实",

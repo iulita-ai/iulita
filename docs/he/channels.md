@@ -90,13 +90,18 @@ tuiModel (bubbletea)
 - **הנחיות אינטראקטיביות**: מקלדות inline לאינטראקציות מיומנויות (מיקום מזג אוויר וכו')
 - **תמיכת מדיה**: תמונות (גודל מקסימלי), מסמכים (מגבלת 30MB), קול/שמע (עם תמלול)
 - **פקודות מובנות**: `/clear` (נקה היסטוריה), פקודות רשומות מותאמות
+- **כפתור סימניה**: כפתור 💾 במקלדת inline בכל תשובת עוזר; לחיצה שומרת את התשובה המלאה כעובדה עם עידון LLM ברקע
+- **הודעות סטטוס בזמן אמת**: עדכוני סטטוס בזמן הפעלת כלים ותזמור סוכנים, מציגים את המיומנות הנוכחית והתקדמות הסוכנים
 
 ### צינור עיבוד הודעות
 
 ```
 עדכון Telegram נכנס
     │
-    ├── callback query? → ניתוב למטפל הנחיות
+    ├── callback query?
+    │   ├── "noop" → אישור שקט
+    │   ├── "remember:*" → מטפל סימניות (שמירת עובדה + משוב ✅)
+    │   └── אחר → ניתוב למטפל הנחיות
     ├── לא הודעה? → דלג
     ├── משתמש לא ברשימה לבנה? → דחה
     ├── פקודת /clear? → טפל ישירות
@@ -166,7 +171,8 @@ Handler (Assistant.HandleMessage)
   "text": "user message",
   "chat_id": "web:abc123",
   "prompt_id": "prompt_123_1",       // רק לתשובות הנחיה
-  "prompt_answer": "option_id"       // רק לתשובות הנחיה
+  "prompt_answer": "option_id",      // רק לתשובות הנחיה
+  "remember_message_id": "nano_ts"   // רק לבקשות סימניה
 }
 ```
 
@@ -179,6 +185,22 @@ Handler (Assistant.HandleMessage)
 | `stream_done` | סטרימינג הסתיים | `text`, `message_id`, `timestamp` |
 | `status` | אירועי עיבוד | `status`, `skill_name`, `success`, `duration_ms` |
 | `prompt` | שאלה אינטראקטיבית | `text`, `prompt_id`, `options[]` |
+| `remember_ack` | אישור סימניה | `remember_ack.message_id`, `remember_ack.fact_id`, `remember_ack.status` |
+
+### פרוטוקול סימניות
+
+תכונת הסימניות מאפשרת למשתמשים לשמור תשובות עוזר כעובדות דרך כפתור בממשק.
+
+**תהליך:**
+1. השרת שולח `message` או `stream_done` עם `message_id` (חותמת זמן Unix בננו-שניות)
+2. השרת שומר במטמון תוכן לפי מפתח `(message_id, chatID)` למשך 10 דקות
+3. הממשק הקדמי מציג סמל 💾 בהעברת עכבר מעל הודעות העוזר
+4. המשתמש לוחץ → שולח `{"remember_message_id": "<message_id>"}`
+5. השרת מאמת בעלות (`chatID` חייב להתאים לרשומה במטמון), שומר כעובדה עם `source_type="bookmark"`, מכניס לתור עידון LLM ברקע
+6. השרת שולח `{"type": "remember_ack", "remember_ack": {"message_id": "...", "status": "saved", "fact_id": 42}}`
+7. הממשק הקדמי מעדכן את הסמל ל-✅
+
+**ערכי status**: `saved`, `error`, `expired` (ההודעה כבר לא במטמון)
 
 ### אימות
 
@@ -245,3 +267,9 @@ WebChat **לא** משתמש ב-UserResolver. הממשק הקדמי משיג טו
 | `stream_start` | לפני תחילת סטרימינג | הכן ממשק סטרימינג |
 | `error` | בשגיאה | הצג הודעת שגיאה |
 | `locale_changed` | לאחר מיומנות set_language | עדכן locale של ממשק |
+| `orchestration_started` | לפני השקת תת-סוכנים | הצג מספר סוכנים |
+| `agent_started` | לכל סוכן, לפני הרצה | הצג שם + סוג סוכן |
+| `agent_progress` | לכל סוכן, אחרי כל סיבוב LLM | עדכן מונה סיבובים |
+| `agent_completed` | לכל סוכן, בהצלחה | הצג משך + טוקנים |
+| `agent_failed` | לכל סוכן, בשגיאה | הצג הודעת שגיאה |
+| `orchestration_done` | אחרי סיום כל הסוכנים | הצג סטטיסטיקות מסכמות |

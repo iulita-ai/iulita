@@ -175,6 +175,18 @@ Usa la API Unificada v1 (`api.todoist.com/api/v1`). Autenticacion por token API.
 | `craft_tasks` | Gestionar tareas de Craft |
 | `craft_search` | Buscar documentos de Craft |
 
+### Orquestacion Multi-Agente
+
+| Herramienta | Entrada | Descripcion |
+|-------------|---------|-------------|
+| `orchestrate` | `agents[]`, `timeout`, `max_tokens` | Lanzar multiples sub-agentes especializados en paralelo. |
+
+**Tipos de agente**: `researcher`, `analyst`, `planner`, `coder`, `summarizer`, `generic` — cada uno con prompt de sistema especializado y subconjunto de herramientas.
+
+Los sub-agentes se ejecutan en paralelo via `errgroup`, comparten un presupuesto atomico de tokens y no pueden generar mas sub-agentes (profundidad maxima = 1). Las habilidades que requieren aprobacion (ApprovalManual, ApprovalPrompt) se filtran de las listas de herramientas.
+
+Ver [Orquestacion Multi-Agente](multi-agent.md) para detalles completos.
+
 ### Gestion de Habilidades
 
 | Herramienta | Entrada | Descripcion |

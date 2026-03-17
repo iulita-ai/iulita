@@ -36,8 +36,9 @@ Web Chat ────┼→ Channel Manager → Assistant → LLM Provider Chain
 | Каналы | `internal/channel/` | Входные адаптеры: Console TUI, Telegram, WebChat |
 | Менеджер каналов | `internal/channelmgr/` | Жизненный цикл каналов, маршрутизация, горячая перезагрузка |
 | LLM-провайдеры | `internal/llm/` | Claude, Ollama, OpenAI, ONNX-эмбеддинги |
-| Навыки | `internal/skill/` | 20+ реализаций инструментов |
+| Навыки | `internal/skill/` | 30+ реализаций инструментов |
 | Менеджер навыков | `internal/skillmgr/` | Внешние навыки: маркетплейс ClawhHub, URL, локальные |
+| Закладки | `internal/bookmark/` | Быстрое сохранение ответов ассистента как фактов + фоновое уточнение |
 | Хранилище | `internal/storage/sqlite/` | SQLite с FTS5, векторами, WAL-режимом |
 | Планировщик | `internal/scheduler/` | Очередь задач с поддержкой cron/interval |
 | Дашборд | `internal/dashboard/` | GoFiber REST API + встроенный Vue 3 SPA |
@@ -48,6 +49,7 @@ Web Chat ────┼→ Channel Manager → Assistant → LLM Provider Chain
 | Домен | `internal/domain/` | Чистые доменные модели |
 | Память | `internal/memory/` | TF-IDF кластеризация, экспорт/импорт |
 | Метрики | `internal/metrics/` | Prometheus-счётчики и гистограммы |
+| Агент | `internal/agent/` | Раннер суб-агентов, оркестратор, контроль бюджета |
 | События | `internal/eventbus/` | Шина событий publish/subscribe |
 | Расходы | `internal/cost/` | Отслеживание расходов LLM с дневными лимитами |
 | Ограничения | `internal/ratelimit/` | Ограничение частоты запросов: по чату и глобально |
@@ -205,6 +207,12 @@ type StreamingSender interface {
     MessageSender
     StartStream(ctx context.Context, chatID string, replyTo int) (editFn, doneFn func(string), err error)
 }
+
+// Опционально — каналы реализуют этот интерфейс для добавления кнопок закладок к стримируемым ответам
+type BookmarkStreamingSender interface {
+    StreamingSender
+    StartStreamWithBookmark(ctx context.Context, chatID string, replyTo int, userID string) (editFn, doneFn func(string), err error)
+}
 ```
 
 ### Storage
@@ -244,6 +252,8 @@ type Repository interface {
 | `FactSaved` | Storage | WebSocket hub |
 | `InsightCreated` | Storage | WebSocket hub |
 | `ConfigChanged` | Config store | Обработчик перезагрузки конфигурации -> навыки |
+| `AgentOrchestrationStarted` | Оркестратор | Метрики, WebSocket hub |
+| `AgentOrchestrationDone` | Оркестратор | Метрики, WebSocket hub |
 
 ## Цепочка LLM-провайдеров
 
@@ -288,6 +298,7 @@ internal/
     console/             # bubbletea TUI
     telegram/            # Telegram-бот
     webchat/             # WebSocket веб-чат
+  bookmark/              # быстрое сохранение ответов ассистента как фактов
   channelmgr/            # менеджер жизненного цикла каналов
   config/                # TOML + env + keyring конфигурация, мастер настройки
   domain/                # доменные модели
@@ -295,11 +306,14 @@ internal/
   i18n/                  # интернационализация (6 языков, TOML-каталоги)
   llm/                   # LLM-провайдеры (Claude, Ollama, OpenAI, ONNX)
   scheduler/             # очередь задач (планировщик + воркер)
+  agent/                 # мультиагентная оркестрация (раннер, оркестратор, бюджет)
   skill/                 # реализации навыков
   skillmgr/              # менеджер внешних навыков (ClawhHub, URL, локальные)
   storage/sqlite/        # SQLite-репозиторий, FTS5, векторы, миграции
   dashboard/             # GoFiber REST API + Vue SPA
   web/                   # веб-поиск (Brave, DuckDuckGo, защита от SSRF)
+  transcription/         # транскрипция аудио/голоса
+  doctor/                # диагностические проверки (флаг --doctor)
   memory/                # TF-IDF кластеризация, экспорт/импорт
   eventbus/              # шина событий publish/subscribe
   cost/                  # отслеживание расходов LLM

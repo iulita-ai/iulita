@@ -61,6 +61,44 @@ The assistant also performs a **hybrid search** on every message (not just expli
 
 The `forget` tool deletes a fact by ID. The FTS trigger (`facts_ad`) automatically removes it from the full-text index. The `ON DELETE CASCADE` on `fact_vectors` removes the embedding.
 
+## Bookmarks (Quick Save)
+
+In addition to the chat-based "remember" flow, users can bookmark any assistant response with a single click.
+
+### How It Works
+
+1. **Telegram**: a 💾 inline keyboard button appears below every assistant response (including multi-chunk messages)
+2. **WebChat**: a 💾 icon appears on hover over assistant messages
+3. Clicking the button **immediately** saves the full response as a fact with `source_type="bookmark"`
+4. A background scheduler task (`bookmark.refine`) sends the content to an LLM for summarization
+5. If the LLM produces a meaningfully shorter version (<90% of original length), the fact content is updated
+
+### Bookmark vs Remember
+
+| Aspect | Bookmark (💾 button) | Remember ("remember that...") |
+|--------|---------------------|-------------------------------|
+| Trigger | Button click | Chat message |
+| Content | Full assistant response | LLM-extracted key facts |
+| Speed | Instant (<5ms) | 2-5 seconds (LLM call) |
+| Token cost | Deferred (background refine) | Immediate |
+| Source type | `bookmark` | `user` |
+| Dedup check | None (saves as-is) | FTS first-3-words check |
+
+### Background Refinement
+
+The `bookmark.refine` scheduler task:
+- **Capabilities**: `llm,storage`
+- **Max attempts**: 2
+- **Delete after run**: yes (one-shot)
+- Extracts 1-3 concise sentences from the bookmarked response
+- Skips update if LLM returns empty or refinement is not shorter
+- Gracefully handles deleted facts (user may have removed it before refinement runs)
+
+### Security
+
+- **Telegram**: callback sender verified against message recipient (`tgUserID` check)
+- **WebChat**: message cache stores owner `chatID`; ownership validated before save
+
 ## Temporal Decay
 
 Facts and insights decay over time using exponential (radioactive) decay:

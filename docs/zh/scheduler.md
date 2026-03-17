@@ -32,6 +32,7 @@ Worker（工作器）
     ├── HeartbeatHandler
     ├── ReminderFireHandler
     ├── AgentJobHandler
+    ├── RefineBookmarkHandler
     └── TodoSyncHandler
 ```
 
@@ -180,6 +181,18 @@ pending → claimed（由工作器）→ running → completed / failed
 轮询 `GetDueAgentJobs(now)` 获取用户定义的定时 LLM 任务。在执行前立即更新 `next_run`（防止重复）。
 
 **处理器**：使用用户定义的提示词调用 `provider.Complete`。可选将结果投递到配置的聊天。
+
+### 书签精炼（`bookmark.refine`）
+
+- **触发**：按需（由 `bookmark.Service.Save` 创建）
+- **任务类型**：`bookmark.refine`
+- **能力**：`llm,storage`
+- **最大尝试次数**：2
+- **运行后删除**：是
+
+**处理器**：接收 `{fact_id, content, chat_id, user_id}`。使用摘要提示词调用 LLM 提取 1-3 个简洁句子。如果精炼版本明显更短（<原始长度的 90%），则更新事实内容。优雅处理已删除的事实。
+
+**非定时任务** — 任务在用户点击书签按钮时按需创建。工作器在下一个轮询周期（每 5 秒）中拾取它们。
 
 ### 待办同步（`todo_sync`）
 

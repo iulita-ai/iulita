@@ -25,6 +25,10 @@ const (
 	FactSaved       = "fact.saved"
 	FactDeleted     = "fact.deleted"
 	ConfigChanged   = "config.changed"
+
+	// Multi-agent orchestration events.
+	AgentOrchestrationStarted = "agent.orchestration.started"
+	AgentOrchestrationDone    = "agent.orchestration.done"
 )
 
 // Handler processes an event. Returning an error logs a warning but does not

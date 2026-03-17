@@ -237,7 +237,17 @@
     "answered": "Repondu",
     "emptyState": "Envoyez un message pour commencer a discuter",
     "placeholder": "Tapez un message...",
-    "error": "Erreur : {error}"
+    "error": "Erreur : {error}",
+    "bookmarkSave": "Sauvegarder en memoire",
+    "bookmarkSaved": "Sauvegarde !",
+    "bookmarkError": "Echec de la sauvegarde",
+    "bookmarkExpired": "Message expire",
+    "orchestrationStarted": "Lancement de {count} agents...",
+    "orchestrationDone": "Tous les agents ont terminé ({success}/{total} réussis)",
+    "agentStarted": "{id} ({type}) démarré",
+    "agentCompleted": "{id} terminé",
+    "agentFailed": "{id} échoué",
+    "agentProgress": "{id} : tour {turn}"
   },
   "facts": {
     "title": "Faits",

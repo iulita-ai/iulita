@@ -11,6 +11,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/iulita-ai/iulita/internal/agent"
 	"github.com/iulita-ai/iulita/internal/channel"
 	"github.com/iulita-ai/iulita/internal/domain"
 	"github.com/iulita-ai/iulita/internal/eventbus"
@@ -149,6 +150,10 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 	timeout := a.effectiveTimeout()
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+
+	// Inject deadline extender so long-running skills (orchestrate) can
+	// replace the context deadline with their own longer timeout.
+	ctx = skill.WithDeadlineExtender(ctx, skill.DefaultDeadlineExtender)
 
 	// Enrich context with caller identity for skills.
 	ctx = skill.WithChatID(ctx, msg.ChatID)
@@ -421,6 +426,9 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 	currentTime := a.resolveCurrentTime(ctx, msg.ChatID, effectiveUserID)
 	a.logger.Debug("injected current time", zap.String("current_time", currentTime), zap.String("chat_id", msg.ChatID))
 
+	// Propagate current time via context so sub-agents can access it.
+	ctx = agent.WithCurrentTime(ctx, currentTime)
+
 	// Run preprocessor hooks.
 	a.runPreHooks(ctx, &msg)
 
@@ -466,6 +474,12 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 
 	// Agentic loop: call LLM, execute tools, repeat until text response.
 	var lastResp llm.Response
+	var extCancelFn context.CancelFunc // tracks deadline extension from TimeoutDeclarer skills
+	defer func() {
+		if extCancelFn != nil {
+			extCancelFn()
+		}
+	}()
 	compressedThisTurn := false
 	for i := 0; i < maxIterations; i++ {
 		// ForceTool only applies to the first iteration.
@@ -481,7 +495,17 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 		useStreaming := a.streaming && a.streamSender != nil && len(req.Tools) == 0
 		if sp, ok := a.provider.(llm.StreamingProvider); ok && useStreaming {
 			a.notifyStatus(ctx, msg.ChatID, channel.StatusEvent{Type: "stream_start"})
-			editFn, doneFn, streamErr := a.streamSender.StartStream(ctx, msg.ChatID, msg.MessageID)
+			var editFn func(string)
+			var doneFn func(string)
+			var streamErr error
+			// Use BookmarkStreamingSender if available for "remember" button support.
+			// Skip bookmark if this turn already called "remember" — the fact is already saved.
+			usedRemember := hasToolCall(req.ToolExchanges, "remember")
+			if bss, ok := a.streamSender.(channel.BookmarkStreamingSender); ok && effectiveUserID != "" && !usedRemember {
+				editFn, doneFn, streamErr = bss.StartStreamWithBookmark(ctx, msg.ChatID, msg.MessageID, effectiveUserID)
+			} else {
+				editFn, doneFn, streamErr = a.streamSender.StartStream(ctx, msg.ChatID, msg.MessageID)
+			}
 			if streamErr == nil {
 				var accumulated strings.Builder
 				lastResp, err = sp.CompleteStream(ctx, req, func(chunk string) {
@@ -551,6 +575,13 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 			a.runPostHooks(ctx, &response)
 			a.saveAssistantResponse(ctx, msg.ChatID, response)
 
+			// Signal channels to skip bookmark button if remember was already used.
+			if hasToolCall(req.ToolExchanges, "remember") {
+				a.notifyStatus(ctx, msg.ChatID, channel.StatusEvent{
+					Type: "skip_bookmark",
+				})
+			}
+
 			if a.bus != nil {
 				a.bus.Publish(ctx, eventbus.Event{
 					Type: eventbus.ResponseSent,
@@ -582,6 +613,25 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 					IsError:    false,
 				})
 				continue
+			}
+
+			// If the skill declares a custom timeout, extend the LOOP-LEVEL context
+			// so both the skill execution AND subsequent LLM calls (synthesis) run
+			// under the extended deadline.
+			if s, ok := a.registry.Get(tc.Name); ok {
+				if td, ok := s.(skill.TimeoutDeclarer); ok {
+					if extender := skill.DeadlineExtenderFrom(ctx); extender != nil {
+						extended, extCancel := extender(ctx, td.RequestTimeout())
+						if extCancelFn != nil {
+							extCancelFn() // cancel previous extension if any
+						}
+						extCancelFn = extCancel
+						ctx = extended // replaces loop-level ctx
+						a.logger.Info("extended request timeout for skill",
+							zap.String("skill", tc.Name),
+							zap.Duration("timeout", td.RequestTimeout()))
+					}
+				}
 			}
 
 			result := a.executeSkill(ctx, msg.ChatID, tc)
@@ -879,6 +929,18 @@ func (a *Assistant) notifyStatus(ctx context.Context, chatID string, event chann
 			a.logger.Debug("failed to send status notification", zap.Error(err))
 		}
 	}
+}
+
+// hasToolCall checks whether any tool exchange contains a call to the named tool.
+func hasToolCall(exchanges []llm.ToolExchange, toolName string) bool {
+	for _, ex := range exchanges {
+		for _, tc := range ex.ToolCalls {
+			if tc.Name == toolName {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // SetEventBus attaches an event bus for publishing lifecycle events.

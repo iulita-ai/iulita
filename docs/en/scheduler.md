@@ -32,6 +32,7 @@ Worker
     ├── HeartbeatHandler
     ├── ReminderFireHandler
     ├── AgentJobHandler
+    ├── RefineBookmarkHandler
     └── TodoSyncHandler
 ```
 
@@ -180,6 +181,18 @@ Deletes insights where `expires_at < now`. Default TTL is 30 days.
 Polls `GetDueAgentJobs(now)` for user-defined scheduled LLM tasks. Updates `next_run` immediately (before execution) to prevent duplicates.
 
 **Handler**: Calls `provider.Complete` with the user-defined prompt. Optionally delivers the result to a configured chat.
+
+### Bookmark Refinement (`bookmark.refine`)
+
+- **Trigger**: on-demand (created by `bookmark.Service.Save`)
+- **Task type**: `bookmark.refine`
+- **Capabilities**: `llm,storage`
+- **Max attempts**: 2
+- **Delete after run**: yes
+
+**Handler**: Receives `{fact_id, content, chat_id, user_id}`. Calls LLM with a summarization prompt to extract 1-3 concise sentences. Updates the fact content if the refinement is meaningfully shorter (<90% of original). Gracefully handles already-deleted facts.
+
+**Not a scheduled job** — tasks are created on-demand when users click the bookmark button. The worker picks them up in the next poll cycle (every 5 seconds).
 
 ### Todo Sync (`todo_sync`)
 

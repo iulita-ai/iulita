@@ -36,8 +36,9 @@ Web Chat ────┼→ Channel Manager → Assistant → LLM Provider Chain
 | ערוצים | `internal/channel/` | מתאמי קלט: Console TUI, Telegram, WebChat |
 | מנהל ערוצים | `internal/channelmgr/` | מחזור חיי ערוצים, ניתוב, טעינה חמה |
 | ספקי LLM | `internal/llm/` | Claude, Ollama, OpenAI, הטבעות ONNX |
-| מיומנויות | `internal/skill/` | 20+ מימושי כלים |
+| מיומנויות | `internal/skill/` | 30+ מימושי כלים |
 | מנהל מיומנויות | `internal/skillmgr/` | מיומנויות חיצוניות: שוק ClawhHub, URL, מקומי |
+| סימניות | `internal/bookmark/` | שמירה מהירה של תשובות עוזר כעובדות + עידון ברקע |
 | אחסון | `internal/storage/sqlite/` | SQLite עם FTS5, וקטורים, מצב WAL |
 | מתזמן | `internal/scheduler/` | תור משימות עם תמיכה ב-cron/interval |
 | לוח בקרה | `internal/dashboard/` | GoFiber REST API + SPA Vue 3 מוטבע |
@@ -48,6 +49,7 @@ Web Chat ────┼→ Channel Manager → Assistant → LLM Provider Chain
 | דומיין | `internal/domain/` | מודלי דומיין טהורים |
 | זיכרון | `internal/memory/` | אשכולות TF-IDF, ייצוא/ייבוא |
 | מטריקות | `internal/metrics/` | מוני Prometheus והיסטוגרמות |
+| סוכן | `internal/agent/` | רצן תת-סוכנים, מתזמר, אכיפת תקציב |
 | אירועים | `internal/eventbus/` | אפיק אירועים publish/subscribe |
 | עלויות | `internal/cost/` | מעקב עלויות LLM עם מגבלות יומיות |
 | הגבלת קצב | `internal/ratelimit/` | מגבילי קצב לכל שיחה וגלובליים |
@@ -205,6 +207,12 @@ type StreamingSender interface {
     MessageSender
     StartStream(ctx context.Context, chatID string, replyTo int) (editFn, doneFn func(string), err error)
 }
+
+// אופציונלי — ערוצים מממשים זאת כדי להוסיף כפתורי סימניה לתשובות בסטרימינג
+type BookmarkStreamingSender interface {
+    StreamingSender
+    StartStreamWithBookmark(ctx context.Context, chatID string, replyTo int, userID string) (editFn, doneFn func(string), err error)
+}
 ```
 
 ### Storage
@@ -244,6 +252,8 @@ type Repository interface {
 | `FactSaved` | אחסון | רכזת WebSocket |
 | `InsightCreated` | אחסון | רכזת WebSocket |
 | `ConfigChanged` | Config store | מטפל טעינת הגדרות → מיומנויות |
+| `AgentOrchestrationStarted` | מתזמר | מטריקות, רכזת WebSocket |
+| `AgentOrchestrationDone` | מתזמר | מטריקות, רכזת WebSocket |
 
 ## שרשרת ספקי LLM
 
@@ -288,6 +298,7 @@ internal/
     console/             # bubbletea TUI
     telegram/            # בוט Telegram
     webchat/             # צ'אט אינטרנט WebSocket
+  bookmark/              # שמירה מהירה של תשובות עוזר כעובדות
   channelmgr/            # מנהל מחזור חיי ערוצים
   config/                # הגדרות TOML + env + keyring, אשף התקנה
   domain/                # מודלי דומיין
@@ -295,11 +306,14 @@ internal/
   i18n/                  # בינלאומיות (6 שפות, קטלוגי TOML)
   llm/                   # ספקי LLM (Claude, Ollama, OpenAI, ONNX)
   scheduler/             # תור משימות (מתזמן + worker)
+  agent/                 # תזמור רב-סוכנים (רצן, מתזמר, תקציב)
   skill/                 # מימושי מיומנויות
   skillmgr/              # מנהל מיומנויות חיצוניות (ClawhHub, URL, מקומי)
   storage/sqlite/        # מאגר SQLite, FTS5, וקטורים, מיגרציות
   dashboard/             # GoFiber REST API + Vue SPA
   web/                   # חיפוש אינטרנט (Brave, DuckDuckGo, הגנת SSRF)
+  transcription/         # תמלול שמע/קול
+  doctor/                # בדיקות אבחון (דגל --doctor)
   memory/                # אשכולות TF-IDF, ייצוא/ייבוא
   eventbus/              # אפיק אירועים publish/subscribe
   cost/                  # מעקב עלויות LLM

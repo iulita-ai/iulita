@@ -287,3 +287,16 @@ other = "[סיכום השיחה הקודמת]\n"
 
 [ErrorUnknownSkill]
 other = "שגיאה: מיומנות לא מוכרת {{.Name}}"
+
+# --- Bookmark / Remember button ---
+[BookmarkButton]
+other = "💾 שמור"
+
+[BookmarkSaved]
+other = "✅ נשמר"
+
+[BookmarkAlreadySaved]
+other = "כבר נשמר"
+
+[BookmarkError]
+other = "❌ שגיאה"

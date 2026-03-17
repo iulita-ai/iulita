@@ -61,6 +61,44 @@ El asistente tambien realiza una **busqueda hibrida** en cada mensaje (no solo e
 
 La herramienta `forget` elimina un dato por ID. El trigger FTS (`facts_ad`) lo elimina automaticamente del indice de texto completo. El `ON DELETE CASCADE` en `fact_vectors` elimina el embedding.
 
+## Marcadores (Guardado Rapido)
+
+Ademas del flujo de "recordar" basado en chat, los usuarios pueden marcar cualquier respuesta del asistente con un solo clic.
+
+### Como Funciona
+
+1. **Telegram**: un boton 💾 de teclado inline aparece debajo de cada respuesta del asistente (incluyendo mensajes de multiples fragmentos)
+2. **WebChat**: un icono 💾 aparece al pasar el raton sobre los mensajes del asistente
+3. Al hacer clic en el boton se guarda **inmediatamente** la respuesta completa como dato con `source_type="bookmark"`
+4. Una tarea del planificador en segundo plano (`bookmark.refine`) envia el contenido a un LLM para resumirlo
+5. Si el LLM produce una version significativamente mas corta (<90% de la longitud original), el contenido del dato se actualiza
+
+### Marcador vs Recordar
+
+| Aspecto | Marcador (boton 💾) | Recordar ("recuerda que...") |
+|---------|---------------------|-------------------------------|
+| Disparador | Clic en boton | Mensaje de chat |
+| Contenido | Respuesta completa del asistente | Datos clave extraidos por LLM |
+| Velocidad | Instantaneo (<5ms) | 2-5 segundos (llamada LLM) |
+| Costo de tokens | Diferido (refinamiento en segundo plano) | Inmediato |
+| Tipo de fuente | `bookmark` | `user` |
+| Verificacion de duplicados | Ninguna (guarda tal cual) | Verificacion FTS de 3 primeras palabras |
+
+### Refinamiento en Segundo Plano
+
+La tarea del planificador `bookmark.refine`:
+- **Capacidades**: `llm,storage`
+- **Intentos maximos**: 2
+- **Eliminar despues de ejecucion**: si (una sola vez)
+- Extrae 1-3 oraciones concisas de la respuesta marcada
+- Omite la actualizacion si el LLM devuelve vacio o el refinamiento no es mas corto
+- Maneja correctamente datos eliminados (el usuario puede haberlos eliminado antes del refinamiento)
+
+### Seguridad
+
+- **Telegram**: el remitente del callback se verifica contra el destinatario del mensaje (verificacion de `tgUserID`)
+- **WebChat**: el cache de mensajes almacena el propietario `chatID`; se valida la propiedad antes de guardar
+
 ## Decaimiento Temporal
 
 Los datos y las perspectivas decaen con el tiempo usando decaimiento exponencial (radiactivo):

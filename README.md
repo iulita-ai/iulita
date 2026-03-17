@@ -4,7 +4,11 @@
 [![License](https://img.shields.io/github/license/iulita-ai/iulita)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/iulita-ai/iulita)](https://github.com/iulita-ai/iulita/releases/latest)
 
-# Iulita
+<p align="center">
+  <img src="assets/logo-256x256.png" alt="Iulita.ai" width="128" />
+</p>
+
+# Iulita.ai
 
 Personal AI assistant that learns from **your data, not hallucinations about you**.
 
@@ -16,17 +20,20 @@ Console-first: launches a full-screen TUI chat by default. Also runs as a headle
 
 - **Fact-based memory** — stores only what you explicitly tell it to remember, no hallucinated "knowledge"
 - **Cross-reference insights** — discovers patterns across your facts using clustering and LLM analysis
+- **Multi-agent orchestration** — parallel sub-agents for complex tasks (research + analysis simultaneously)
+- **Bookmark (quick save)** — save any assistant response as a fact with one click, background LLM refinement
 - **Console TUI** — full-screen chat with markdown rendering, streaming, slash commands
 - **Multi-channel** — Telegram bot, Web Chat (WebSocket), Console TUI
 - **Temporal decay** — older memories naturally lose relevance (configurable half-life)
 - **Hybrid search** — FTS5 full-text + ONNX vector embeddings with MMR reranking
-- **20+ skills** — web search, Google Workspace, Todoist, Craft, weather, shell exec, and more
+- **25+ skills** — web search, Google Workspace, Todoist, Craft, weather, shell exec, multi-agent, and more
 - **Text skills** — extend with custom instructions via Markdown files
 - **Context compression** — automatically summarizes old messages when context window fills up
 - **Task scheduler** — background jobs for insight generation, profile analysis, reminders
 - **Web dashboard** — Vue 3 SPA for managing facts, insights, tasks, channels, users, and settings
 - **Multi-user** — JWT auth, user-scoped data, cross-channel fact sharing
 - **i18n** — 6 languages (English, Russian, Chinese, Spanish, French, Hebrew + RTL)
+- **LLM provider routing** — different models for different tasks (Claude for complex, Ollama for cheap)
 - **ClawhHub marketplace** — install community skills from the marketplace or via URL
 - **Zero-config local install** — XDG paths, keyring secrets, interactive setup wizard
 
@@ -84,34 +91,47 @@ No training data. No hallucinations. Just your verified facts.
 ```
 Console TUI ─┐
 Telegram ────┤
-Web Chat ────┼→ Channel → Assistant → LLM Provider
-                   ↕          ↕
-               Resolver    Storage (SQLite)
-                              ↕
-                        Scheduler → Worker
-                        (insights, analysis, reminders)
+Web Chat ────┼→ Channel Manager → Assistant → LLM Provider Chain
+                     ↕                ↕
+                 UserResolver      Storage (SQLite)
+                                     ↕
+                               Scheduler → Worker
+                               (insights, analysis, reminders)
+                                     ↕
+                                Event Bus → Dashboard (WebSocket)
+                                          → Prometheus Metrics
+                                          → Push Notifications
+                                          → Cost Tracker
 ```
 
 | Component | Description |
 |-----------|-------------|
 | `channel/console` | Bubbletea TUI with markdown, streaming, slash commands |
-| `channel/telegram` | Telegram bot with whitelist, debouncing, streaming edits |
-| `channel/webchat` | WebSocket-based web chat with JWT auth |
-| `assistant` | Orchestrator: history, memory, skills, compression, approvals |
-| `llm/claude` | Claude API with prompt caching, streaming, context overflow recovery |
+| `channel/telegram` | Telegram bot with whitelist, debouncing, streaming edits, bookmark button |
+| `channel/webchat` | WebSocket-based web chat with JWT auth, bookmark support |
+| `assistant` | Orchestrator: history, memory, skills, compression, approvals, streaming |
+| `agent` | Multi-agent orchestration: parallel sub-agents, budget enforcement, depth limits |
+| `llm/claude` | Claude API with prompt caching, streaming, extended thinking, context overflow recovery |
 | `llm/ollama` | Ollama local LLM for dev/background tasks |
 | `llm/openai` | OpenAI-compatible provider (fallback) |
+| `llm/onnx` | Local ONNX embeddings (all-MiniLM-L6-v2, 384 dims) |
 | `storage/sqlite` | SQLite with FTS5 + ONNX vectors, WAL mode |
-| `skill/*` | 20+ tool implementations |
+| `skill/*` | 25+ tool implementations |
+| `bookmark` | Quick-save assistant responses as facts with background LLM refinement |
 | `scheduler` | Task queue with local + remote worker support |
 | `dashboard` | GoFiber REST API + embedded Vue 3 SPA |
 | `skillmgr` | External skill manager (ClawhHub, URL, local) |
+| `eventbus` | Typed publish/subscribe event bus |
+| `memory` | TF-IDF clustering, memory export/import |
+| `cost` | LLM cost tracking with daily limits |
+| `metrics` | Prometheus counters and histograms |
 
 ### Skills
 
 | Skill | Description |
 |-------|-------------|
 | `remember` / `recall` / `forget` | Persistent fact memory with hybrid search |
+| `orchestrate` | Multi-agent parallel execution (researcher, analyst, planner, coder, summarizer) |
 | `reminders` | Time-based reminders with delivery |
 | `directives` | Persistent user preferences for the AI |
 | `insights` | AI-generated cross-reference insights |
@@ -123,8 +143,8 @@ Web Chat ────┼→ Channel → Assistant → LLM Provider
 | `weather` | Weather forecasts (Open-Meteo, wttr.in, OpenWeatherMap) |
 | `exchange` | Currency exchange rates |
 | `geolocation` | IP-based geolocation |
-| `shell_exec` | Sandboxed shell command execution |
-| `delegate` | Multi-agent task delegation |
+| `shell_exec` | Sandboxed shell command execution (requires admin approval) |
+| `delegate` | One-shot LLM delegation to secondary providers |
 | `pdfreader` | PDF document reading |
 | `set_language` | Switch interface language via chat |
 | `skills` | List, enable, disable, configure skills at runtime |
@@ -178,10 +198,12 @@ make check-secrets  # scan for leaked secrets
 cmd/iulita/          # entrypoint, DI wiring, graceful shutdown
 internal/
   assistant/         # orchestrator (LLM loop, memory, compression, approvals)
+  agent/             # multi-agent orchestration (runner, orchestrator, budget)
   channel/
     console/         # bubbletea TUI
     telegram/        # Telegram bot
     webchat/         # WebSocket web chat
+  bookmark/          # quick-save assistant responses as facts
   channelmgr/        # channel lifecycle manager
   config/            # TOML + env + keyring config, setup wizard
   domain/            # domain models
@@ -194,32 +216,45 @@ internal/
   storage/sqlite/    # SQLite repository, FTS5, vectors, migrations
   dashboard/         # GoFiber REST API + Vue SPA
   web/               # web search (Brave, DuckDuckGo, SSRF protection)
+  memory/            # TF-IDF clustering, memory export/import
+  eventbus/          # publish/subscribe event bus
+  cost/              # LLM cost tracking
+  metrics/           # Prometheus metrics
+  ratelimit/         # rate limiting
+  notify/            # push notifications (Pushover, Ntfy)
 ui/                  # Vue 3 + Naive UI + UnoCSS frontend
 skills/              # text skill files (Markdown)
+docs/                # documentation (6 languages)
 ```
 
 ## Tech Stack
 
 - **Go 1.25** with pure-Go SQLite ([modernc.org/sqlite](https://modernc.org/sqlite))
 - **SQLite** (WAL mode) via [bun](https://bun.uptrace.dev/) ORM + FTS5 + ONNX vector search
-- **anthropic-sdk-go** — Claude API with prompt caching
+- **anthropic-sdk-go** — Claude API with prompt caching and extended thinking
 - **bubbletea + lipgloss + glamour** — console TUI
-- **telegram-bot-api/v5** — Telegram
-- **GoFiber** — dashboard HTTP server
+- **telegram-bot-api/v5** — Telegram bot with streaming edits
+- **GoFiber** — dashboard HTTP server + WebSocket hub
 - **Vue 3 + Naive UI + UnoCSS** — dashboard frontend
-- **vue-i18n** — frontend internationalization
-- **koanf** — configuration (TOML + env + keyring overlay)
+- **vue-i18n** — frontend internationalization (6 languages)
+- **koanf** — configuration (TOML + env + keyring overlay + DB overrides)
+- **hugot (ONNX)** — local sentence embeddings (all-MiniLM-L6-v2)
+- **errgroup** — parallel sub-agent orchestration
 - **zap** — structured logging
-- **Prometheus** — metrics
+- **Prometheus** — metrics (LLM, skills, tasks, messages, sessions)
+- **robfig/cron** — cron scheduling for background jobs
 
 ## Security
 
 - Pre-commit hook blocks secrets via [gitleaks](https://github.com/gitleaks/gitleaks)
 - Telegram user whitelist (`allowed_ids`)
-- JWT auth for dashboard and web chat
+- JWT auth (bcrypt) for dashboard and web chat
 - AES-256-GCM encryption for DB-stored config overrides
-- SSRF protection for web fetch/search (blocks private IPs)
-- Tool approval levels (auto / prompt / manual) with locale-aware vocabulary
+- Dual-layer SSRF protection for web fetch/search (pre-flight DNS + connect-time IP check)
+- Tool approval levels (auto / prompt / manual) with locale-aware vocabulary in 6 languages
+- Sub-agent security: approval-gated skills (shell_exec) excluded from sub-agent tool sets
+- Agent depth limit (max 1) prevents infinite agent spawning
+- Per-chat and global rate limiting
 - Config validation on startup
 - CodeQL and gitleaks in CI
 
@@ -229,16 +264,17 @@ Full documentation is available in the [`docs/`](docs/) directory:
 
 - [Getting Started](docs/en/getting-started.md) — installation, first run, CLI reference
 - [Architecture](docs/en/architecture.md) — system overview, message flow, key interfaces
-- [Memory and Insights](docs/en/memory-and-insights.md) — fact storage, temporal decay, embeddings
-- [Channels](docs/en/channels.md) — Console TUI, Telegram, WebChat
-- [LLM Providers](docs/en/llm-providers.md) — Claude, Ollama, OpenAI, ONNX
-- [Skills](docs/en/skills.md) — all 20+ tools, approval levels, marketplace
+- [Memory and Insights](docs/en/memory-and-insights.md) — fact storage, temporal decay, embeddings, bookmarks
+- [Multi-Agent](docs/en/multi-agent.md) — parallel sub-agents, orchestration, budget system
+- [Channels](docs/en/channels.md) — Console TUI, Telegram, WebChat, bookmark button
+- [LLM Providers](docs/en/llm-providers.md) — Claude, Ollama, OpenAI, ONNX, provider routing
+- [Skills](docs/en/skills.md) — all 25+ tools, approval levels, marketplace
 - [i18n / l10n](docs/en/i18n.md) — 6 languages, RTL support
 - [Configuration](docs/en/configuration.md) — layered config, hot-reload
 - [Storage](docs/en/storage.md) — SQLite, FTS5, vector search
-- [Scheduler](docs/en/scheduler.md) — background jobs, agent tasks
+- [Scheduler](docs/en/scheduler.md) — background jobs, agent tasks, bookmark refinement
 - [Dashboard](docs/en/dashboard.md) — REST API, Vue 3 SPA
-- [Security](docs/en/security.md) — JWT, SSRF, encryption
+- [Security](docs/en/security.md) — JWT, SSRF, encryption, tool approvals
 - [Deployment](docs/en/deployment.md) — Docker, monitoring, backup
 
 Documentation is available in: [English](docs/en/) | [Русский](docs/ru/) | [中文](docs/zh/) | [Español](docs/es/) | [Français](docs/fr/) | [עברית](docs/he/)

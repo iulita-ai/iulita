@@ -90,13 +90,18 @@ Full-featured Telegram bot with streaming, debouncing, and interactive prompts.
 - **Interactive prompts**: inline keyboards for skill interactions (weather location, etc.)
 - **Media support**: photos (largest size), documents (30MB limit), voice/audio (with transcription)
 - **Built-in commands**: `/clear` (clear history), custom registered commands
+- **Bookmark button**: 💾 inline keyboard button on every assistant response; click saves the full response as a fact with background LLM refinement
+- **Live status messages**: real-time status updates during tool execution and agent orchestration, showing which skill is running and agent progress
 
 ### Message Processing Pipeline
 
 ```
 Incoming Telegram Update
     │
-    ├── Callback query? → route to prompt handler
+    ├── Callback query?
+    │   ├── "noop" → acknowledge silently
+    │   ├── "remember:*" → bookmark handler (save fact + ✅ feedback)
+    │   └── other → route to prompt handler
     ├── Not a message? → skip
     ├── User not in whitelist? → reject
     ├── /clear command? → handle directly
@@ -166,7 +171,8 @@ WebSocket-based web chat embedded in the dashboard.
   "text": "user message",
   "chat_id": "web:abc123",
   "prompt_id": "prompt_123_1",       // only for prompt responses
-  "prompt_answer": "option_id"       // only for prompt responses
+  "prompt_answer": "option_id",      // only for prompt responses
+  "remember_message_id": "nano_ts"   // only for bookmark requests
 }
 ```
 
@@ -174,11 +180,27 @@ WebSocket-based web chat embedded in the dashboard.
 
 | Type | Purpose | Key Fields |
 |------|---------|------------|
-| `message` | Normal response | `text`, `timestamp` |
+| `message` | Normal response | `text`, `message_id`, `timestamp` |
 | `stream_edit` | Streaming update | `text`, `message_id`, `timestamp` |
 | `stream_done` | Stream finalized | `text`, `message_id`, `timestamp` |
 | `status` | Processing events | `status`, `skill_name`, `success`, `duration_ms` |
 | `prompt` | Interactive question | `text`, `prompt_id`, `options[]` |
+| `remember_ack` | Bookmark confirmation | `remember_ack.message_id`, `remember_ack.fact_id`, `remember_ack.status` |
+
+### Bookmark Protocol
+
+The bookmark feature allows users to save assistant responses as facts via a UI button.
+
+**Flow:**
+1. Server sends `message` or `stream_done` with `message_id` (Unix nanosecond timestamp)
+2. Server caches content keyed by `(message_id, chatID)` for 10 minutes
+3. Frontend shows 💾 icon on hover over assistant messages
+4. User clicks → sends `{"remember_message_id": "<message_id>"}`
+5. Server validates ownership (`chatID` must match cached entry), saves as fact with `source_type="bookmark"`, enqueues background LLM refinement
+6. Server sends `{"type": "remember_ack", "remember_ack": {"message_id": "...", "status": "saved", "fact_id": 42}}`
+7. Frontend updates icon to ✅
+
+**Status values**: `saved`, `error`, `expired` (message no longer in cache)
 
 ### Authentication
 
@@ -245,3 +267,9 @@ Channels receive `StatusEvent` notifications for UX feedback:
 | `stream_start` | Before streaming begins | Prepare streaming UI |
 | `error` | On error | Show error message |
 | `locale_changed` | After set_language skill | Update UI locale |
+| `orchestration_started` | Before launching sub-agents | Show agent count |
+| `agent_started` | Per agent, before run | Show agent name + type |
+| `agent_progress` | Per agent, after each LLM turn | Update turn counter |
+| `agent_completed` | Per agent, on success | Show duration + tokens |
+| `agent_failed` | Per agent, on error | Show error message |
+| `orchestration_done` | After all agents finish | Show summary stats |

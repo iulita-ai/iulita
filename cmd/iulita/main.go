@@ -21,6 +21,7 @@ import (
 
 	"github.com/iulita-ai/iulita/internal/assistant"
 	"github.com/iulita-ai/iulita/internal/auth"
+	"github.com/iulita-ai/iulita/internal/bookmark"
 	"github.com/iulita-ai/iulita/internal/channel"
 	consolech "github.com/iulita-ai/iulita/internal/channel/console"
 	"github.com/iulita-ai/iulita/internal/channel/telegram"
@@ -53,6 +54,7 @@ import (
 	insightskill "github.com/iulita-ai/iulita/internal/skill/insights"
 	localeskill "github.com/iulita-ai/iulita/internal/skill/locale"
 	"github.com/iulita-ai/iulita/internal/skill/memory"
+	"github.com/iulita-ai/iulita/internal/skill/orchestrate"
 	"github.com/iulita-ai/iulita/internal/skill/pdfreader"
 	"github.com/iulita-ai/iulita/internal/skill/reminders"
 	"github.com/iulita-ai/iulita/internal/skill/shellexec"
@@ -782,6 +784,15 @@ func main() {
 		logger.Info("delegate skill registered", zap.String("default", defaultDelegate))
 	}
 
+	// Orchestrate skill — multi-agent parallel task execution.
+	orchestrateManifest, err := orchestrate.LoadManifest()
+	if err != nil {
+		logger.Warn("failed to load orchestrate manifest", zap.Error(err))
+	}
+	orchestrateSkill := orchestrate.New(llmProvider, registry, nil, logger)
+	registry.RegisterWithManifest(orchestrateSkill, orchestrateManifest)
+	logger.Info("orchestrate skill registered")
+
 	// PDF reader skill.
 	pdfManifest, err := pdfreader.LoadManifest()
 	if err != nil {
@@ -1067,6 +1078,10 @@ func main() {
 	// Configure real-time status notifications for web/console chat.
 	asst.SetStatusNotifier(mgr)
 
+	// Wire deferred dependencies for orchestrate skill.
+	orchestrateSkill.SetNotifier(mgr)
+	orchestrateSkill.SetEventBus(bus)
+
 	// Attach sender for approval confirmation prompts.
 	asst.SetMessageSender(mgr)
 
@@ -1132,6 +1147,10 @@ func main() {
 			return "iulita " + version.String()
 		})
 	})
+
+	// --- Bookmark service for "remember" button ---
+	bookmarkSvc := bookmark.New(store, logger)
+	mgr.SetBookmarkService(bookmarkSvc)
 
 	// Background services tracked by WaitGroup for graceful shutdown.
 	var wg sync.WaitGroup
@@ -1233,6 +1252,12 @@ func main() {
 			logger.Info("heartbeat using ollama provider", zap.String("model", cfg.Ollama.Model))
 		}
 		worker.Register(handlers.NewHeartbeatHandler(store, heartbeatProvider, mgr, logger))
+	}
+
+	// Bookmark refinement handler — LLM summarization of bookmarked facts.
+	{
+		refineProvider := resolveJobProvider("", llmProvider, cfg.Ollama, httpClient, logger, "bookmark_refine")
+		worker.Register(handlers.NewRefineBookmarkHandler(store, refineProvider, logger))
 	}
 
 	// Register todo sync task handler.

@@ -175,6 +175,23 @@ Uses Unified API v1 (`api.todoist.com/api/v1`). API token auth.
 | `craft_tasks` | Manage Craft tasks |
 | `craft_search` | Search Craft documents |
 
+### Multi-Agent Orchestration
+
+| Tool | Input | Description |
+|------|-------|-------------|
+| `orchestrate` | `agents[]`, `timeout`, `max_tokens` | Launch multiple specialized sub-agents in parallel. |
+
+**Agent types**: `researcher`, `analyst`, `planner`, `coder`, `summarizer`, `generic` — each with specialized system prompt and tool subset.
+
+**Input schema**:
+- `agents[]` — array of `{id, type, task, route_hint?, tools?}` (max 5)
+- `timeout` — per-agent wall-clock timeout as Go duration (default: 60s)
+- `max_tokens` — shared token budget across all agents (default: unlimited)
+
+Sub-agents run in parallel via `errgroup`, share an atomic token budget, and cannot spawn further sub-agents (max depth = 1). Approval-gated skills (ApprovalManual, ApprovalPrompt) are filtered from sub-agent tool lists.
+
+See [Multi-Agent Orchestration](multi-agent.md) for full details.
+
 ### Skills Management
 
 | Tool | Input | Description |

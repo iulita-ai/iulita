@@ -287,3 +287,16 @@ other = "[之前对话摘要]\n"
 
 [ErrorUnknownSkill]
 other = "错误: 未知技能 {{.Name}}"
+
+# --- Bookmark / Remember button ---
+[BookmarkButton]
+other = "💾 保存"
+
+[BookmarkSaved]
+other = "✅ 已保存"
+
+[BookmarkAlreadySaved]
+other = "已保存过"
+
+[BookmarkError]
+other = "❌ 错误"
