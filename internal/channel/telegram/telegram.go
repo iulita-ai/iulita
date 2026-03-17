@@ -403,11 +403,11 @@ func (c *Channel) handleClear(ctx context.Context, tgChatID int64, chatID string
 	if err := c.clearFn(ctx, chatID); err != nil {
 		c.logger.Error("failed to clear history", zap.Error(err), zap.String("chat_id", chatID))
 		reply := tgbotapi.NewMessage(tgChatID, i18n.T(localeCtx, "TelegramHistoryClearFailed"))
-		c.bot.Send(reply) //nolint:errcheck
+		c.bot.Send(reply) //nolint:errcheck,gosec
 		return
 	}
 	reply := tgbotapi.NewMessage(tgChatID, i18n.T(localeCtx, "TelegramHistoryCleared"))
-	c.bot.Send(reply) //nolint:errcheck
+	c.bot.Send(reply) //nolint:errcheck,gosec
 }
 
 // SendMessage sends a proactive message to a chat. Implements channel.MessageSender.
@@ -470,7 +470,7 @@ func (c *Channel) StartStream(_ context.Context, chatID string, replyTo int) (fu
 		c.statusMsgs.remove(chatID)
 		// Edit status message to streaming placeholder.
 		edit := tgbotapi.NewEditMessageText(tgChatID, msgID, "...")
-		c.bot.Send(edit) //nolint:errcheck
+		c.bot.Send(edit) //nolint:errcheck,gosec
 	} else {
 		// For long tasks: finalize the status message with total time, then send fresh response.
 		if entry, ok := c.statusMsgs.get(chatID); ok && entry.isConsumed() {
@@ -505,7 +505,7 @@ func (c *Channel) StartStream(_ context.Context, chatID string, replyTo int) (fu
 		if _, err := c.bot.Send(edit); err != nil {
 			// Retry without markdown.
 			edit.ParseMode = ""
-			c.bot.Send(edit) //nolint:errcheck
+			c.bot.Send(edit) //nolint:errcheck,gosec
 		}
 	}
 
@@ -650,7 +650,7 @@ func (c *Channel) downloadFile(ctx context.Context, fileID string) ([]byte, erro
 	if err != nil {
 		return nil, fmt.Errorf("downloading file: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck,gosec
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
@@ -666,7 +666,7 @@ func (c *Channel) downloadFile(ctx context.Context, fileID string) ([]byte, erro
 // keepTyping sends the "typing..." action every 4 seconds until ctx is canceled.
 func (c *Channel) keepTyping(ctx context.Context, chatID int64) {
 	typing := tgbotapi.NewChatAction(chatID, tgbotapi.ChatTyping)
-	c.bot.Send(typing) //nolint:errcheck // send immediately
+	c.bot.Send(typing) //nolint:errcheck,gosec // send immediately
 
 	ticker := time.NewTicker(4 * time.Second)
 	defer ticker.Stop()
@@ -676,7 +676,7 @@ func (c *Channel) keepTyping(ctx context.Context, chatID int64) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			c.bot.Send(typing) //nolint:errcheck
+			c.bot.Send(typing) //nolint:errcheck,gosec
 		}
 	}
 }
