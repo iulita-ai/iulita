@@ -9,7 +9,12 @@ import (
 	"net/netip"
 	"strings"
 	"sync"
+
+	"github.com/iulita-ai/iulita/internal/llm"
 )
+
+// SynthesisRouteHint implements skill.SynthesisModelDeclarer.
+func (s *Skill) SynthesisRouteHint() string { return llm.RouteHintCheap }
 
 const (
 	// IP detection endpoints.

@@ -25,3 +25,13 @@ type CapabilityAware interface {
 type ConfigReloadable interface {
 	OnConfigChanged(key, value string)
 }
+
+// SynthesisModelDeclarer is an optional interface for skills that want the
+// post-execution synthesis LLM call to use a specific provider route.
+// The returned string must match a registered RouteHint in the LLM routing
+// provider (e.g., llm.RouteHintCheap). Falls back silently if not registered.
+// When multiple tools execute in one iteration, last non-empty hint wins.
+// The hint only applies to the next iteration's LLM call, then resets.
+type SynthesisModelDeclarer interface {
+	SynthesisRouteHint() string
+}

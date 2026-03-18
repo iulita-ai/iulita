@@ -61,6 +61,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/skill/skillinfo"
 	tasksskill "github.com/iulita-ai/iulita/internal/skill/tasks"
 	"github.com/iulita-ai/iulita/internal/skill/todoist"
+	"github.com/iulita-ai/iulita/internal/skill/tokenusage"
 	"github.com/iulita-ai/iulita/internal/skill/weather"
 	"github.com/iulita-ai/iulita/internal/skill/webfetch"
 	"github.com/iulita-ai/iulita/internal/skill/websearch"
@@ -495,15 +496,39 @@ func main() {
 		}
 	}
 
+	// Auto-register Claude Haiku as a cheap/fast routing target when Claude is configured.
+	var claudeHaikuProvider llm.Provider
+	if rawProvider != nil {
+		haikuModel := "claude-haiku-4-5-20251001"
+		// Don't create a haiku instance if the primary model is already haiku.
+		if cfg.Claude.Model != haikuModel && cfg.Claude.Model != "claude-haiku-4-5" {
+			haikuRaw := claude.New(cfg.Claude.APIKey, haikuModel, cfg.Claude.MaxTokens, cfg.Claude.BaseURL, llmHTTPClient)
+			claudeHaikuProvider = llm.NewRetryProvider(haikuRaw, llm.DefaultRetryConfig())
+			logger.Info("claude-haiku provider ready (auto-registered)", zap.String("model", haikuModel))
+		}
+	}
+
 	// Model routing with hint-based provider selection.
-	if cfg.Routing.Enabled {
+	// Enable routing automatically when claude-haiku or other secondary providers are available,
+	// even without explicit routing.enabled in config.
+	// Activate routing when there are genuinely distinct providers to route between.
+	hasSecondaryProviders := claudeHaikuProvider != nil ||
+		(openaiProvider != nil && llmProvider != openaiProvider) ||
+		(ollamaProvider != nil && llmProvider != ollamaProvider)
+	if cfg.Routing.Enabled || hasSecondaryProviders {
 		routes := make(map[string]llm.Provider)
 		providerMap := map[string]llm.Provider{"claude": llmProvider}
+		if claudeHaikuProvider != nil {
+			providerMap["claude-haiku"] = claudeHaikuProvider
+			routes["claude-haiku"] = claudeHaikuProvider
+		}
 		if openaiProvider != nil {
 			providerMap["openai"] = openaiProvider
+			routes["openai"] = openaiProvider
 		}
 		if ollamaProvider != nil {
 			providerMap["ollama"] = ollamaProvider
+			routes["ollama"] = ollamaProvider
 		}
 		for _, route := range cfg.Routing.Routes {
 			if p, ok := providerMap[route.Provider]; ok {
@@ -800,6 +825,13 @@ func main() {
 	}
 	registry.RegisterWithManifest(pdfreader.New(), pdfManifest)
 
+	// Token usage statistics skill.
+	tokenUsageManifest, err := tokenusage.LoadManifest()
+	if err != nil {
+		logger.Warn("failed to load token_usage manifest", zap.Error(err))
+	}
+	registry.RegisterWithManifest(tokenusage.New(store), tokenUsageManifest)
+
 	logger.Info("skills registry ready", zap.Int("registered", len(registry.EnabledSkills())))
 
 	// External text skills (from skills/ directory).
@@ -865,6 +897,7 @@ func main() {
 
 	// Assistant
 	asst := assistant.New(llmProvider, store, registry, cfg.App.SystemPrompt, cfg.App.DefaultTimezone, cfg.Claude.ContextWindow, logger)
+	asst.SetModelInfo(cfg.Claude.Model, "claude")
 
 	// Event bus for decoupled event handling.
 	bus := eventbus.New(logger)
@@ -989,7 +1022,13 @@ func main() {
 	// Register event bus subscribers (after tg is available).
 	eventbus.RegisterAuditSubscriber(bus, store, logger)
 	eventbus.RegisterConfigAuditSubscriber(bus, store, logger)
-	eventbus.RegisterUsageSubscriber(bus, store, logger)
+	// Pass costTracker as explicit nil interface when cost tracking is disabled,
+	// to avoid the nil-pointer-in-non-nil-interface trap.
+	var usageCostCalc eventbus.UsageCostCalculator
+	if costTracker != nil {
+		usageCostCalc = costTracker
+	}
+	eventbus.RegisterUsageSubscriber(bus, store, usageCostCalc, logger)
 	eventbus.RegisterFailureAlertSubscriber(bus, mgr, 3, logger)
 
 	// Telegram token hot-reload subscriber — restarts config-sourced Telegram on token change.
@@ -1015,31 +1054,24 @@ func main() {
 		logger.Info("prometheus metrics enabled")
 	}
 
-	// Cost tracking subscriber — logs cost on every LLM usage event.
+	// Cost limit check subscriber — warn when daily limit exceeded (in-memory tracker).
 	if costTracker != nil {
 		bus.Subscribe(eventbus.LLMUsage, func(_ context.Context, evt eventbus.Event) error {
 			p, ok := evt.Payload.(eventbus.LLMUsagePayload)
 			if !ok {
 				return nil
 			}
-			exceeded, current := costTracker.Track(cfg.Claude.Model, llm.Usage{
-				InputTokens:  p.InputTokens,
-				OutputTokens: p.OutputTokens,
+			exceeded, current := costTracker.Track(p.Model, llm.Usage{
+				InputTokens:              p.InputTokens,
+				OutputTokens:             p.OutputTokens,
+				CacheReadInputTokens:     p.CacheReadInputTokens,
+				CacheCreationInputTokens: p.CacheCreationInputTokens,
 			})
 			if exceeded {
 				logger.Warn("daily cost limit exceeded", zap.Float64("cost_usd", current), zap.Float64("limit", cfg.Cost.DailyLimitUSD))
 			}
-			// Persist cost in storage for dashboard/cross-restart tracking.
-			costUSD := costTracker.Calculate(cfg.Claude.Model, llm.Usage{
-				InputTokens:  p.InputTokens,
-				OutputTokens: p.OutputTokens,
-			})
-			if costUSD > 0 {
-				_ = store.IncrementUsageWithCost(context.Background(), p.ChatID, p.InputTokens, p.OutputTokens, costUSD)
-			}
 			return nil
 		})
-		logger.Info("cost tracking subscriber registered")
 	}
 
 	// Push notification subscriber — send alerts on task failures.

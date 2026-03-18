@@ -206,6 +206,7 @@ func (h *InsightGenerateHandler) generateForPair(ctx context.Context, chatID, us
 	resp, err := h.provider.Complete(ctx, llm.Request{
 		SystemPrompt: "Generate a creative insight from the fact clusters below. Be concise and insightful.",
 		Message:      prompt.String(),
+		RouteHint:    llm.RouteHintCheap,
 	})
 	if err != nil {
 		return fmt.Errorf("LLM insight generation: %w", err)
@@ -241,7 +242,8 @@ func (h *InsightGenerateHandler) scoreInsight(ctx context.Context, content strin
 	resp, err := h.provider.Complete(ctx, llm.Request{
 		SystemPrompt: "Rate the following insight on a scale of 1-5 for novelty and usefulness. " +
 			"Respond with ONLY a single digit (1-5), nothing else.",
-		Message: content,
+		Message:   content,
+		RouteHint: llm.RouteHintCheap,
 	})
 	if err != nil {
 		return 0

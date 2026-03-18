@@ -12,6 +12,7 @@
     "agentJobs": "Задания",
     "channels": "Каналы",
     "users": "Пользователи",
+    "usage": "Статистика",
     "logout": "Выход"
   },
   "common": {
@@ -525,5 +526,28 @@
     "es": "Español",
     "fr": "Français",
     "he": "עברית"
+  },
+  "usage": {
+    "title": "Статистика токенов",
+    "allModels": "Все модели",
+    "allChats": "Все чаты",
+    "inputTokens": "Входные токены",
+    "outputTokens": "Выходные токены",
+    "cacheRead": "Кэш (чтение)",
+    "cacheCreation": "Кэш (создание)",
+    "requests": "Запросы",
+    "costUsd": "Стоимость (USD)",
+    "date": "Дата",
+    "model": "Модель",
+    "provider": "Провайдер",
+    "totalInputTokens": "Всего входных",
+    "totalOutputTokens": "Всего выходных",
+    "totalCacheRead": "Всего кэш (чтение)",
+    "totalRequests": "Всего запросов",
+    "totalCost": "Общая стоимость",
+    "dailyBreakdown": "По дням",
+    "byModel": "По моделям",
+    "noData": "Нет данных за выбранный период",
+    "loadFailed": "Не удалось загрузить статистику"
   }
 }

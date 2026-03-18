@@ -150,6 +150,29 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 	// Add cost_usd column to usage_stats (tolerates "duplicate column" error).
 	s.db.ExecContext(ctx, `ALTER TABLE usage_stats ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0`)
 
+	// Token usage stats: add model, provider, and cache token columns.
+	usageNewCols := []string{
+		`ALTER TABLE usage_stats ADD COLUMN model TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE usage_stats ADD COLUMN provider TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE usage_stats ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE usage_stats ADD COLUMN cache_creation_tokens INTEGER NOT NULL DEFAULT 0`,
+	}
+	for _, stmt := range usageNewCols {
+		s.db.ExecContext(ctx, stmt) //nolint:errcheck,gosec // ignore "duplicate column" errors
+	}
+	// Deduplicate existing rows before rebuilding unique index.
+	//nolint:errcheck,gosec // dedup migration — best-effort, OK to fail on empty table
+	s.db.ExecContext(ctx, `DELETE FROM usage_stats WHERE id NOT IN (
+			SELECT MIN(id) FROM usage_stats GROUP BY chat_id, model, hour)`)
+
+	// Rebuild unique index to include model for per-model tracking.
+	s.db.ExecContext(ctx, `DROP INDEX IF EXISTS idx_usage_stats_chat_hour`) //nolint:errcheck,gosec
+	if _, err := s.db.ExecContext(ctx, `CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_stats_chat_model_hour ON usage_stats(chat_id, model, hour)`); err != nil {
+		return fmt.Errorf("creating usage_stats unique index: %w", err)
+	}
+	s.db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_usage_stats_hour ON usage_stats(hour)`)          //nolint:errcheck,gosec
+	s.db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_usage_stats_user ON usage_stats(user_id, hour)`) //nolint:errcheck,gosec
+
 	// Google accounts: unique index for user_id + account_email.
 	s.db.ExecContext(ctx, `CREATE UNIQUE INDEX IF NOT EXISTS idx_google_accounts_user_email ON google_accounts(user_id, account_email)`)
 

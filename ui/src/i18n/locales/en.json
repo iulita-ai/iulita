@@ -12,6 +12,7 @@
     "agentJobs": "Agent Jobs",
     "channels": "Channels",
     "users": "Users",
+    "usage": "Usage",
     "logout": "Logout"
   },
   "common": {
@@ -527,5 +528,28 @@
     "es": "Español",
     "fr": "Français",
     "he": "עברית"
+  },
+  "usage": {
+    "title": "Token Usage",
+    "allModels": "All models",
+    "allChats": "All chats",
+    "inputTokens": "Input Tokens",
+    "outputTokens": "Output Tokens",
+    "cacheRead": "Cache Read",
+    "cacheCreation": "Cache Creation",
+    "requests": "Requests",
+    "costUsd": "Cost (USD)",
+    "date": "Date",
+    "model": "Model",
+    "provider": "Provider",
+    "totalInputTokens": "Total Input",
+    "totalOutputTokens": "Total Output",
+    "totalCacheRead": "Total Cache Read",
+    "totalRequests": "Total Requests",
+    "totalCost": "Total Cost",
+    "dailyBreakdown": "Daily Breakdown",
+    "byModel": "By Model",
+    "noData": "No usage data for this period",
+    "loadFailed": "Failed to load usage statistics"
   }
 }

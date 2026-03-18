@@ -29,11 +29,11 @@ features:
     title: Multi-Channel
     details: Console TUI (default), Telegram bot, Web Chat. One identity across all channels — facts remembered anywhere are available everywhere.
   - icon: "\U0001F916"
-    title: Multiple LLM Providers
-    details: Claude (primary), Ollama (local), OpenAI. Provider chain with retry, fallback, caching, and automatic context overflow recovery.
+    title: Smart Model Routing
+    details: Auto-routes to cheap models (Haiku) for background tasks and synthesis. Skills declare their own cost tier. Sonnet for reasoning, Haiku for formatting. 40-60% cost savings.
   - icon: "\U0001F50C"
-    title: 20+ Skills
-    details: Web search, weather, Gmail, Calendar, Todoist, Craft, currency exchange, reminders, shell exec, PDF reader, and the ClawhHub marketplace.
+    title: 25+ Skills & Token Dashboard
+    details: Web search, weather, Google Workspace, Todoist, Craft, multi-agent orchestration, token usage stats, and more. Per-model cost tracking with admin dashboard.
   - icon: "\U0001F5C4\uFE0F"
     title: Runs Locally
     details: SQLite with WAL mode, zero cloud dependencies for storage. XDG-compliant paths, keyring secret storage, zero-config local install.

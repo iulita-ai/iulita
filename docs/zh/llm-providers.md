@@ -248,3 +248,31 @@ Claude Provider
 ```
 
 每一层根据配置有条件地添加。
+
+## 智能模型路由
+
+当配置了Claude API密钥时，Iulita会自动注册Claude Haiku作为廉价提供者。
+
+### 后台任务自动路由
+
+后台任务（上下文压缩、洞察生成、用户分析、书签精炼、心跳检查）通过 `RouteHint` 自动路由到Haiku。
+
+### 技能级合成路由
+
+技能可以通过 `SynthesisModelDeclarer` 接口声明其输出的合成可以使用更便宜的模型。支持廉价合成的技能：`datetime`、`exchange_rate`、`geolocation`、`recall`、`list_insights`、`websearch`。
+
+### 子代理路由
+
+| 代理类型 | 路由 | 原因 |
+|---------|------|------|
+| summarizer | claude-haiku | 纯摘要 |
+| researcher | Sonnet（默认） | 需要推理 |
+| analyst | Sonnet（默认） | 模式识别 |
+
+### 模型定价（每百万token）
+
+| 模型 | 输入 | 输出 |
+|------|------|------|
+| claude-opus-4-6 | $5.00 | $25.00 |
+| claude-sonnet-4-6 | $3.00 | $15.00 |
+| claude-haiku-4-5 | $1.00 | $5.00 |

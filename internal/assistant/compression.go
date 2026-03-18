@@ -54,6 +54,7 @@ func (a *Assistant) compressIfNeeded(ctx context.Context, chatID string, history
 	summaryReq := llm.Request{
 		SystemPrompt: i18n.T(ctx, "AssistantCompressionPrompt"),
 		Message:      convText.String(),
+		RouteHint:    llm.RouteHintCheap,
 	}
 
 	summaryResp, err := a.provider.Complete(ctx, summaryReq)

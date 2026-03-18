@@ -30,6 +30,9 @@ type SkillExecutedPayload struct {
 // LLMUsagePayload is published after each LLM completion.
 type LLMUsagePayload struct {
 	ChatID                   string
+	UserID                   string
+	Model                    string
+	Provider                 string
 	InputTokens              int64
 	OutputTokens             int64
 	CacheReadInputTokens     int64

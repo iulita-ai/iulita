@@ -57,7 +57,7 @@ func CoreConfigSchema() []ConfigSection {
 			WizardOrder: 1,
 			Fields: []ConfigField{
 				{Key: "claude.api_key", Label: "API Key", Description: "Anthropic API key", Type: FieldSecret, Secret: true, Section: "claude", WizardOrder: 1},
-				{Key: "claude.model", Label: "Model", Description: "Claude model ID", Type: FieldSelect, Default: "claude-sonnet-4-5-20250929", Options: []string{"claude-sonnet-4-5-20250929", "claude-haiku-4-5-20251001", "claude-opus-4-20250514"}, Section: "claude", WizardOrder: 2},
+				{Key: "claude.model", Label: "Model", Description: "Claude model ID", Type: FieldSelect, Default: "claude-sonnet-4-6", Options: []string{"claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5-20251001", "claude-sonnet-4-5-20250929", "claude-opus-4-5-20251101"}, Section: "claude", WizardOrder: 2},
 				{Key: "claude.max_tokens", Label: "Max Tokens", Description: "Maximum output tokens per response", Type: FieldInt, Default: "4096", Section: "claude", WizardOrder: 3},
 				{Key: "claude.base_url", Label: "Base URL", Description: "Custom API base URL (for proxies/gateways)", Type: FieldURL, Section: "claude", WizardOrder: 4},
 				{Key: "claude.thinking", Label: "Thinking", Description: "Extended thinking budget", Type: FieldSelect, Default: "off", Options: []string{"off", "low", "medium", "high"}, Section: "claude"},
@@ -178,7 +178,7 @@ func CoreConfigSchema() []ConfigSection {
 			Label:       "Cost Tracking",
 			Description: "LLM usage cost tracking",
 			Fields: []ConfigField{
-				{Key: "cost.enabled", Label: "Enabled", Description: "Enable cost tracking", Type: FieldBool, Default: "false", Section: "cost"},
+				{Key: "cost.enabled", Label: "Enabled", Description: "Enable cost tracking", Type: FieldBool, Default: "true", Section: "cost"},
 				{Key: "cost.daily_limit_usd", Label: "Daily Limit (USD)", Description: "Max daily spend (0 = unlimited)", Type: FieldString, Default: "0", Section: "cost"},
 				{Key: "cost.alert_threshold", Label: "Alert Threshold", Description: "Warning threshold (0-1 fraction of daily limit)", Type: FieldString, Default: "0.8", Section: "cost"},
 			},

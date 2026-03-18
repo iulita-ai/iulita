@@ -226,3 +226,25 @@ Lorsque activees (`metrics.enabled = true`), les metriques sont exposees sur un 
 | `iulita_active_sessions` | Gauge | — |
 
 Les metriques sont alimentees par abonnement au bus d'evenements (non bloquant).
+
+## Statistiques d'Utilisation des Tokens
+
+### Endpoints de l'API
+
+| Methode | Chemin | Description |
+|---------|--------|-------------|
+| GET | `/api/usage/summary` | Resume global : jetons, cout, taux de cache |
+| GET | `/api/usage/daily` | Ventilation quotidienne des 30 derniers jours |
+| GET | `/api/usage/by-model` | Utilisation ventilee par modele |
+
+### Page du Tableau de Bord
+
+La page Token Usage affiche :
+
+- **Cartes KPI** — total des jetons d'entree/sortie, estimation du cout, pourcentage d'acces au cache
+- **Tableau par Modele** — utilisation des jetons et cout pour chaque modele (Claude Sonnet, Haiku, Ollama, etc.)
+- **Ventilation Quotidienne** — graphique d'utilisation des 30 derniers jours
+
+### Competence en Chat
+
+La competence `token_stats` est disponible via le chat (administrateurs uniquement). Elle permet de consulter les statistiques d'utilisation des jetons directement dans la conversation.

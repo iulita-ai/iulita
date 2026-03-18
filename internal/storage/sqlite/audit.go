@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/iulita-ai/iulita/internal/domain"
+	"github.com/iulita-ai/iulita/internal/storage"
 )
 
 func (s *Store) SaveAuditEntry(ctx context.Context, e *domain.AuditEntry) error {
@@ -20,20 +21,13 @@ func (s *Store) SaveAuditEntry(ctx context.Context, e *domain.AuditEntry) error 
 }
 
 func (s *Store) IncrementUsage(ctx context.Context, chatID string, inputTokens, outputTokens int64) error {
-	hour := time.Now().Truncate(time.Hour)
-
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO usage_stats (chat_id, hour, input_tokens, output_tokens, requests)
-		VALUES (?, ?, ?, ?, 1)
-		ON CONFLICT (chat_id, hour) DO UPDATE SET
-			input_tokens = usage_stats.input_tokens + excluded.input_tokens,
-			output_tokens = usage_stats.output_tokens + excluded.output_tokens,
-			requests = usage_stats.requests + 1
-	`, chatID, hour, inputTokens, outputTokens)
-	if err != nil {
-		return fmt.Errorf("incrementing usage: %w", err)
-	}
-	return nil
+	return s.UpsertUsage(ctx, storage.UsageUpsert{
+		ChatID:       chatID,
+		Hour:         time.Now().Truncate(time.Hour),
+		InputTokens:  inputTokens,
+		OutputTokens: outputTokens,
+		Requests:     1,
+	})
 }
 
 func (s *Store) GetUsageStats(ctx context.Context, chatID string) ([]domain.UsageRecord, error) {
@@ -52,21 +46,160 @@ func (s *Store) GetUsageStats(ctx context.Context, chatID string) ([]domain.Usag
 
 // IncrementUsageWithCost increments usage stats including cost tracking.
 func (s *Store) IncrementUsageWithCost(ctx context.Context, chatID string, inputTokens, outputTokens int64, costUSD float64) error {
-	hour := time.Now().Truncate(time.Hour)
+	return s.UpsertUsage(ctx, storage.UsageUpsert{
+		ChatID:       chatID,
+		Hour:         time.Now().Truncate(time.Hour),
+		InputTokens:  inputTokens,
+		OutputTokens: outputTokens,
+		Requests:     1,
+		CostUSD:      costUSD,
+	})
+}
 
+// UpsertUsage inserts or updates a usage stats row with all fields.
+func (s *Store) UpsertUsage(ctx context.Context, rec storage.UsageUpsert) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO usage_stats (chat_id, hour, input_tokens, output_tokens, requests, cost_usd)
-		VALUES (?, ?, ?, ?, 1, ?)
-		ON CONFLICT (chat_id, hour) DO UPDATE SET
+		INSERT INTO usage_stats (chat_id, user_id, model, provider, hour,
+			input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+			requests, cost_usd)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (chat_id, model, hour) DO UPDATE SET
+			user_id = excluded.user_id,
+			provider = excluded.provider,
 			input_tokens = usage_stats.input_tokens + excluded.input_tokens,
 			output_tokens = usage_stats.output_tokens + excluded.output_tokens,
-			requests = usage_stats.requests + 1,
+			cache_read_tokens = usage_stats.cache_read_tokens + excluded.cache_read_tokens,
+			cache_creation_tokens = usage_stats.cache_creation_tokens + excluded.cache_creation_tokens,
+			requests = usage_stats.requests + excluded.requests,
 			cost_usd = usage_stats.cost_usd + excluded.cost_usd
-	`, chatID, hour, inputTokens, outputTokens, costUSD)
+	`, rec.ChatID, rec.UserID, rec.Model, rec.Provider, rec.Hour,
+		rec.InputTokens, rec.OutputTokens, rec.CacheReadTokens, rec.CacheCreationTokens,
+		rec.Requests, rec.CostUSD)
 	if err != nil {
-		return fmt.Errorf("incrementing usage with cost: %w", err)
+		return fmt.Errorf("upserting usage: %w", err)
 	}
 	return nil
+}
+
+// GetUsageSummary returns aggregated usage summary matching the filter.
+func (s *Store) GetUsageSummary(ctx context.Context, filter storage.UsageFilter) (*storage.UsageSummary, error) {
+	query := `SELECT
+		COALESCE(SUM(input_tokens), 0),
+		COALESCE(SUM(output_tokens), 0),
+		COALESCE(SUM(cache_read_tokens), 0),
+		COALESCE(SUM(cache_creation_tokens), 0),
+		COALESCE(SUM(requests), 0),
+		COALESCE(SUM(cost_usd), 0)
+		FROM usage_stats WHERE 1=1`
+
+	args := usageFilterArgs(&query, filter)
+
+	var summary storage.UsageSummary
+	err := s.db.QueryRowContext(ctx, query, args...).Scan(
+		&summary.TotalInputTokens, &summary.TotalOutputTokens,
+		&summary.TotalCacheReadTokens, &summary.TotalCacheCreationTokens,
+		&summary.TotalRequests, &summary.TotalCostUSD,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("querying usage summary: %w", err)
+	}
+	return &summary, nil
+}
+
+// GetUsageByDay returns daily aggregated usage matching the filter.
+func (s *Store) GetUsageByDay(ctx context.Context, filter storage.UsageFilter) ([]storage.DailyUsage, error) {
+	query := `SELECT
+		strftime('%Y-%m-%d', datetime(hour)) AS date,
+		COALESCE(SUM(input_tokens), 0),
+		COALESCE(SUM(output_tokens), 0),
+		COALESCE(SUM(cache_read_tokens), 0),
+		COALESCE(SUM(cache_creation_tokens), 0),
+		COALESCE(SUM(requests), 0),
+		COALESCE(SUM(cost_usd), 0)
+		FROM usage_stats WHERE 1=1`
+
+	args := usageFilterArgs(&query, filter)
+	query += ` GROUP BY date ORDER BY date DESC`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("querying usage by day: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	var result []storage.DailyUsage
+	for rows.Next() {
+		var d storage.DailyUsage
+		if err := rows.Scan(&d.Date, &d.InputTokens, &d.OutputTokens,
+			&d.CacheReadTokens, &d.CacheCreationTokens, &d.Requests, &d.CostUSD); err != nil {
+			return nil, fmt.Errorf("scanning daily usage: %w", err)
+		}
+		result = append(result, d)
+	}
+	return result, rows.Err()
+}
+
+// GetUsageByModel returns per-model aggregated usage matching the filter.
+func (s *Store) GetUsageByModel(ctx context.Context, filter storage.UsageFilter) ([]storage.ModelUsage, error) {
+	query := `SELECT
+		model, provider,
+		COALESCE(SUM(input_tokens), 0),
+		COALESCE(SUM(output_tokens), 0),
+		COALESCE(SUM(cache_read_tokens), 0),
+		COALESCE(SUM(cache_creation_tokens), 0),
+		COALESCE(SUM(requests), 0),
+		COALESCE(SUM(cost_usd), 0)
+		FROM usage_stats WHERE 1=1`
+
+	args := usageFilterArgs(&query, filter)
+	query += ` GROUP BY model, provider ORDER BY SUM(input_tokens) + SUM(output_tokens) DESC`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("querying usage by model: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	var result []storage.ModelUsage
+	for rows.Next() {
+		var m storage.ModelUsage
+		if err := rows.Scan(&m.Model, &m.Provider, &m.InputTokens, &m.OutputTokens,
+			&m.CacheReadTokens, &m.CacheCreationTokens, &m.Requests, &m.CostUSD); err != nil {
+			return nil, fmt.Errorf("scanning model usage: %w", err)
+		}
+		result = append(result, m)
+	}
+	return result, rows.Err()
+}
+
+// usageFilterArgs builds WHERE clauses and args for usage queries.
+func usageFilterArgs(query *string, filter storage.UsageFilter) []any {
+	var args []any
+	if filter.ChatID != "" {
+		*query += ` AND chat_id = ?`
+		args = append(args, filter.ChatID)
+	}
+	if filter.UserID != "" {
+		*query += ` AND user_id = ?`
+		args = append(args, filter.UserID)
+	}
+	if filter.Model != "" {
+		*query += ` AND model = ?`
+		args = append(args, filter.Model)
+	}
+	if filter.Provider != "" {
+		*query += ` AND provider = ?`
+		args = append(args, filter.Provider)
+	}
+	if !filter.From.IsZero() {
+		*query += ` AND hour >= ?`
+		args = append(args, filter.From)
+	}
+	if !filter.To.IsZero() {
+		*query += ` AND hour < ?`
+		args = append(args, filter.To)
+	}
+	return args
 }
 
 // GetDailyCost returns the total cost in USD for the current day across all chats.

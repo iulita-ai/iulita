@@ -12,6 +12,7 @@
     "agentJobs": "משימות סוכן",
     "channels": "ערוצים",
     "users": "משתמשים",
+    "usage": "שימוש בטוקנים",
     "logout": "התנתקות"
   },
   "common": {
@@ -525,5 +526,28 @@
     "es": "Español",
     "fr": "Français",
     "he": "עברית"
+  },
+  "usage": {
+    "title": "שימוש בטוקנים",
+    "allModels": "כל המודלים",
+    "allChats": "כל הצ'אטים",
+    "inputTokens": "טוקנים נכנסים",
+    "outputTokens": "טוקנים יוצאים",
+    "cacheRead": "קריאת מטמון",
+    "cacheCreation": "יצירת מטמון",
+    "requests": "בקשות",
+    "costUsd": "עלות (USD)",
+    "date": "תאריך",
+    "model": "מודל",
+    "provider": "ספק",
+    "totalInputTokens": "סך נכנסים",
+    "totalOutputTokens": "סך יוצאים",
+    "totalCacheRead": "סך קריאת מטמון",
+    "totalRequests": "סך בקשות",
+    "totalCost": "עלות כוללת",
+    "dailyBreakdown": "פירוט יומי",
+    "byModel": "לפי מודל",
+    "noData": "אין נתונים לתקופה זו",
+    "loadFailed": "שגיאה בטעינת סטטיסטיקות"
   }
 }

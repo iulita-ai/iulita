@@ -89,6 +89,7 @@ Messages:
 	resp, err := h.provider.Complete(ctx, llm.Request{
 		SystemPrompt: "You are a behavioral analysis system. Extract structured metadata from user messages. Respond only with valid JSON.",
 		Message:      prompt,
+		RouteHint:    llm.RouteHintCheap,
 	})
 	if err != nil {
 		return "", fmt.Errorf("LLM analysis: %w", err)

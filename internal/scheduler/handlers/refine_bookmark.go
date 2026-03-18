@@ -48,6 +48,7 @@ func (h *RefineBookmarkHandler) Handle(ctx context.Context, payload string) (str
 	resp, err := h.provider.Complete(ctx, llm.Request{
 		SystemPrompt: refineSystemPrompt,
 		Message:      p.Content,
+		RouteHint:    llm.RouteHintCheap,
 	})
 	if err != nil {
 		return "", fmt.Errorf("LLM refinement failed: %w", err)

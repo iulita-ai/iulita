@@ -774,62 +774,7 @@ func (s *Server) handleDeleteConfig(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"status": "deleted", "key": key})
 }
 
-func (s *Server) handleUsageSummary(c *fiber.Ctx) error {
-	ctx := c.Context()
-	chatID := c.Query("chat_id")
-
-	chatIDs := []string{chatID}
-	if chatID == "" {
-		ids, err := s.store.GetChatIDs(ctx)
-		if err != nil {
-			return s.errorResponse(c, err)
-		}
-		chatIDs = ids
-	}
-
-	var totalInput, totalOutput, totalRequests int64
-	type chatUsage struct {
-		ChatID       string `json:"chat_id"`
-		InputTokens  int64  `json:"input_tokens"`
-		OutputTokens int64  `json:"output_tokens"`
-		Requests     int64  `json:"requests"`
-	}
-
-	var perChat []chatUsage
-	for _, id := range chatIDs {
-		records, err := s.store.GetUsageStats(ctx, id)
-		if err != nil {
-			return s.errorResponse(c, err)
-		}
-		var input, output, reqs int64
-		for _, r := range records {
-			input += r.InputTokens
-			output += r.OutputTokens
-			reqs += r.Requests
-		}
-		totalInput += input
-		totalOutput += output
-		totalRequests += reqs
-		perChat = append(perChat, chatUsage{
-			ChatID:       id,
-			InputTokens:  input,
-			OutputTokens: output,
-			Requests:     reqs,
-		})
-	}
-
-	// Rough cost estimate based on Claude Sonnet pricing:
-	// Input: $3/MTok, Output: $15/MTok
-	estimatedCost := float64(totalInput)/1_000_000*3.0 + float64(totalOutput)/1_000_000*15.0
-
-	return c.JSON(fiber.Map{
-		"total_input_tokens":  totalInput,
-		"total_output_tokens": totalOutput,
-		"total_requests":      totalRequests,
-		"estimated_cost_usd":  estimatedCost,
-		"per_chat":            perChat,
-	})
-}
+// handleUsageSummary removed — replaced by handleUsageSummaryV2 in usage_handlers.go
 
 func (s *Server) handleDeleteFact(c *fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)

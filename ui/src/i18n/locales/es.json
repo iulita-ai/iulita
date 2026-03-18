@@ -12,6 +12,7 @@
     "agentJobs": "Trabajos del agente",
     "channels": "Canales",
     "users": "Usuarios",
+    "usage": "Uso de tokens",
     "logout": "Cerrar sesion"
   },
   "common": {
@@ -525,5 +526,28 @@
     "es": "Español",
     "fr": "Français",
     "he": "עברית"
+  },
+  "usage": {
+    "title": "Uso de tokens",
+    "allModels": "Todos los modelos",
+    "allChats": "Todos los chats",
+    "inputTokens": "Tokens de entrada",
+    "outputTokens": "Tokens de salida",
+    "cacheRead": "Cache leido",
+    "cacheCreation": "Cache creado",
+    "requests": "Solicitudes",
+    "costUsd": "Costo (USD)",
+    "date": "Fecha",
+    "model": "Modelo",
+    "provider": "Proveedor",
+    "totalInputTokens": "Total entrada",
+    "totalOutputTokens": "Total salida",
+    "totalCacheRead": "Total cache leido",
+    "totalRequests": "Total solicitudes",
+    "totalCost": "Costo total",
+    "dailyBreakdown": "Desglose diario",
+    "byModel": "Por modelo",
+    "noData": "Sin datos para este periodo",
+    "loadFailed": "Error al cargar estadisticas"
   }
 }

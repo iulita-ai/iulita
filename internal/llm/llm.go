@@ -81,6 +81,8 @@ type Response struct {
 	Content   string
 	ToolCalls []ToolCall // non-empty when the LLM wants to use tools
 	Usage     Usage
+	Model     string // actual model used (populated by provider)
+	Provider  string // provider name (populated by provider)
 }
 
 // FullSystemPrompt returns the combined system prompt for providers that don't

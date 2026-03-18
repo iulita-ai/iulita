@@ -68,6 +68,7 @@ import {
   TimerOutline,
   ExtensionPuzzleOutline,
   CheckmarkDoneOutline,
+  BarChartOutline,
 } from '@vicons/ionicons5'
 import { currentUser, clearTokens, isAdmin } from '../api'
 import { useSkillStatus } from '../composables/useSkillStatus'
@@ -105,6 +106,7 @@ const menuOptions = computed<MenuOption[]>(() => {
   )
   if (isAdmin()) {
     items.push({ key: 'admin-divider', type: 'divider' } as any)
+    items.push({ label: t('nav.usage'), key: 'usage', icon: renderIcon(BarChartOutline) })
     items.push({ label: t('nav.skills'), key: 'skills', icon: renderIcon(ExtensionPuzzleOutline) })
     items.push({ label: t('nav.agentJobs'), key: 'agent-jobs', icon: renderIcon(TimerOutline) })
     items.push({ label: t('nav.channels'), key: 'channels', icon: renderIcon(GitNetworkOutline) })

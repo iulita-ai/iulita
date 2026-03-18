@@ -36,6 +36,12 @@ const router = createRouter({
       component: () => import('./views/TechFacts.vue'),
     },
     {
+      path: '/usage',
+      name: 'usage',
+      component: () => import('./views/Usage.vue'),
+      meta: { admin: true },
+    },
+    {
       path: '/settings',
       name: 'settings',
       component: () => import('./views/Settings.vue'),

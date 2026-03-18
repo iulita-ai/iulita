@@ -6,8 +6,12 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/iulita-ai/iulita/internal/llm"
 	"github.com/iulita-ai/iulita/internal/web"
 )
+
+// SynthesisRouteHint implements skill.SynthesisModelDeclarer.
+func (s *Skill) SynthesisRouteHint() string { return llm.RouteHintCheap }
 
 // Skill performs web searches via configurable search providers.
 type Skill struct {
