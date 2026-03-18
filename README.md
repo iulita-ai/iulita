@@ -21,6 +21,7 @@ Console-first: launches a full-screen TUI chat by default. Also runs as a headle
 - **Fact-based memory** — stores only what you explicitly tell it to remember, no hallucinated "knowledge"
 - **Cross-reference insights** — discovers patterns across your facts using clustering and LLM analysis
 - **Multi-agent orchestration** — parallel sub-agents for complex tasks (research + analysis simultaneously)
+- **Token usage dashboard** — per-model, per-day cost tracking; admin dashboard page with filters and summaries; chat-based stats via `token_stats` skill
 - **Bookmark (quick save)** — save any assistant response as a fact with one click, background LLM refinement
 - **Console TUI** — full-screen chat with markdown rendering, streaming, slash commands
 - **Multi-channel** — Telegram bot, Web Chat (WebSocket), Console TUI
@@ -33,7 +34,7 @@ Console-first: launches a full-screen TUI chat by default. Also runs as a headle
 - **Web dashboard** — Vue 3 SPA for managing facts, insights, tasks, channels, users, and settings
 - **Multi-user** — JWT auth, user-scoped data, cross-channel fact sharing
 - **i18n** — 6 languages (English, Russian, Chinese, Spanish, French, Hebrew + RTL)
-- **LLM provider routing** — different models for different tasks (Claude for complex, Ollama for cheap)
+- **Smart model routing** — auto-routes to Claude Haiku for background tasks and skill synthesis, Sonnet for reasoning; skills declare their own cost tier via `SynthesisModelDeclarer`
 - **ClawhHub marketplace** — install community skills from the marketplace or via URL
 - **Zero-config local install** — XDG paths, keyring secrets, interactive setup wizard
 

@@ -12,6 +12,7 @@
     "agentJobs": "代理任务",
     "channels": "频道",
     "users": "用户",
+    "usage": "使用统计",
     "logout": "退出登录"
   },
   "common": {
@@ -525,5 +526,28 @@
     "es": "Español",
     "fr": "Français",
     "he": "עברית"
+  },
+  "usage": {
+    "title": "Token使用统计",
+    "allModels": "所有模型",
+    "allChats": "所有聊天",
+    "inputTokens": "输入Token",
+    "outputTokens": "输出Token",
+    "cacheRead": "缓存读取",
+    "cacheCreation": "缓存创建",
+    "requests": "请求次数",
+    "costUsd": "费用 (USD)",
+    "date": "日期",
+    "model": "模型",
+    "provider": "提供商",
+    "totalInputTokens": "总输入",
+    "totalOutputTokens": "总输出",
+    "totalCacheRead": "总缓存读取",
+    "totalRequests": "总请求",
+    "totalCost": "总费用",
+    "dailyBreakdown": "每日明细",
+    "byModel": "按模型",
+    "noData": "所选时段无数据",
+    "loadFailed": "加载统计数据失败"
   }
 }

@@ -45,7 +45,7 @@ Each agent type has a specialized system prompt and optional default tools.
 | `analyst` | Identify patterns, anomalies, key insights | all | — |
 | `planner` | Decompose goals into ordered steps | `datetime` | — |
 | `coder` | Write, review, debug code | all | — |
-| `summarizer` | Condense input to essential points | all | `ollama` |
+| `summarizer` | Condense input to essential points | all | `claude-haiku` |
 | `generic` | General purpose | all | — |
 
 When `DefaultTools` is nil (analyst, coder, summarizer, generic), the agent has access to all registered tools minus security-filtered ones.
@@ -89,6 +89,8 @@ if remaining <= 0 {
 ```
 
 **Soft cap by design**: Multiple agents may pass the pre-flight budget check concurrently before any deducts tokens, causing the budget to be overrun by up to `(N_agents - 1) * tokens_per_call`. This is intentional — a hard reservation pattern would add mutex contention without meaningful benefit at the typical 3-5 agent parallelism level.
+
+**Token tracking**: Every LLM call made by a sub-agent publishes a usage event to the event bus, contributing to the global token usage statistics. The shared budget counter tracks consumption for the orchestration's own limit enforcement, while the event bus ensures all sub-agent tokens are recorded in the usage dashboard and cost metrics.
 
 ### Per-Agent Limits
 
@@ -157,6 +159,8 @@ Two event bus events are published for dashboard/metrics integration:
 - `AgentOrchestrationStarted` — payload: `ChatID`, `AgentCount`
 - `AgentOrchestrationDone` — payload: `ChatID`, `AgentCount`, `SuccessCount`, `TotalTokens`, `DurationMs`
 
+Sub-agent LLM usage events (input/output tokens, model, provider) are also published to the event bus after each LLM call. This feeds into the token usage tracking system, ensuring that orchestration costs appear in the `/usage` dashboard and `token_stats` skill alongside regular assistant usage.
+
 ### Event Delivery Guarantee
 
 Post-agent completion events use `context.Background()` with a 5-second timeout to guarantee delivery even if the parent context's deadline has expired.
@@ -166,7 +170,7 @@ Post-agent completion events use `context.Background()` with a 5-second timeout 
 Each agent type can have a `RouteHint` for provider selection:
 
 1. **Spec-level override**: `AgentSpec.RouteHint` (from LLM input)
-2. **Profile default**: `AgentTypeProfile.RouteHint` (e.g., `summarizer → "ollama"`)
+2. **Profile default**: `AgentTypeProfile.RouteHint` (e.g., `summarizer → "claude-haiku"`)
 3. **Empty**: use the default provider
 
 The `RouteHint` is passed on the `llm.Request` and dispatched by the existing `RoutingProvider` in the LLM chain.

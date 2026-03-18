@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"go.uber.org/zap"
 
 	"github.com/iulita-ai/iulita/internal/channel"
 	"github.com/iulita-ai/iulita/internal/domain"
+	"github.com/iulita-ai/iulita/internal/llm"
 	"github.com/iulita-ai/iulita/internal/storage"
 )
 
@@ -30,14 +32,43 @@ func RegisterAuditSubscriber(bus *Bus, store storage.Repository, logger *zap.Log
 	logger.Info("audit subscriber registered")
 }
 
+// UsageCostCalculator computes the cost for a given model and usage.
+// Implemented by cost.Tracker. May be nil when cost tracking is disabled.
+type UsageCostCalculator interface {
+	Calculate(model string, usage llm.Usage) float64
+}
+
 // RegisterUsageSubscriber aggregates per-chat token usage in usage_stats table.
-func RegisterUsageSubscriber(bus *Bus, store storage.Repository, logger *zap.Logger) {
+// It is the single writer for all usage data — replaces the old dual-subscriber setup.
+// costCalc may be nil when cost tracking is disabled.
+func RegisterUsageSubscriber(bus *Bus, store storage.Repository, costCalc UsageCostCalculator, logger *zap.Logger) {
 	bus.SubscribeAsync(LLMUsage, func(ctx context.Context, evt Event) error {
 		p, ok := evt.Payload.(LLMUsagePayload)
 		if !ok {
 			return nil
 		}
-		return store.IncrementUsage(ctx, p.ChatID, p.InputTokens, p.OutputTokens)
+		var costUSD float64
+		if costCalc != nil {
+			costUSD = costCalc.Calculate(p.Model, llm.Usage{
+				InputTokens:              p.InputTokens,
+				OutputTokens:             p.OutputTokens,
+				CacheReadInputTokens:     p.CacheReadInputTokens,
+				CacheCreationInputTokens: p.CacheCreationInputTokens,
+			})
+		}
+		return store.UpsertUsage(ctx, storage.UsageUpsert{
+			ChatID:              p.ChatID,
+			UserID:              p.UserID,
+			Model:               p.Model,
+			Provider:            p.Provider,
+			Hour:                time.Now().Truncate(time.Hour),
+			InputTokens:         p.InputTokens,
+			OutputTokens:        p.OutputTokens,
+			CacheReadTokens:     p.CacheReadInputTokens,
+			CacheCreationTokens: p.CacheCreationInputTokens,
+			Requests:            1,
+			CostUSD:             costUSD,
+		})
 	})
 	logger.Info("usage metrics subscriber registered")
 }

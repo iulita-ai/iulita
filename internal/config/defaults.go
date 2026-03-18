@@ -14,7 +14,7 @@ func DefaultConfig(paths *Paths) *Config {
 			Encoding: "console",
 		},
 		Claude: ClaudeConfig{
-			Model:          "claude-sonnet-4-5-20250929",
+			Model:          "claude-sonnet-4-6",
 			MaxTokens:      4096,
 			ContextWindow:  200000,
 			RequestTimeout: "120s",
@@ -91,6 +91,7 @@ func DefaultConfig(paths *Paths) *Config {
 			RateWindow:     "1m",
 		},
 		Cost: CostConfig{
+			Enabled:        true,
 			AlertThreshold: 0.8,
 			Prices:         defaultModelPrices(),
 		},
@@ -113,7 +114,22 @@ const defaultMemorySystemPrompt = `MEMORY RULES:
 
 func defaultModelPrices() map[string]ModelPrice {
 	return map[string]ModelPrice{
+		// Current generation
+		"claude-opus-4-6":           {InputPerMillion: 5.0, OutputPerMillion: 25.0},
+		"claude-sonnet-4-6":         {InputPerMillion: 3.0, OutputPerMillion: 15.0},
+		"claude-haiku-4-5-20251001": {InputPerMillion: 1.0, OutputPerMillion: 5.0},
+		"claude-haiku-4-5":          {InputPerMillion: 1.0, OutputPerMillion: 5.0},
+		// Legacy
 		"claude-sonnet-4-5-20250929": {InputPerMillion: 3.0, OutputPerMillion: 15.0},
-		"claude-haiku-3-5-20241022":  {InputPerMillion: 0.80, OutputPerMillion: 4.0},
+		"claude-sonnet-4-5":          {InputPerMillion: 3.0, OutputPerMillion: 15.0},
+		"claude-opus-4-5-20251101":   {InputPerMillion: 5.0, OutputPerMillion: 25.0},
+		"claude-opus-4-5":            {InputPerMillion: 5.0, OutputPerMillion: 25.0},
+		"claude-opus-4-1-20250805":   {InputPerMillion: 15.0, OutputPerMillion: 75.0},
+		"claude-opus-4-1":            {InputPerMillion: 15.0, OutputPerMillion: 75.0},
+		"claude-sonnet-4-20250514":   {InputPerMillion: 3.0, OutputPerMillion: 15.0},
+		"claude-sonnet-4-0":          {InputPerMillion: 3.0, OutputPerMillion: 15.0},
+		"claude-opus-4-20250514":     {InputPerMillion: 15.0, OutputPerMillion: 75.0},
+		"claude-opus-4-0":            {InputPerMillion: 15.0, OutputPerMillion: 75.0},
+		"claude-3-haiku-20240307":    {InputPerMillion: 0.25, OutputPerMillion: 1.25},
 	}
 }

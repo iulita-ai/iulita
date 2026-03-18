@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/iulita-ai/iulita/internal/channel"
+	"github.com/iulita-ai/iulita/internal/eventbus"
 	"github.com/iulita-ai/iulita/internal/llm"
 	"github.com/iulita-ai/iulita/internal/skill"
 )
@@ -21,7 +22,9 @@ type Runner struct {
 	provider     llm.Provider
 	registry     *skill.Registry
 	notifier     channel.StatusNotifier
+	bus          *eventbus.Bus
 	chatID       string
+	userID       string
 	logger       *zap.Logger
 	allowedTools map[string]bool // runtime allowlist — only these tools can be executed
 }
@@ -31,6 +34,7 @@ func NewRunner(
 	provider llm.Provider,
 	registry *skill.Registry,
 	notifier channel.StatusNotifier,
+	bus *eventbus.Bus,
 	chatID string,
 	logger *zap.Logger,
 ) *Runner {
@@ -38,9 +42,15 @@ func NewRunner(
 		provider: provider,
 		registry: registry,
 		notifier: notifier,
+		bus:      bus,
 		chatID:   chatID,
 		logger:   logger,
 	}
+}
+
+// SetUserID sets the user ID for usage tracking events.
+func (r *Runner) SetUserID(userID string) {
+	r.userID = userID
 }
 
 // Run executes the sub-agent and returns a result.
@@ -115,6 +125,34 @@ func (r *Runner) Run(ctx context.Context, spec AgentSpec, budget Budget, sharedT
 		// Track token usage.
 		turnTokens := lastResp.Usage.InputTokens + lastResp.Usage.OutputTokens
 		result.Tokens += turnTokens
+
+		r.logger.Info("sub-agent LLM usage",
+			zap.String("agent_id", spec.ID),
+			zap.String("model", lastResp.Model),
+			zap.String("provider", lastResp.Provider),
+			zap.String("route_hint", routeHint),
+			zap.Int64("input_tokens", lastResp.Usage.InputTokens),
+			zap.Int64("output_tokens", lastResp.Usage.OutputTokens),
+			zap.Int("turn", turn),
+		)
+
+		// Publish usage event so sub-agent tokens are tracked in usage_stats.
+		if r.bus != nil {
+			r.bus.Publish(ctx, eventbus.Event{
+				Type: eventbus.LLMUsage,
+				Payload: eventbus.LLMUsagePayload{
+					ChatID:                   r.chatID,
+					UserID:                   r.userID,
+					Model:                    lastResp.Model,
+					Provider:                 lastResp.Provider,
+					InputTokens:              lastResp.Usage.InputTokens,
+					OutputTokens:             lastResp.Usage.OutputTokens,
+					CacheReadInputTokens:     lastResp.Usage.CacheReadInputTokens,
+					CacheCreationInputTokens: lastResp.Usage.CacheCreationInputTokens,
+					Iteration:                turn,
+				},
+			})
+		}
 		result.Turns = turn + 1
 
 		// Deduct from shared budget.

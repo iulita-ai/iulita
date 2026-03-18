@@ -116,7 +116,8 @@ func (o *Orchestrator) Run(ctx context.Context, chatID string, specs []AgentSpec
 			agentCtx = WithDepth(agentCtx, DepthFrom(ctx)+1)
 
 			// Run the sub-agent.
-			runner := NewRunner(o.provider, o.registry, o.notifier, chatID, o.logger)
+			runner := NewRunner(o.provider, o.registry, o.notifier, o.bus, chatID, o.logger)
+			runner.SetUserID(skill.UserIDFrom(ctx))
 			results[i] = runner.Run(agentCtx, spec, budget, sharedTokens)
 
 			// Emit completion or failure using a fresh context so events

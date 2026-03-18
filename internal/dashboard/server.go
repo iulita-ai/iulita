@@ -211,8 +211,17 @@ func New(cfg Config) *Server {
 	api.Put("/skills/:name/config/:key", s.handleSetSkillConfig)
 	api.Get("/techfacts", s.handleTechFacts)
 
-	// Usage & memory browser API
-	api.Get("/usage/summary", s.handleUsageSummary)
+	// Usage stats API (admin only — exposes system-wide cost/token data).
+	if s.authService != nil {
+		usageGroup := api.Group("/usage", auth.AdminOnly())
+		usageGroup.Get("/summary", s.handleUsageSummaryV2)
+		usageGroup.Get("/daily", s.handleUsageByDay)
+		usageGroup.Get("/by-model", s.handleUsageByModel)
+	} else {
+		api.Get("/usage/summary", s.handleUsageSummaryV2)
+		api.Get("/usage/daily", s.handleUsageByDay)
+		api.Get("/usage/by-model", s.handleUsageByModel)
+	}
 	api.Put("/facts/:id", s.handleUpdateFact)
 	api.Delete("/facts/:id", s.handleDeleteFact)
 	api.Get("/facts/search", s.handleSearchFacts)

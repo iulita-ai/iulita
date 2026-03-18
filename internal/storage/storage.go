@@ -131,6 +131,10 @@ type Repository interface {
 	// Usage stats
 	IncrementUsage(ctx context.Context, chatID string, inputTokens, outputTokens int64) error
 	GetUsageStats(ctx context.Context, chatID string) ([]domain.UsageRecord, error)
+	UpsertUsage(ctx context.Context, rec UsageUpsert) error
+	GetUsageSummary(ctx context.Context, filter UsageFilter) (*UsageSummary, error)
+	GetUsageByDay(ctx context.Context, filter UsageFilter) ([]DailyUsage, error)
+	GetUsageByModel(ctx context.Context, filter UsageFilter) ([]ModelUsage, error)
 
 	// Embedding cache
 	GetCachedEmbedding(ctx context.Context, contentHash string) ([]float32, error)
@@ -213,4 +217,63 @@ type TaskFilter struct {
 	Status *domain.TaskStatus
 	Type   string
 	Limit  int
+}
+
+// UsageUpsert is the input for upserting a usage stats row.
+type UsageUpsert struct {
+	ChatID              string
+	UserID              string
+	Model               string
+	Provider            string
+	Hour                time.Time
+	InputTokens         int64
+	OutputTokens        int64
+	CacheReadTokens     int64
+	CacheCreationTokens int64
+	Requests            int64
+	CostUSD             float64
+}
+
+// UsageFilter specifies criteria for querying usage stats.
+type UsageFilter struct {
+	ChatID   string
+	UserID   string
+	Model    string
+	Provider string
+	From     time.Time
+	To       time.Time
+}
+
+// UsageSummary is the aggregated usage summary.
+type UsageSummary struct {
+	TotalInputTokens         int64
+	TotalOutputTokens        int64
+	TotalCacheReadTokens     int64
+	TotalCacheCreationTokens int64
+	TotalRequests            int64
+	TotalCostUSD             float64
+}
+
+// DailyUsage is the per-day aggregation of usage stats.
+type DailyUsage struct {
+	Date                string  `json:"date"`
+	Model               string  `json:"model,omitempty"`
+	InputTokens         int64   `json:"input_tokens"`
+	OutputTokens        int64   `json:"output_tokens"`
+	CacheReadTokens     int64   `json:"cache_read_tokens"`
+	CacheCreationTokens int64   `json:"cache_creation_tokens"`
+	Requests            int64   `json:"requests"`
+	CostUSD             float64 `json:"cost_usd"`
+}
+
+// ModelUsage is the per-model aggregation of usage stats.
+type ModelUsage struct {
+	Model               string  `json:"model"`
+	Provider            string  `json:"provider"`
+	InputTokens         int64   `json:"input_tokens"`
+	OutputTokens        int64   `json:"output_tokens"`
+	CacheReadTokens     int64   `json:"cache_read_tokens"`
+	CacheCreationTokens int64   `json:"cache_creation_tokens"`
+	Requests            int64   `json:"requests"`
+	CostUSD             float64 `json:"cost_usd"`
 }

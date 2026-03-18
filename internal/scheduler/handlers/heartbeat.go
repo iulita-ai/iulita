@@ -84,6 +84,7 @@ func (h *HeartbeatHandler) Handle(ctx context.Context, payload string) (string, 
 	resp, err := h.provider.Complete(ctx, llm.Request{
 		SystemPrompt: "You are a proactive personal assistant. Review the user's memory context and decide if a brief check-in message is warranted.",
 		Message:      prompt,
+		RouteHint:    llm.RouteHintCheap,
 	})
 	if err != nil {
 		return "", fmt.Errorf("heartbeat LLM call: %w", err)

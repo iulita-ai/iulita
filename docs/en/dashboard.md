@@ -207,6 +207,34 @@ The Tasks view aggregates tasks from all providers:
 - **Sync button** — triggers one-shot scheduler task
 - **Create button** — new task with provider selection
 
+## Token Usage Statistics
+
+The dashboard includes a token usage page (`/usage`) for monitoring LLM costs.
+
+### API Endpoints (Admin Only)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/usage/summary` | GET | Aggregated usage summary with filters |
+| `/api/usage/daily` | GET | Daily breakdown of token usage |
+| `/api/usage/by-model` | GET | Per-model usage breakdown |
+
+Query parameters: `from`, `to` (date or RFC3339), `chat_id`, `user_id`, `model`, `provider`.
+
+### Dashboard Page
+
+The Usage view (`/usage`, admin-only) shows:
+- **KPI cards** — total input/output tokens, cache reads, requests, cost
+- **By Model table** — per-model breakdown with provider info
+- **Daily Breakdown table** — day-by-day usage with date range picker and model filter
+
+### Chat Skill
+
+The `token_stats` skill allows querying usage via chat:
+- Period: `today`, `week` (default), `month`, `all`
+- Optional model filter
+- Admin-only
+
 ## Prometheus Metrics
 
 When enabled (`metrics.enabled = true`), metrics are exposed on a separate port:

@@ -5,7 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/iulita-ai/iulita/internal/llm"
 )
+
+// SynthesisRouteHint implements skill.SynthesisModelDeclarer.
+func (s *Skill) SynthesisRouteHint() string { return llm.RouteHintCheap }
 
 // Skill returns the current date, time, timezone, and unix timestamp.
 type Skill struct{}

@@ -62,6 +62,8 @@ type Assistant struct {
 	approvals         *approvalStore
 	sender            channel.MessageSender // for sending approval prompts
 	prompterFactory   interact.PromptAskerFactory
+	modelName         atomic.Value // LLM model name for usage tracking (string)
+	providerName      atomic.Value // LLM provider name for usage tracking (string)
 }
 
 // New creates a new Assistant.
@@ -70,7 +72,7 @@ func New(provider llm.Provider, store storage.Repository, registry *skill.Regist
 		contextWindow = defaultContextWindow
 	}
 
-	return &Assistant{
+	a := &Assistant{
 		provider:        provider,
 		store:           store,
 		registry:        registry,
@@ -83,6 +85,9 @@ func New(provider llm.Provider, store storage.Repository, registry *skill.Regist
 		followUpCh:      make(chan InjectedMessage, followUpBufferSize),
 		approvals:       newApprovalStore(),
 	}
+	a.modelName.Store("")
+	a.providerName.Store("")
+	return a
 }
 
 // staticSystemPrompt returns the stable portion of the system prompt:
@@ -474,6 +479,7 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 
 	// Agentic loop: call LLM, execute tools, repeat until text response.
 	var lastResp llm.Response
+	var synthHint string               // accumulates SynthesisModelDeclarer hints per iteration
 	var extCancelFn context.CancelFunc // tracks deadline extension from TimeoutDeclarer skills
 	defer func() {
 		if extCancelFn != nil {
@@ -537,12 +543,18 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 		}
 		compressedThisTurn = false
 
+		// Reset synthesis route hint after the LLM call consumed it.
+		// This ensures the hint only applies to one call.
+		req.RouteHint = ""
+
 		a.lastInputTokens.Store(lastResp.Usage.InputTokens)
 		a.totalInputTokens.Add(lastResp.Usage.InputTokens)
 		a.totalOutputTokens.Add(lastResp.Usage.OutputTokens)
 		a.totalRequests.Add(1)
 
 		a.logger.Info("LLM usage",
+			zap.String("model", lastResp.Model),
+			zap.String("provider", lastResp.Provider),
 			zap.Int64("input_tokens", lastResp.Usage.InputTokens),
 			zap.Int64("output_tokens", lastResp.Usage.OutputTokens),
 			zap.Int64("cache_read", lastResp.Usage.CacheReadInputTokens),
@@ -551,10 +563,26 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 		)
 
 		if a.bus != nil {
+			// Prefer model/provider from response (accurate for routed requests).
+			model := lastResp.Model
+			if model == "" {
+				if v, ok := a.modelName.Load().(string); ok {
+					model = v
+				}
+			}
+			provider := lastResp.Provider
+			if provider == "" {
+				if v, ok := a.providerName.Load().(string); ok {
+					provider = v
+				}
+			}
 			a.bus.Publish(ctx, eventbus.Event{
 				Type: eventbus.LLMUsage,
 				Payload: eventbus.LLMUsagePayload{
 					ChatID:                   msg.ChatID,
+					UserID:                   effectiveUserID,
+					Model:                    model,
+					Provider:                 provider,
 					InputTokens:              lastResp.Usage.InputTokens,
 					OutputTokens:             lastResp.Usage.OutputTokens,
 					CacheReadInputTokens:     lastResp.Usage.CacheReadInputTokens,
@@ -632,6 +660,12 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 							zap.Duration("timeout", td.RequestTimeout()))
 					}
 				}
+				// Collect synthesis model hint (last non-empty wins).
+				if smd, ok := s.(skill.SynthesisModelDeclarer); ok {
+					if h := smd.SynthesisRouteHint(); h != "" {
+						synthHint = h
+					}
+				}
 			}
 
 			result := a.executeSkill(ctx, msg.ChatID, tc)
@@ -639,6 +673,11 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 			exchange.Results = append(exchange.Results, result)
 		}
 
+		// Apply synthesis route hint for the next LLM call.
+		if synthHint != "" {
+			req.RouteHint = synthHint
+			synthHint = ""
+		}
 		req.ToolExchanges = append(req.ToolExchanges, exchange)
 	}
 
@@ -996,6 +1035,12 @@ func (a *Assistant) SetMessageSender(s channel.MessageSender) {
 // This enables skills to ask users questions during execution.
 func (a *Assistant) SetPrompterFactory(f interact.PromptAskerFactory) {
 	a.prompterFactory = f
+}
+
+// SetModelInfo sets the model and provider names for usage tracking.
+func (a *Assistant) SetModelInfo(model, provider string) {
+	a.modelName.Store(model)
+	a.providerName.Store(provider)
 }
 
 // Steer injects a high-priority message into the assistant's processing queue.

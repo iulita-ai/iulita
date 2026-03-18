@@ -248,3 +248,31 @@ Claude Provider
 ```
 
 Chaque couche est ajoutee conditionnellement en fonction de la configuration.
+
+## Routage Intelligent des Modeles
+
+Iulita enregistre automatiquement Claude Haiku comme fournisseur economique lorsqu'une cle API Claude est configuree.
+
+### Routage automatique des taches de fond
+
+Les taches de fond (compression du contexte, generation d'insights, analyse de profil, raffinement des signets, heartbeat) sont automatiquement routees vers Haiku.
+
+### Routage au niveau des competences
+
+Les competences peuvent declarer que la synthese apres leur execution peut utiliser un modele moins cher via `SynthesisModelDeclarer`. Competences avec synthese economique : `datetime`, `exchange_rate`, `geolocation`, `recall`, `list_insights`, `websearch`.
+
+### Routage des sous-agents
+
+| Type d'agent | Route | Raison |
+|-------------|-------|--------|
+| summarizer | claude-haiku | Resume |
+| researcher | Sonnet (par defaut) | Necessite du raisonnement |
+| analyst | Sonnet (par defaut) | Identification de motifs |
+
+### Tarification des modeles (par million de tokens)
+
+| Modele | Entree | Sortie |
+|--------|--------|--------|
+| claude-opus-4-6 | $5.00 | $25.00 |
+| claude-sonnet-4-6 | $3.00 | $15.00 |
+| claude-haiku-4-5 | $1.00 | $5.00 |

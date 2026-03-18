@@ -223,6 +223,10 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 		CacheReadInputTokens:     resp.Usage.CacheReadInputTokens,
 		CacheCreationInputTokens: resp.Usage.CacheCreationInputTokens,
 	}
+	p.mu.RLock()
+	response.Model = p.model
+	p.mu.RUnlock()
+	response.Provider = "claude"
 
 	return response, nil
 }
@@ -331,6 +335,11 @@ func (p *Provider) CompleteStream(ctx context.Context, req llm.Request, callback
 		}
 		return llm.Response{}, fmt.Errorf("claude stream: %w", err)
 	}
+
+	p.mu.RLock()
+	response.Model = p.model
+	p.mu.RUnlock()
+	response.Provider = "claude"
 
 	return response, nil
 }

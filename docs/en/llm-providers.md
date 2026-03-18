@@ -234,6 +234,60 @@ For providers without native tool calling (Ollama, OpenAI):
 3. Strips `Tools` from the request
 4. Parses XML tool calls from the response using regex
 
+## Smart Model Routing
+
+Iulita auto-registers a Claude Haiku provider when a Claude API key is configured. This enables automatic cost optimization:
+
+### Automatic Route Hints
+
+Background tasks are routed to Haiku via `RouteHint: llm.RouteHintCheap`:
+
+| Task | File | Why Haiku |
+|------|------|-----------|
+| Context compression | `compression.go` | Pure summarization |
+| Insight generation | `insight_generate.go` | Short creative text |
+| Insight scoring | `insight_generate.go` | Single digit output |
+| Tech fact analysis | `techfact_analyze.go` | JSON extraction |
+| Bookmark refinement | `refine_bookmark.go` | Extract key sentences |
+| Heartbeat check-in | `heartbeat.go` | Brief message or skip |
+
+### Skill-Level Synthesis Routing
+
+Skills can declare that the LLM call synthesizing their output can use a cheaper model:
+
+```go
+// Optional interface — skills that return simple data implement this.
+type SynthesisModelDeclarer interface {
+    SynthesisRouteHint() string
+}
+```
+
+Skills with cheap synthesis: `datetime`, `exchange_rate`, `geolocation`, `recall`, `list_insights`, `websearch`.
+
+When the LLM calls one of these skills, the next iteration's synthesis call routes to Haiku automatically. The hint resets after each call — it never persists beyond one iteration.
+
+### Sub-Agent Routing
+
+Agent types have default route hints:
+
+| Agent Type | Default Route | Reason |
+|------------|--------------|--------|
+| summarizer | `claude-haiku` | Pure summarization |
+| researcher | default (Sonnet) | Needs reasoning for search queries |
+| analyst | default (Sonnet) | Pattern identification |
+| planner | default (Sonnet) | Step decomposition |
+| coder | default (Sonnet) | Code generation |
+
+### Model Pricing
+
+Default prices (per million tokens):
+
+| Model | Input | Output |
+|-------|-------|--------|
+| claude-opus-4-6 | $5.00 | $25.00 |
+| claude-sonnet-4-6 | $3.00 | $15.00 |
+| claude-haiku-4-5 | $1.00 | $5.00 |
+
 ## Provider Chain Assembly
 
 The chain is built in `cmd/iulita/main.go`:

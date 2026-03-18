@@ -248,3 +248,31 @@ Claude Provider
 ```
 
 Cada capa se agrega condicionalmente basado en la configuracion.
+
+## Enrutamiento Inteligente de Modelos
+
+Iulita registra automaticamente Claude Haiku como proveedor economico cuando se configura una clave API de Claude.
+
+### Enrutamiento automatico de tareas en segundo plano
+
+Las tareas en segundo plano (compresion de contexto, generacion de insights, analisis de perfil, refinamiento de marcadores, heartbeat) se enrutan automaticamente a Haiku.
+
+### Enrutamiento a nivel de habilidad
+
+Las habilidades pueden declarar que la sintesis despues de su ejecucion puede usar un modelo mas barato mediante `SynthesisModelDeclarer`. Habilidades con sintesis economica: `datetime`, `exchange_rate`, `geolocation`, `recall`, `list_insights`, `websearch`.
+
+### Enrutamiento de sub-agentes
+
+| Tipo de agente | Ruta | Razon |
+|---------------|------|-------|
+| summarizer | claude-haiku | Resumen |
+| researcher | Sonnet (predeterminado) | Requiere razonamiento |
+| analyst | Sonnet (predeterminado) | Identificacion de patrones |
+
+### Precios de modelos (por millon de tokens)
+
+| Modelo | Entrada | Salida |
+|--------|---------|--------|
+| claude-opus-4-6 | $5.00 | $25.00 |
+| claude-sonnet-4-6 | $3.00 | $15.00 |
+| claude-haiku-4-5 | $1.00 | $5.00 |

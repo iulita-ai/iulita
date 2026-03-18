@@ -24,12 +24,16 @@ type AuditEntry struct {
 type UsageRecord struct {
 	bun.BaseModel `bun:"table:usage_stats"`
 
-	ID           int64     `bun:"id,pk,autoincrement"`
-	ChatID       string    `bun:"chat_id,notnull"`
-	UserID       string    `bun:"user_id,notnull,default:''"` // iulita user UUID
-	Hour         time.Time `bun:"hour,notnull"`               // truncated to hour
-	InputTokens  int64     `bun:"input_tokens,notnull,default:0"`
-	OutputTokens int64     `bun:"output_tokens,notnull,default:0"`
-	Requests     int64     `bun:"requests,notnull,default:0"`
-	CostUSD      float64   `bun:"cost_usd,notnull,default:0"`
+	ID                  int64     `bun:"id,pk,autoincrement"`
+	ChatID              string    `bun:"chat_id,notnull"`
+	UserID              string    `bun:"user_id,notnull,default:''"` // iulita user UUID
+	Model               string    `bun:"model,notnull,default:''"`
+	Provider            string    `bun:"provider,notnull,default:''"`
+	Hour                time.Time `bun:"hour,notnull"` // truncated to hour
+	InputTokens         int64     `bun:"input_tokens,notnull,default:0"`
+	OutputTokens        int64     `bun:"output_tokens,notnull,default:0"`
+	CacheReadTokens     int64     `bun:"cache_read_tokens,notnull,default:0"`
+	CacheCreationTokens int64     `bun:"cache_creation_tokens,notnull,default:0"`
+	Requests            int64     `bun:"requests,notnull,default:0"`
+	CostUSD             float64   `bun:"cost_usd,notnull,default:0"`
 }

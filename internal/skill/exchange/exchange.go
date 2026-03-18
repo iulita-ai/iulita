@@ -8,7 +8,12 @@ import (
 	"math"
 	"net/http"
 	"strings"
+
+	"github.com/iulita-ai/iulita/internal/llm"
 )
+
+// SynthesisRouteHint implements skill.SynthesisModelDeclarer.
+func (s *Skill) SynthesisRouteHint() string { return llm.RouteHintCheap }
 
 const apiBaseURL = "https://api.exchangerate-api.com/v4/latest/"
 

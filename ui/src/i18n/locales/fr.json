@@ -12,6 +12,7 @@
     "agentJobs": "Taches de l'agent",
     "channels": "Canaux",
     "users": "Utilisateurs",
+    "usage": "Utilisation",
     "logout": "Deconnexion"
   },
   "common": {
@@ -525,5 +526,28 @@
     "es": "Español",
     "fr": "Français",
     "he": "עברית"
+  },
+  "usage": {
+    "title": "Utilisation des tokens",
+    "allModels": "Tous les modeles",
+    "allChats": "Tous les chats",
+    "inputTokens": "Tokens entrants",
+    "outputTokens": "Tokens sortants",
+    "cacheRead": "Cache lu",
+    "cacheCreation": "Cache cree",
+    "requests": "Requetes",
+    "costUsd": "Cout (USD)",
+    "date": "Date",
+    "model": "Modele",
+    "provider": "Fournisseur",
+    "totalInputTokens": "Total entrants",
+    "totalOutputTokens": "Total sortants",
+    "totalCacheRead": "Total cache lu",
+    "totalRequests": "Total requetes",
+    "totalCost": "Cout total",
+    "dailyBreakdown": "Detail journalier",
+    "byModel": "Par modele",
+    "noData": "Aucune donnee pour cette periode",
+    "loadFailed": "Echec du chargement des statistiques"
   }
 }

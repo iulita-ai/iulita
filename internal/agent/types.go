@@ -129,7 +129,7 @@ func Profiles() map[AgentType]AgentTypeProfile {
 		},
 		AgentTypeSummarizer: {
 			SystemPrompt: "You are a summarization sub-agent. Condense the provided input to its essential points. Use bullet points. Maximum 300 words unless instructed otherwise.",
-			RouteHint:    "ollama",
+			RouteHint:    "claude-haiku",
 		},
 		AgentTypeGeneric: {
 			SystemPrompt: "You are a general-purpose sub-agent. Complete the given task efficiently and concisely.",

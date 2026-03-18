@@ -63,7 +63,7 @@ func TestRunnerBasicCompletion(t *testing.T) {
 		},
 	}
 
-	runner := NewRunner(provider, newTestRegistry(), nil, "chat1", zap.NewNop())
+	runner := NewRunner(provider, newTestRegistry(), nil, nil, "chat1", zap.NewNop())
 	result := runner.Run(context.Background(), AgentSpec{
 		ID:   "test",
 		Type: AgentTypeGeneric,
@@ -102,7 +102,7 @@ func TestRunnerToolCalls(t *testing.T) {
 	}
 
 	registry := newTestRegistry(&stubSkill{name: "datetime", output: "2026-03-17 12:00:00"})
-	runner := NewRunner(provider, registry, nil, "chat1", zap.NewNop())
+	runner := NewRunner(provider, registry, nil, nil, "chat1", zap.NewNop())
 	result := runner.Run(context.Background(), AgentSpec{
 		ID:   "test",
 		Type: AgentTypeGeneric,
@@ -136,7 +136,7 @@ func TestRunnerMaxTurns(t *testing.T) {
 	}
 
 	registry := newTestRegistry(&stubSkill{name: "datetime", output: "ok"})
-	runner := NewRunner(provider, registry, nil, "chat1", zap.NewNop())
+	runner := NewRunner(provider, registry, nil, nil, "chat1", zap.NewNop())
 	result := runner.Run(context.Background(), AgentSpec{
 		ID:   "test",
 		Type: AgentTypeGeneric,
@@ -158,7 +158,7 @@ func TestRunnerBudgetExhaustion(t *testing.T) {
 	budget := &atomic.Int64{}
 	budget.Store(100) // only 100 tokens allowed
 
-	runner := NewRunner(provider, newTestRegistry(), nil, "chat1", zap.NewNop())
+	runner := NewRunner(provider, newTestRegistry(), nil, nil, "chat1", zap.NewNop())
 	result := runner.Run(context.Background(), AgentSpec{
 		ID:   "test",
 		Type: AgentTypeGeneric,
@@ -182,7 +182,7 @@ func TestRunnerTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 
-	runner := NewRunner(provider, newTestRegistry(), nil, "chat1", zap.NewNop())
+	runner := NewRunner(provider, newTestRegistry(), nil, nil, "chat1", zap.NewNop())
 	result := runner.Run(ctx, AgentSpec{
 		ID:   "test",
 		Type: AgentTypeGeneric,
@@ -199,7 +199,7 @@ func TestRunnerContextCancellation(t *testing.T) {
 	cancel() // cancel immediately
 
 	provider := &stubProvider{}
-	runner := NewRunner(provider, newTestRegistry(), nil, "chat1", zap.NewNop())
+	runner := NewRunner(provider, newTestRegistry(), nil, nil, "chat1", zap.NewNop())
 	result := runner.Run(ctx, AgentSpec{
 		ID:   "test",
 		Type: AgentTypeGeneric,
@@ -228,7 +228,7 @@ func TestRunnerToolAllowlist(t *testing.T) {
 		&stubSkill{name: "shell_exec", output: "exec result"},
 	)
 
-	runner := NewRunner(provider, registry, nil, "chat1", zap.NewNop())
+	runner := NewRunner(provider, registry, nil, nil, "chat1", zap.NewNop())
 
 	// Run with researcher type — only web_search and webfetch allowed.
 	result := runner.Run(context.Background(), AgentSpec{
@@ -259,18 +259,18 @@ func TestRunnerProfileRouteHint(t *testing.T) {
 		},
 	}
 
-	runner := NewRunner(provider, newTestRegistry(), nil, "chat1", zap.NewNop())
+	runner := NewRunner(provider, newTestRegistry(), nil, nil, "chat1", zap.NewNop())
 	result := runner.Run(context.Background(), AgentSpec{
 		ID:   "test",
-		Type: AgentTypeSummarizer, // profile has RouteHint: "ollama"
+		Type: AgentTypeSummarizer, // profile has RouteHint: "claude-haiku"
 		Task: "summarize this",
 	}, Budget{}, nil)
 
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
-	if capturedHint != "ollama" {
-		t.Errorf("RouteHint = %q, want %q", capturedHint, "ollama")
+	if capturedHint != "claude-haiku" {
+		t.Errorf("RouteHint = %q, want %q", capturedHint, "claude-haiku")
 	}
 }
 
@@ -287,7 +287,7 @@ func TestRunnerSpecRouteHintOverridesProfile(t *testing.T) {
 		},
 	}
 
-	runner := NewRunner(provider, newTestRegistry(), nil, "chat1", zap.NewNop())
+	runner := NewRunner(provider, newTestRegistry(), nil, nil, "chat1", zap.NewNop())
 	runner.Run(context.Background(), AgentSpec{
 		ID:        "test",
 		Type:      AgentTypeSummarizer, // profile default: "ollama"
@@ -316,7 +316,7 @@ func TestRunnerCurrentTimeInjection(t *testing.T) {
 	// Inject current time via context.
 	ctx := WithCurrentTime(context.Background(), "2026-03-17 Monday 16:30:45 (MSK, UTC+3:00)")
 
-	runner := NewRunner(provider, newTestRegistry(), nil, "chat1", zap.NewNop())
+	runner := NewRunner(provider, newTestRegistry(), nil, nil, "chat1", zap.NewNop())
 	result := runner.Run(ctx, AgentSpec{
 		ID:   "test",
 		Type: AgentTypeGeneric,
@@ -351,7 +351,7 @@ func TestRunnerNoCurrentTimeWithoutContext(t *testing.T) {
 	}
 
 	// No WithCurrentTime — empty context.
-	runner := NewRunner(provider, newTestRegistry(), nil, "chat1", zap.NewNop())
+	runner := NewRunner(provider, newTestRegistry(), nil, nil, "chat1", zap.NewNop())
 	runner.Run(context.Background(), AgentSpec{
 		ID:   "test",
 		Type: AgentTypeGeneric,

@@ -6,9 +6,13 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/iulita-ai/iulita/internal/llm"
 	"github.com/iulita-ai/iulita/internal/skill"
 	"github.com/iulita-ai/iulita/internal/storage"
 )
+
+// SynthesisRouteHint implements skill.SynthesisModelDeclarer (ListInsightsSkill only).
+func (s *ListInsightsSkill) SynthesisRouteHint() string { return llm.RouteHintCheap }
 
 // ListInsightsSkill returns recent insights for the current chat.
 type ListInsightsSkill struct {

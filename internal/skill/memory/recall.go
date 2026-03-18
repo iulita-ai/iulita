@@ -7,9 +7,13 @@ import (
 	"strings"
 
 	"github.com/iulita-ai/iulita/internal/domain"
+	"github.com/iulita-ai/iulita/internal/llm"
 	"github.com/iulita-ai/iulita/internal/skill"
 	"github.com/iulita-ai/iulita/internal/storage"
 )
+
+// SynthesisRouteHint implements skill.SynthesisModelDeclarer.
+func (s *RecallSkill) SynthesisRouteHint() string { return llm.RouteHintCheap }
 
 // RecallSkill searches long-term memory for relevant facts.
 type RecallSkill struct {

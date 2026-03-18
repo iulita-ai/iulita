@@ -467,6 +467,47 @@ export interface TodoCountsResponse {
   overdue: number
 }
 
+// --- Usage statistics ---
+
+export interface UsageSummaryResponse {
+  total_input_tokens: number
+  total_output_tokens: number
+  total_cache_read_tokens: number
+  total_cache_creation_tokens: number
+  total_requests: number
+  total_cost_usd: number
+}
+
+export interface UsageRow {
+  date: string
+  input_tokens: number
+  output_tokens: number
+  cache_read_tokens: number
+  cache_creation_tokens: number
+  requests: number
+  cost_usd: number
+}
+
+export interface UsageDailyResponse {
+  rows: UsageRow[]
+  summary: UsageSummaryResponse
+}
+
+export interface ModelUsageRow {
+  model: string
+  provider: string
+  input_tokens: number
+  output_tokens: number
+  cache_read_tokens: number
+  cache_creation_tokens: number
+  requests: number
+  cost_usd: number
+}
+
+export interface UsageByModelResponse {
+  rows: ModelUsageRow[]
+}
+
 // --- Token management ---
 
 const TOKEN_KEY = 'iulita_access_token'
@@ -868,4 +909,32 @@ export const api = {
   deleteTodo: (id: number) => del<{ status: string; id: number }>(`/api/todos/${id}`),
   triggerTodoSync: () => post<{ status: string }>('/api/todos/sync'),
   setDefaultTodoProvider: (provider: string) => put<{ status: string }>('/api/todos/default-provider', { provider }),
+
+  // Token usage statistics
+  getUsageSummary: (params?: { from?: string; to?: string; chat_id?: string; model?: string }) => {
+    const p = new URLSearchParams()
+    if (params?.from) p.set('from', params.from)
+    if (params?.to) p.set('to', params.to)
+    if (params?.chat_id) p.set('chat_id', params.chat_id)
+    if (params?.model) p.set('model', params.model)
+    const qs = p.toString()
+    return get<UsageSummaryResponse>(`/api/usage/summary${qs ? `?${qs}` : ''}`)
+  },
+  getUsageByDay: (params?: { from?: string; to?: string; chat_id?: string; model?: string }) => {
+    const p = new URLSearchParams()
+    if (params?.from) p.set('from', params.from)
+    if (params?.to) p.set('to', params.to)
+    if (params?.chat_id) p.set('chat_id', params.chat_id)
+    if (params?.model) p.set('model', params.model)
+    const qs = p.toString()
+    return get<UsageDailyResponse>(`/api/usage/daily${qs ? `?${qs}` : ''}`)
+  },
+  getUsageByModel: (params?: { from?: string; to?: string; chat_id?: string }) => {
+    const p = new URLSearchParams()
+    if (params?.from) p.set('from', params.from)
+    if (params?.to) p.set('to', params.to)
+    if (params?.chat_id) p.set('chat_id', params.chat_id)
+    const qs = p.toString()
+    return get<UsageByModelResponse>(`/api/usage/by-model${qs ? `?${qs}` : ''}`)
+  },
 }
