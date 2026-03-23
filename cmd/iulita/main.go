@@ -279,20 +279,31 @@ func main() {
 		wizardCompleted = true
 	}
 
-	// Re-read effective config with DB overrides applied for validation.
-	// Check if LLM providers are configured (base config + DB overrides).
-	hasLLMFromOverrides := false
-	if apiKey, ok := cfgStore.GetEffective("claude.api_key"); ok && apiKey != "" {
-		hasLLMFromOverrides = true
+	// Early SetSecretKeys with core schema secrets so GetEffective() can resolve
+	// credentials stored in the credential store (not just config_overrides).
+	// Full SetSecretKeys (including skill secrets) happens later after skills register.
+	cfgStore.SetSecretKeys(config.SchemaSecretKeys())
+
+	// Inject DB-stored values into cfg struct so Validate() and provider creation see them.
+	// Without config.toml, cfg fields are empty defaults. DB overrides / credential store
+	// may have the real values from a previous wizard run or dashboard configuration.
+	overrideKeys := []struct {
+		key string
+		dst *string
+	}{
+		{"claude.api_key", &cfg.Claude.APIKey},
+		{"claude.model", &cfg.Claude.Model},
+		{"openai.api_key", &cfg.OpenAI.APIKey},
+		{"openai.model", &cfg.OpenAI.Model},
+		{"ollama.url", &cfg.Ollama.URL},
+		{"ollama.model", &cfg.Ollama.Model},
+		{"telegram.token", &cfg.Telegram.Token},
 	}
-	if apiKey, ok := cfgStore.GetEffective("openai.api_key"); ok && apiKey != "" {
-		if model, ok2 := cfgStore.GetEffective("openai.model"); ok2 && model != "" {
-			hasLLMFromOverrides = true
-		}
-	}
-	if url, ok := cfgStore.GetEffective("ollama.url"); ok && url != "" {
-		if model, ok2 := cfgStore.GetEffective("ollama.model"); ok2 && model != "" {
-			hasLLMFromOverrides = true
+	for _, o := range overrideKeys {
+		if *o.dst == "" {
+			if v, ok := cfgStore.GetEffective(o.key); ok && v != "" {
+				*o.dst = v
+			}
 		}
 	}
 
@@ -303,7 +314,7 @@ func main() {
 	}
 
 	// In server mode, allow setup mode if wizard not completed and no LLM configured.
-	if serverMode && !wizardCompleted && !cfg.HasAnyLLMProvider() && !hasLLMFromOverrides {
+	if serverMode && !wizardCompleted && !cfg.HasAnyLLMProvider() {
 		validateMode = config.ValidateSetup
 		setupMode = true
 		logger.Info("starting in setup mode — web wizard required")

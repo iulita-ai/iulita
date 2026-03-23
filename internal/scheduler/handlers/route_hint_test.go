@@ -211,12 +211,20 @@ func TestInsightGenerateHandler_RouteHintCheap(t *testing.T) {
 	}
 
 	// Need at least minFacts (default 20) facts with enough variety for clustering.
+	// Use highly distinct topics to ensure TF-IDF always produces separable clusters.
+	topics := []string{
+		"golang programming language concurrency goroutines channels",
+		"french cuisine cooking recipes pastry baking bread",
+		"astronomy planets stars galaxies telescope observations",
+		"machine learning neural networks deep learning training",
+		"ocean marine biology coral reef fish diving",
+	}
 	facts := make([]domain.Fact, 25)
 	for i := range facts {
 		facts[i] = domain.Fact{
 			ID:        int64(i + 1),
 			ChatID:    "chat1",
-			Content:   fmt.Sprintf("fact about topic %d with some unique content %d", i%5, i),
+			Content:   fmt.Sprintf("%s detail number %d", topics[i%len(topics)], i),
 			CreatedAt: time.Now(),
 		}
 	}
