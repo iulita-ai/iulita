@@ -2,10 +2,14 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/iulita-ai/iulita/internal/domain"
 )
+
+// ErrNotFound is returned by storage when a record does not exist.
+var ErrNotFound = errors.New("not found")
 
 // Repository persists chat messages and reminders.
 type Repository interface {
@@ -193,6 +197,28 @@ type Repository interface {
 	DeleteSyncedTodoItemsNotIn(ctx context.Context, userID, provider string, keepExternalIDs []string) (int, error)
 	CountTodoItemsByProvider(ctx context.Context, userID string) (map[string]int, error)
 
+	// Credentials
+	SaveCredential(ctx context.Context, c *domain.Credential) error
+	GetCredential(ctx context.Context, id int64) (*domain.Credential, error)
+	GetCredentialByName(ctx context.Context, name string) (*domain.Credential, error)
+	GetCredentialByNameAndOwner(ctx context.Context, name, ownerID string) (*domain.Credential, error)
+	ListCredentials(ctx context.Context, filter CredentialFilter) ([]domain.Credential, error)
+	UpdateCredential(ctx context.Context, c *domain.Credential) error
+	DeleteCredential(ctx context.Context, id int64) error
+
+	// Credential bindings
+	SaveCredentialBinding(ctx context.Context, b *domain.CredentialBinding) error
+	DeleteCredentialBinding(ctx context.Context, credentialID int64, consumerType, consumerID string) error
+	ListCredentialBindings(ctx context.Context, credentialID int64) ([]domain.CredentialBinding, error)
+	ListCredentialBindingsByConsumer(ctx context.Context, consumerType, consumerID string) ([]domain.CredentialBinding, error)
+
+	// Credential audit
+	SaveCredentialAudit(ctx context.Context, a *domain.CredentialAudit) error
+	ListCredentialAudit(ctx context.Context, credentialID int64, limit int) ([]domain.CredentialAudit, error)
+
+	// Credential binding helpers
+	ListChannelInstanceCredentialBindings(ctx context.Context) (map[string]ChannelCredentialBinding, error)
+
 	// Locale
 	UpdateChannelLocale(ctx context.Context, chatID string, locale string) error
 	GetChannelLocale(ctx context.Context, channelType, channelUserID string) (string, error)
@@ -264,6 +290,19 @@ type DailyUsage struct {
 	CacheCreationTokens int64   `json:"cache_creation_tokens"`
 	Requests            int64   `json:"requests"`
 	CostUSD             float64 `json:"cost_usd"`
+}
+
+// ChannelCredentialBinding maps a channel instance to its bound credential.
+type ChannelCredentialBinding struct {
+	CredentialID   int64
+	CredentialName string
+}
+
+// CredentialFilter specifies criteria for listing credentials.
+type CredentialFilter struct {
+	Scope   domain.CredentialScope
+	OwnerID string
+	Type    domain.CredentialType
 }
 
 // ModelUsage is the per-model aggregation of usage stats.

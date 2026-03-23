@@ -25,6 +25,13 @@ type ChangePublisher interface {
 	PublishConfigChanged(ctx context.Context, key string)
 }
 
+// credentialProvider resolves named credentials through a priority chain.
+// Defined locally to avoid importing credential package.
+type credentialProvider interface {
+	Resolve(ctx context.Context, name string) (string, error)
+	IsAvailable(ctx context.Context, name string) bool
+}
+
 // Store provides layered configuration: base (TOML+env) overridden by DB values.
 // Encrypted values are transparently decrypted on read.
 type Store struct {
@@ -35,10 +42,11 @@ type Store struct {
 	publisher ChangePublisher
 	logger    *zap.Logger
 
-	mu          sync.RWMutex
-	cache       map[string]*domain.ConfigOverride
-	dynamicKeys map[string]bool // keys registered at runtime by skills
-	secretKeys  map[string]bool // keys that must always be encrypted
+	mu           sync.RWMutex
+	cache        map[string]*domain.ConfigOverride
+	dynamicKeys  map[string]bool // keys registered at runtime by skills
+	secretKeys   map[string]bool // keys that must always be encrypted
+	credProvider credentialProvider
 }
 
 // NewStore creates a ConfigStore with the given base config and DB repository.
@@ -141,9 +149,38 @@ func (s *Store) GetBaseValue(key string) (string, bool) {
 	return fmt.Sprintf("%v", s.koanf.Get(key)), true
 }
 
-// GetEffective returns the effective value for a config key: DB override first, then base config.
-// Encrypted overrides are decrypted. Returns ("", false) if not found anywhere.
+// GetWithoutCredentials returns the effective value without credential store delegation.
+// This is the non-recursive path: DB override → base config only.
+// Used by credential.Store as fallback to avoid infinite recursion.
+func (s *Store) GetWithoutCredentials(key string) (string, bool) {
+	if val, ok := s.Get(key); ok {
+		return val, true
+	}
+	return s.GetBaseValue(key)
+}
+
+// SetCredentialProvider wires the credential store for secret key delegation.
+func (s *Store) SetCredentialProvider(p credentialProvider) {
+	s.mu.Lock()
+	s.credProvider = p
+	s.mu.Unlock()
+}
+
+// GetEffective returns the effective value for a config key: credential store (for secrets),
+// then DB override, then base config.
 func (s *Store) GetEffective(key string) (string, bool) {
+	// For secret keys, try credential store first.
+	s.mu.RLock()
+	isSecret := s.secretKeys[key]
+	cp := s.credProvider
+	s.mu.RUnlock()
+
+	if isSecret && cp != nil {
+		if val, err := cp.Resolve(context.Background(), key); err == nil && val != "" {
+			return val, true
+		}
+	}
+
 	if val, ok := s.Get(key); ok {
 		return val, true
 	}
@@ -269,6 +306,23 @@ func (s *Store) IsSecretKey(key string) bool {
 	ok := s.secretKeys[key]
 	s.mu.RUnlock()
 	return ok
+}
+
+// GetSecretKeys returns a copy of the registered secret key names.
+func (s *Store) GetSecretKeys() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	keys := make([]string, 0, len(s.secretKeys))
+	for k := range s.secretKeys {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// DeleteConfigOverride removes a config override by key.
+// Alias for Delete — satisfies credential.MigrationSource interface.
+func (s *Store) DeleteConfigOverride(ctx context.Context, key string) error {
+	return s.Delete(ctx, key)
 }
 
 // SetForImport creates or updates a config override, bypassing restart-only restrictions.

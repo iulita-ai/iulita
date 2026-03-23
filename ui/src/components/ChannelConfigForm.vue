@@ -1,16 +1,19 @@
 <template>
   <!-- Telegram -->
   <template v-if="channelType === 'telegram'">
-    <n-form-item :label="t('channelConfig.botToken')" :required="required">
-      <n-input
-        :value="tg.token"
-        @update:value="v => update('token', v)"
-        placeholder="123456:ABC-DEF..."
+    <n-form-item :label="t('channelConfig.credential')" :required="required">
+      <n-select
+        :value="selectedCredentialId"
+        @update:value="v => emit('update:selectedCredentialId', v)"
+        :options="credentialOptions"
+        :placeholder="t('channelConfig.selectCredential')"
         :disabled="disabled"
-        type="password"
-        show-password-on="click"
       />
+      <template #feedback>
+        {{ t('channelConfig.credentialHelp') }}
+      </template>
     </n-form-item>
+
     <n-form-item :label="t('channelConfig.allowedUserIds')">
       <n-dynamic-tags
         :value="tg.allowedIdTags"
@@ -61,15 +64,17 @@
 
   <!-- Discord -->
   <template v-else-if="channelType === 'discord'">
-    <n-form-item :label="t('channelConfig.botToken')" :required="required">
-      <n-input
-        :value="discord.token"
-        @update:value="v => update('token', v)"
-        :placeholder="t('channelConfig.botToken')"
+    <n-form-item :label="t('channelConfig.credential')" :required="required">
+      <n-select
+        :value="selectedCredentialId"
+        @update:value="v => emit('update:selectedCredentialId', v)"
+        :options="credentialOptions"
+        :placeholder="t('channelConfig.selectCredential')"
         :disabled="disabled"
-        type="password"
-        show-password-on="click"
       />
+      <template #feedback>
+        {{ t('channelConfig.credentialHelp') }}
+      </template>
     </n-form-item>
     <n-form-item :label="t('channelConfig.allowedChannelIds')">
       <n-dynamic-tags
@@ -108,7 +113,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NFormItem, NInput, NInputNumber, NDynamicTags, NText } from 'naive-ui'
+import { NFormItem, NInput, NInputNumber, NDynamicTags, NText, NSelect } from 'naive-ui'
+import type { CredentialView } from '../api'
 
 const { t } = useI18n()
 
@@ -125,16 +131,25 @@ export interface ChannelConfigFormProps {
   modelValue: string // JSON string
   disabled?: boolean
   required?: boolean
+  credentials?: CredentialView[]
+  selectedCredentialId?: number | null
 }
 
 const props = withDefaults(defineProps<ChannelConfigFormProps>(), {
   disabled: false,
   required: false,
+  credentials: () => [],
+  selectedCredentialId: null,
 })
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]
+  'update:selectedCredentialId': [value: number | null]
 }>()
+
+const credentialOptions = computed(() =>
+  (props.credentials ?? []).map(c => ({ label: `${c.name} (${c.type})`, value: c.id }))
+)
 
 function parseConfig(): Record<string, unknown> {
   if (!props.modelValue) return {}

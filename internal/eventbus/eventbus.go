@@ -26,6 +26,9 @@ const (
 	FactDeleted     = "fact.deleted"
 	ConfigChanged   = "config.changed"
 
+	// Credential management events.
+	CredentialChanged = "credential.changed"
+
 	// Multi-agent orchestration events.
 	AgentOrchestrationStarted = "agent.orchestration.started"
 	AgentOrchestrationDone    = "agent.orchestration.done"

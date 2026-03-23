@@ -59,6 +59,12 @@ const router = createRouter({
       meta: { admin: true },
     },
     {
+      path: '/credentials',
+      name: 'credentials',
+      component: () => import('./views/Credentials.vue'),
+      meta: { admin: true },
+    },
+    {
       path: '/agent-jobs',
       name: 'agent-jobs',
       component: () => import('./views/AgentJobs.vue'),

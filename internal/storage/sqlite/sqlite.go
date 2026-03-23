@@ -94,6 +94,9 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 		{(*domain.GoogleAccount)(nil), "google_accounts"},
 		{(*domain.InstalledSkill)(nil), "installed_skills"},
 		{(*domain.TodoItem)(nil), "todo_items"},
+		{(*domain.Credential)(nil), "credentials"},
+		{(*domain.CredentialBinding)(nil), "credential_bindings"},
+		{(*domain.CredentialAudit)(nil), "credential_audit"},
 	}
 
 	// Rename legacy "dreams" table to "insights" (preserves existing data).
@@ -312,6 +315,21 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_channel_instances_type ON channel_instances(type)`,
 	}
 	for _, stmt := range userIndexes {
+		s.db.ExecContext(ctx, stmt)
+	}
+
+	// Credential indexes.
+	credentialIndexes := []string{
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_credentials_name_owner ON credentials(name, owner_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_credentials_scope_owner ON credentials(scope, owner_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_credentials_type ON credentials(type)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_credential_bindings_unique ON credential_bindings(credential_id, consumer_type, consumer_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_credential_bindings_consumer ON credential_bindings(consumer_type, consumer_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_credential_audit_cred_id ON credential_audit(credential_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_credential_audit_created ON credential_audit(created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_credential_audit_name ON credential_audit(credential_name)`,
+	}
+	for _, stmt := range credentialIndexes {
 		s.db.ExecContext(ctx, stmt)
 	}
 

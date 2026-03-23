@@ -83,6 +83,11 @@ type ConfigChangedPayload struct {
 	Key string
 }
 
+// CredentialChangedPayload is published when a credential is created, updated, deleted, or rotated.
+type CredentialChangedPayload struct {
+	Name string // credential name (dotted key)
+}
+
 // OrchestrationStartedPayload is published when a multi-agent orchestration begins.
 type OrchestrationStartedPayload struct {
 	ChatID     string
