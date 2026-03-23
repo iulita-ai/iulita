@@ -27,7 +27,7 @@ const (
 	ConfigChanged   = "config.changed"
 
 	// Credential management events.
-	CredentialChanged = "credential.changed"
+	CredentialChanged = "credential.changed" //nolint:gosec // G101 false positive: event type constant, not a credential
 
 	// Multi-agent orchestration events.
 	AgentOrchestrationStarted = "agent.orchestration.started"

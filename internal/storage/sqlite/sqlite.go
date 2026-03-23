@@ -330,7 +330,7 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_credential_audit_name ON credential_audit(credential_name)`,
 	}
 	for _, stmt := range credentialIndexes {
-		s.db.ExecContext(ctx, stmt)
+		s.db.ExecContext(ctx, stmt) //nolint:errcheck,gosec // best-effort index creation (IF NOT EXISTS)
 	}
 
 	// Todo items indexes.

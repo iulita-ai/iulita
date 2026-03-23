@@ -258,8 +258,8 @@ func main() {
 		credCrypto = encryptor
 	}
 	credStore := credential.NewStore(credRepo, credCrypto, logger)
-	if err := credStore.LoadAll(ctx); err != nil {
-		logger.Fatal("failed to load credentials", zap.Error(err))
+	if loadErr := credStore.LoadAll(ctx); loadErr != nil {
+		logger.Fatal("failed to load credentials", zap.Error(loadErr))
 	}
 	// Register env → credential name mappings for priority chain resolution.
 	credStore.RegisterEnvMapping("claude.api_key", "ANTHROPIC_API_KEY")
