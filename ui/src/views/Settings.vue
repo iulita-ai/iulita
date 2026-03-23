@@ -400,22 +400,38 @@
               <n-space vertical :size="8">
                 <n-tag v-if="field.has_value" size="small" type="success">{{ t('settings.valueSet') }}</n-tag>
                 <n-tag v-else size="small" type="warning">{{ t('settings.notConfigured') }}</n-tag>
-                <n-input
-                  v-model:value="fieldEdits[field.key]"
-                  type="password"
-                  :placeholder="t('settings.enterNewValue')"
-                  show-password-on="click"
+
+                <!-- Credential selector -->
+                <n-select
+                  :value="fieldCredentialBindings[field.key] ?? null"
+                  @update:value="v => bindCredentialToField(field.key, v)"
+                  :options="availableCredentials.map(c => ({ label: c.name + ' (' + c.type + ')', value: c.id }))"
+                  clearable
+                  :placeholder="t('settings.selectCredential')"
+                  :loading="fieldSaving[field.key]"
                   style="max-width: 400px"
                 />
-                <n-button
-                  size="small"
-                  type="primary"
-                  :disabled="!fieldEdits[field.key]"
-                  :loading="fieldSaving[field.key]"
-                  @click="saveSkillKey(field.key)"
-                >
-                  {{ t('common.save') }}
-                </n-button>
+
+                <!-- Direct value input — only when no credential is bound -->
+                <template v-if="!fieldCredentialBindings[field.key]">
+                  <n-text :depth="3" style="font-size: 12px;">{{ t('settings.orEnterDirectly') }}</n-text>
+                  <n-input
+                    v-model:value="fieldEdits[field.key]"
+                    type="password"
+                    :placeholder="t('settings.enterNewValue')"
+                    show-password-on="click"
+                    style="max-width: 400px"
+                  />
+                  <n-button
+                    size="small"
+                    type="primary"
+                    :disabled="!fieldEdits[field.key]"
+                    :loading="fieldSaving[field.key]"
+                    @click="saveSkillKey(field.key)"
+                  >
+                    {{ t('common.save') }}
+                  </n-button>
+                </template>
               </n-space>
             </template>
 
@@ -493,7 +509,7 @@ import {
 } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
 import { api } from '../api'
-import type { SystemInfo, SkillInfo, ChatInfo, JobInfo, Task, TaskCounts, ConfigEntry, GoogleAccount, GoogleCredentialStatus, SkillConfigField, ConfigSchemaSection, ConfigSchemaField } from '../api'
+import type { SystemInfo, SkillInfo, ChatInfo, JobInfo, Task, TaskCounts, ConfigEntry, GoogleAccount, GoogleCredentialStatus, SkillConfigField, ConfigSchemaSection, ConfigSchemaField, CredentialView } from '../api'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -563,6 +579,9 @@ const drawerLoading = ref(false)
 const drawerFields = ref<SkillConfigField[]>([])
 const fieldEdits = reactive<Record<string, string>>({})
 const fieldSaving = reactive<Record<string, boolean>>({})
+// Credential store integration for secret fields
+const availableCredentials = ref<CredentialView[]>([])
+const fieldCredentialBindings = reactive<Record<string, number | null>>({}) // field.key → credential_id
 
 function shortKey(key: string): string {
   // "skills.craft.api_key" → "api_key"
@@ -577,13 +596,29 @@ async function openSkillConfig(name: string) {
   // Clear previous edits
   for (const k in fieldEdits) delete fieldEdits[k]
   for (const k in fieldSaving) delete fieldSaving[k]
+  for (const k in fieldCredentialBindings) delete fieldCredentialBindings[k]
   try {
-    const result = await api.getSkillConfig(name)
+    const [result, creds] = await Promise.all([
+      api.getSkillConfig(name),
+      api.listCredentials().catch(() => [] as CredentialView[]),
+    ])
     drawerFields.value = result.schema ?? []
+    availableCredentials.value = creds
     // Pre-fill non-secret values
     for (const f of drawerFields.value) {
       if (!f.secret && f.value !== undefined) {
         fieldEdits[f.key] = f.value
+      }
+    }
+    // Check credential bindings for secret fields
+    for (const f of drawerFields.value) {
+      if (f.secret) {
+        try {
+          const bindings = await api.listCredentialsByConsumer('config_key', f.key)
+          if (bindings.length > 0) {
+            fieldCredentialBindings[f.key] = bindings[0].credential_id
+          }
+        } catch { /* no bindings */ }
       }
     }
   } catch (e: any) {
@@ -594,20 +629,79 @@ async function openSkillConfig(name: string) {
   }
 }
 
+async function bindCredentialToField(fieldKey: string, credentialId: number | null) {
+  fieldSaving[fieldKey] = true
+  try {
+    // Unbind existing credential for this config key
+    const existingBindings = await api.listCredentialsByConsumer('config_key', fieldKey).catch(() => [])
+    for (const b of existingBindings) {
+      await api.unbindCredential(b.credential_id, 'config_key', fieldKey)
+    }
+    // Bind new credential if selected
+    if (credentialId) {
+      await api.bindCredential(credentialId, 'config_key', fieldKey)
+      fieldCredentialBindings[fieldKey] = credentialId
+      message.success(t('settings.credentialBound'))
+    } else {
+      delete fieldCredentialBindings[fieldKey]
+      message.success(t('settings.credentialUnbound'))
+    }
+    // Refresh drawer
+    const result = await api.getSkillConfig(drawerSkill.value)
+    drawerFields.value = result.schema ?? []
+    for (const f of drawerFields.value) {
+      if (!f.secret && f.value !== undefined) {
+        fieldEdits[f.key] = f.value
+      }
+    }
+  } catch (e: any) {
+    message.error(e.message || t('settings.error'))
+  } finally {
+    fieldSaving[fieldKey] = false
+  }
+}
+
 async function saveSkillKey(key: string) {
   const value = fieldEdits[key]
   if (!value) {
     message.warning(t('settings.valueRequired'))
     return
   }
+  const field = drawerFields.value.find(f => f.key === key)
   fieldSaving[key] = true
   try {
-    await api.setSkillConfig(drawerSkill.value, key, value)
-    message.success(t('settings.savedSkillKey', { key: shortKey(key) }))
-    // Refresh to update has_override and has_value
-    const result = await api.getSkillConfig(drawerSkill.value)
+    if (field?.secret) {
+      // Secret fields: create/update credential in credential store + auto-bind.
+      const created = await api.createCredential({
+        name: key,
+        type: 'api_key',
+        scope: 'global',
+        value: value,
+        description: `${drawerSkill.value} — ${shortKey(key)}`,
+      })
+      // Unbind any existing binding for this config key.
+      const existing = await api.listCredentialsByConsumer('config_key', key).catch(() => [])
+      for (const b of existing) {
+        await api.unbindCredential(b.credential_id, 'config_key', key)
+      }
+      // Bind the credential to this config key.
+      await api.bindCredential(created.id, 'config_key', key)
+      fieldCredentialBindings[key] = created.id
+      // Remove old config_override if exists (credential store takes priority now).
+      await api.deleteConfig(key).catch(() => {})
+      message.success(t('settings.savedSkillKey', { key: shortKey(key) }))
+    } else {
+      // Non-secret fields: save via config_overrides as before.
+      await api.setSkillConfig(drawerSkill.value, key, value)
+      message.success(t('settings.savedSkillKey', { key: shortKey(key) }))
+    }
+    // Refresh drawer.
+    const [result, creds] = await Promise.all([
+      api.getSkillConfig(drawerSkill.value),
+      api.listCredentials().catch(() => [] as CredentialView[]),
+    ])
     drawerFields.value = result.schema ?? []
-    // Update edits for non-secret fields; clear secret input
+    availableCredentials.value = creds
     for (const f of drawerFields.value) {
       if (f.secret) {
         delete fieldEdits[f.key]
@@ -615,7 +709,6 @@ async function saveSkillKey(key: string) {
         fieldEdits[f.key] = f.value
       }
     }
-    // Also refresh global config list
     await loadConfig()
   } catch (e: any) {
     message.error(e.message)

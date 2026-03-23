@@ -143,6 +143,19 @@ func RegisterConfigAuditSubscriber(bus *Bus, store storage.Repository, logger *z
 	logger.Info("config audit subscriber registered")
 }
 
+// CredentialChangeAdapter wraps the event bus to satisfy credential.ChangePublisher.
+type CredentialChangeAdapter struct {
+	Bus *Bus
+}
+
+// PublishCredentialChanged publishes a CredentialChanged event.
+func (a *CredentialChangeAdapter) PublishCredentialChanged(ctx context.Context, name string) {
+	a.Bus.Publish(ctx, Event{
+		Type:    CredentialChanged,
+		Payload: CredentialChangedPayload{Name: name},
+	})
+}
+
 // ConfigChangeAdapter wraps the event bus to satisfy config.ChangePublisher.
 type ConfigChangeAdapter struct {
 	Bus *Bus

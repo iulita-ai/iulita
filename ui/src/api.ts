@@ -199,6 +199,8 @@ export interface ChannelInstance {
   config: string
   source: string // "config" | "dashboard"
   enabled: boolean
+  credential_id?: number
+  credential_name?: string
   created_at: string
   updated_at: string
 }
@@ -600,6 +602,10 @@ async function handleResponse<T>(res: Response): Promise<T> {
     }
     throw new Error(`API error ${res.status}: ${body}`)
   }
+  // 204 No Content or empty body — return empty object.
+  if (res.status === 204 || res.headers.get('content-length') === '0') {
+    return {} as T
+  }
   return res.json()
 }
 
@@ -706,6 +712,48 @@ async function publicPost<T>(url: string, body: unknown): Promise<T> {
   return res.json()
 }
 
+// Credential management types
+export interface CredentialView {
+  id: number
+  name: string
+  type: string
+  scope: string
+  owner_id: string
+  encrypted: boolean
+  description: string
+  tags: string[]
+  created_by: string
+  updated_by: string
+  created_at: string
+  updated_at: string
+  rotated_at: string | null
+  expires_at: string | null
+  has_value: boolean
+}
+
+export interface CredentialDetail extends CredentialView {
+  bindings: CredentialBinding[]
+}
+
+export interface CredentialBinding {
+  id: number
+  credential_id: number
+  consumer_type: string
+  consumer_id: string
+  created_at: string
+  created_by: string
+}
+
+export interface CredentialAudit {
+  id: number
+  credential_id: number | null
+  credential_name: string
+  action: string
+  actor: string
+  detail: string
+  created_at: string
+}
+
 export const api = {
   // Auth
   login: (username: string, password: string) =>
@@ -801,9 +849,9 @@ export const api = {
   // Channel instances (admin — communication bots/integrations)
   listChannelInstances: () => get<ChannelInstance[]>('/api/channels/'),
   getChannelInstance: (id: string) => get<ChannelInstance>(`/api/channels/${id}`),
-  createChannelInstance: (data: { id: string; type: string; name: string; config?: string }) =>
+  createChannelInstance: (data: { id: string; type: string; name: string; config?: string; credential_id?: number }) =>
     post<ChannelInstance>('/api/channels/', data),
-  updateChannelInstance: (id: string, data: { name?: string; config?: string; enabled?: boolean }) =>
+  updateChannelInstance: (id: string, data: { name?: string; config?: string; enabled?: boolean; credential_id?: number }) =>
     put<ChannelInstance>(`/api/channels/${id}`, data),
   deleteChannelInstance: (id: string) => del<{ status: string }>(`/api/channels/${id}`),
   listChannelBindings: (id: string) => get<ChannelBinding[]>(`/api/channels/${id}/bindings`),
@@ -937,4 +985,32 @@ export const api = {
     const qs = p.toString()
     return get<UsageByModelResponse>(`/api/usage/by-model${qs ? `?${qs}` : ''}`)
   },
+
+  // Credentials (admin)
+  listCredentials: (params?: { scope?: string; type?: string; owner_id?: string }) => {
+    const p = new URLSearchParams()
+    if (params?.scope) p.set('scope', params.scope)
+    if (params?.type) p.set('type', params.type)
+    if (params?.owner_id) p.set('owner_id', params.owner_id)
+    const qs = p.toString()
+    return get<CredentialView[]>(`/api/credentials${qs ? `?${qs}` : ''}`)
+  },
+  getCredential: (id: number) => get<CredentialDetail>(`/api/credentials/${id}`),
+  createCredential: (data: {
+    name: string; type: string; scope: string; value: string;
+    owner_id?: string; description?: string; tags?: string[]; expires_at?: string;
+  }) => post<CredentialView>('/api/credentials/', data),
+  updateCredential: (id: number, data: { value: string; description?: string; tags?: string[] }) =>
+    put<void>(`/api/credentials/${id}`, data),
+  deleteCredential: (id: number) => del<{ status: string }>(`/api/credentials/${id}`),
+  rotateCredential: (id: number, newValue: string) =>
+    post<void>(`/api/credentials/${id}/rotate`, { new_value: newValue }),
+  listCredentialAudit: (id: number, limit?: number) =>
+    get<CredentialAudit[]>(`/api/credentials/${id}/audit${limit ? `?limit=${limit}` : ''}`),
+  bindCredential: (id: number, consumerType: string, consumerId: string) =>
+    post<void>(`/api/credentials/${id}/bindings`, { consumer_type: consumerType, consumer_id: consumerId }),
+  unbindCredential: (id: number, consumerType: string, consumerId: string) =>
+    del<void>(`/api/credentials/${id}/bindings/${consumerType}/${consumerId}`),
+  listCredentialsByConsumer: (consumerType: string, consumerId: string) =>
+    get<CredentialBinding[]>(`/api/credentials/by-consumer/${consumerType}/${consumerId}`),
 }

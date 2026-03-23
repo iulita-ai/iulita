@@ -12,6 +12,7 @@ import (
 
 	"github.com/iulita-ai/iulita/internal/auth"
 	"github.com/iulita-ai/iulita/internal/config"
+	"github.com/iulita-ai/iulita/internal/credential"
 	"github.com/iulita-ai/iulita/internal/domain"
 	"github.com/iulita-ai/iulita/internal/scheduler"
 	"github.com/iulita-ai/iulita/internal/skill"
@@ -99,62 +100,81 @@ type ExternalSkillManager interface {
 	ResolveMarketplace(ctx context.Context, source, ref string) (*ExternalSkillDetail, error)
 }
 
+// CredentialManager manages the credential lifecycle for the dashboard API.
+type CredentialManager interface {
+	List() []credential.CredentialView
+	ListFromDB(ctx context.Context, filter credential.CredentialFilter) ([]credential.CredentialView, error)
+	GetByID(ctx context.Context, id int64) (*domain.Credential, error)
+	Set(ctx context.Context, req credential.SetRequest) (*domain.Credential, error)
+	Rotate(ctx context.Context, req credential.RotateRequest) error
+	Delete(ctx context.Context, id int64, deletedBy string) error
+	Bind(ctx context.Context, credentialID int64, consumerType, consumerID, createdBy string) error
+	Unbind(ctx context.Context, credentialID int64, consumerType, consumerID, removedBy string) error
+	ListBindings(ctx context.Context, credentialID int64) ([]domain.CredentialBinding, error)
+	ListBindingsByConsumer(ctx context.Context, consumerType, consumerID string) ([]domain.CredentialBinding, error)
+	ListCredentialAudit(ctx context.Context, credentialID int64, limit int) ([]domain.CredentialAudit, error)
+	EncryptionEnabled() bool
+}
+
 // Config holds dependencies for the dashboard server.
 type Config struct {
-	Address        string
-	Store          storage.Repository
-	Registry       *skill.Registry
-	StaticFS       fs.FS
-	Logger         *zap.Logger
-	TaskScheduler  *scheduler.Scheduler
-	WorkerToken    string // auth token for remote worker API
-	ConfigStore    *config.Store
-	AuthService    *auth.Service        // nil = auth disabled (backward compat)
-	ChannelManager ChannelLifecycle     // nil = no runtime channel management
-	WSHub          *WSHub               // nil = WebSocket disabled
-	WebChat        WebChatProvider      // nil = web chat disabled
-	GoogleClient   GoogleOAuthClient    // nil = Google OAuth disabled
-	SkillManager   ExternalSkillManager // nil = external skills disabled
-	TodoProviders  []TodoProvider       // external task providers (Todoist, etc.)
-	SetupMode      bool                 // true = web wizard only, no full app
+	Address           string
+	Store             storage.Repository
+	Registry          *skill.Registry
+	StaticFS          fs.FS
+	Logger            *zap.Logger
+	TaskScheduler     *scheduler.Scheduler
+	WorkerToken       string // auth token for remote worker API
+	ConfigStore       *config.Store
+	AuthService       *auth.Service        // nil = auth disabled (backward compat)
+	ChannelManager    ChannelLifecycle     // nil = no runtime channel management
+	WSHub             *WSHub               // nil = WebSocket disabled
+	WebChat           WebChatProvider      // nil = web chat disabled
+	GoogleClient      GoogleOAuthClient    // nil = Google OAuth disabled
+	SkillManager      ExternalSkillManager // nil = external skills disabled
+	TodoProviders     []TodoProvider       // external task providers (Todoist, etc.)
+	CredentialManager CredentialManager    // nil = credential API disabled
+	SetupMode         bool                 // true = web wizard only, no full app
 }
 
 // Server serves the dashboard API and embedded SPA.
 type Server struct {
-	app            *fiber.App
-	address        string
-	store          storage.Repository
-	registry       *skill.Registry
-	startedAt      time.Time
-	logger         *zap.Logger
-	taskScheduler  *scheduler.Scheduler
-	workerToken    string
-	configStore    *config.Store
-	authService    *auth.Service
-	channelManager ChannelLifecycle
-	googleClient   GoogleOAuthClient
-	skillManager   ExternalSkillManager
-	todoProviders  []TodoProvider
-	setupMode      bool
+	app               *fiber.App
+	address           string
+	store             storage.Repository
+	registry          *skill.Registry
+	startedAt         time.Time
+	logger            *zap.Logger
+	taskScheduler     *scheduler.Scheduler
+	workerToken       string
+	configStore       *config.Store
+	authService       *auth.Service
+	channelManager    ChannelLifecycle
+	googleClient      GoogleOAuthClient
+	skillManager      ExternalSkillManager
+	todoProviders     []TodoProvider
+	credentialManager CredentialManager
+	setupMode         bool
 }
 
 // New creates a new dashboard server.
 func New(cfg Config) *Server {
 	s := &Server{
-		address:        cfg.Address,
-		store:          cfg.Store,
-		registry:       cfg.Registry,
-		startedAt:      time.Now(),
-		logger:         cfg.Logger,
-		taskScheduler:  cfg.TaskScheduler,
-		workerToken:    cfg.WorkerToken,
-		configStore:    cfg.ConfigStore,
-		authService:    cfg.AuthService,
-		channelManager: cfg.ChannelManager,
-		googleClient:   cfg.GoogleClient,
-		skillManager:   cfg.SkillManager,
-		todoProviders:  cfg.TodoProviders,
-		setupMode:      cfg.SetupMode,
+		address:           cfg.Address,
+		store:             cfg.Store,
+		registry:          cfg.Registry,
+		startedAt:         time.Now(),
+		logger:            cfg.Logger,
+		taskScheduler:     cfg.TaskScheduler,
+		workerToken:       cfg.WorkerToken,
+		configStore:       cfg.ConfigStore,
+		authService:       cfg.AuthService,
+		channelManager:    cfg.ChannelManager,
+		googleClient:      cfg.GoogleClient,
+		skillManager:      cfg.SkillManager,
+		todoProviders:     cfg.TodoProviders,
+		credentialManager: cfg.CredentialManager,
+		setupMode:         cfg.SetupMode,
 	}
 
 	app := fiber.New(fiber.Config{
@@ -290,6 +310,22 @@ func New(cfg Config) *Server {
 		agentJobs.Get("/:id", s.handleGetAgentJob)
 		agentJobs.Put("/:id", s.handleUpdateAgentJob)
 		agentJobs.Delete("/:id", s.handleDeleteAgentJob)
+	}
+
+	// Credentials API (admin only)
+	if s.authService != nil && s.credentialManager != nil {
+		creds := api.Group("/credentials", auth.AdminOnly())
+		creds.Get("/", s.handleListCredentials)
+		creds.Post("/", s.handleCreateCredential)
+		creds.Get("/:id", s.handleGetCredential)
+		creds.Put("/:id", s.handleUpdateCredential)
+		creds.Delete("/:id", s.handleDeleteCredential)
+		creds.Post("/:id/rotate", s.handleRotateCredential)
+		creds.Get("/:id/audit", s.handleListCredentialAudit)
+		creds.Get("/:id/bindings", s.handleListCredentialBindings)
+		creds.Post("/:id/bindings", s.handleBindCredential)
+		creds.Delete("/:id/bindings/:consumer_type/:consumer_id", s.handleUnbindCredential)
+		creds.Get("/by-consumer/:consumer_type/:consumer_id", s.handleListCredentialsByConsumer)
 	}
 
 	// External skills API (admin only)

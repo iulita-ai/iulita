@@ -21,7 +21,6 @@ import (
 	discordch "github.com/iulita-ai/iulita/internal/channel/discord"
 	"github.com/iulita-ai/iulita/internal/channel/telegram"
 	"github.com/iulita-ai/iulita/internal/channel/webchat"
-	"github.com/iulita-ai/iulita/internal/config"
 	"github.com/iulita-ai/iulita/internal/domain"
 	"github.com/iulita-ai/iulita/internal/ratelimit"
 	"github.com/iulita-ai/iulita/internal/skill/interact"
@@ -60,12 +59,26 @@ type ManagedChannel struct {
 	done     chan struct{} // closed when Start() returns
 }
 
+// cryptoProvider decrypts dashboard-sourced channel configs.
+// Satisfied by *config.Store (which has Decrypt and EncryptionEnabled methods).
+type cryptoProvider interface {
+	Decrypt(ciphertext string) (string, error)
+	EncryptionEnabled() bool
+}
+
+// credentialResolver resolves the credential bound to a channel instance consumer.
+// Satisfied by *credential.Store.
+type credentialResolver interface {
+	ResolveForConsumer(ctx context.Context, consumerType, consumerID string) (string, error)
+}
+
 // Config holds all dependencies and settings for creating a Manager.
 type Config struct {
-	Store        storage.Repository
-	CfgStore     *config.Store // may be nil; used to decrypt dashboard channel configs
-	HTTPClient   *http.Client  // may be nil; used for Telegram API calls
-	UserResolver channel.UserResolver
+	Store              storage.Repository
+	CfgStore           cryptoProvider     // may be nil; used to decrypt dashboard channel configs
+	CredentialResolver credentialResolver // may be nil; credential binding support
+	HTTPClient         *http.Client       // may be nil; used for Telegram API calls
+	UserResolver       channel.UserResolver
 
 	// ClearFn is called by the /clear command to wipe chat history.
 	ClearFn func(ctx context.Context, chatID string) error
@@ -90,11 +103,12 @@ type Manager struct {
 	mu      sync.RWMutex
 	running map[string]*ManagedChannel // instanceID → running channel
 
-	store        storage.Repository
-	cfgStore     *config.Store
-	httpClient   *http.Client
-	userResolver channel.UserResolver
-	clearFn      func(ctx context.Context, chatID string) error
+	store              storage.Repository
+	cfgStore           cryptoProvider
+	credentialResolver credentialResolver
+	httpClient         *http.Client
+	userResolver       channel.UserResolver
+	clearFn            func(ctx context.Context, chatID string) error
 
 	// Config-sourced Telegram settings.
 	configTokenMu    sync.RWMutex // protects configToken independently from mu
@@ -122,19 +136,59 @@ type Manager struct {
 // New creates a new Manager with the given configuration.
 func New(cfg Config) *Manager {
 	return &Manager{
-		running:          make(map[string]*ManagedChannel),
-		store:            cfg.Store,
-		cfgStore:         cfg.CfgStore,
-		httpClient:       cfg.HTTPClient,
-		userResolver:     cfg.UserResolver,
-		clearFn:          cfg.ClearFn,
-		configToken:      cfg.ConfigToken,
-		configAllowedIDs: cfg.ConfigAllowedIDs,
-		configDebounce:   cfg.ConfigDebounce,
-		configRateLimit:  cfg.ConfigRateLimit,
-		configRateWindow: cfg.ConfigRateWindow,
-		transcriber:      cfg.Transcriber,
-		logger:           cfg.Logger,
+		running:            make(map[string]*ManagedChannel),
+		store:              cfg.Store,
+		cfgStore:           cfg.CfgStore,
+		credentialResolver: cfg.CredentialResolver,
+		httpClient:         cfg.HTTPClient,
+		userResolver:       cfg.UserResolver,
+		clearFn:            cfg.ClearFn,
+		configToken:        cfg.ConfigToken,
+		configAllowedIDs:   cfg.ConfigAllowedIDs,
+		configDebounce:     cfg.ConfigDebounce,
+		configRateLimit:    cfg.ConfigRateLimit,
+		configRateWindow:   cfg.ConfigRateWindow,
+		transcriber:        cfg.Transcriber,
+		logger:             cfg.Logger,
+	}
+}
+
+// HandleCredentialChanged restarts any running dashboard-sourced channel that has a credential binding.
+// Called as an eventbus handler when a credential is rotated/updated.
+func (m *Manager) HandleCredentialChanged() {
+	if m.credentialResolver == nil {
+		return
+	}
+	m.mu.RLock()
+	var candidates []domain.ChannelInstance
+	for _, mc := range m.running {
+		if mc.Instance.Source == domain.ChannelSourceDashboard {
+			candidates = append(candidates, mc.Instance)
+		}
+	}
+	m.mu.RUnlock()
+
+	// Read startCtx under configTokenMu (consistent with UpdateConfigToken).
+	m.configTokenMu.RLock()
+	ctx := m.startCtx
+	m.configTokenMu.RUnlock()
+
+	if ctx == nil || ctx.Err() != nil {
+		return
+	}
+
+	for i := range candidates {
+		if _, err := m.credentialResolver.ResolveForConsumer(
+			context.Background(), domain.CredentialConsumerChannelInstance, candidates[i].ID,
+		); err != nil {
+			continue // no binding for this instance
+		}
+		m.logger.Info("restarting channel instance due to credential change",
+			zap.String("id", candidates[i].ID))
+		if err := m.restartInstance(ctx, candidates[i]); err != nil {
+			m.logger.Error("failed to restart instance after credential change",
+				zap.String("id", candidates[i].ID), zap.Error(err))
+		}
 	}
 }
 
@@ -721,6 +775,16 @@ func (m *Manager) createTelegramChannel(instance domain.ChannelInstance) (*teleg
 		}
 
 		token = tgCfg.Token
+
+		// Try credential binding if no embedded token.
+		if token == "" && m.credentialResolver != nil {
+			if val, err := m.credentialResolver.ResolveForConsumer(
+				context.Background(), domain.CredentialConsumerChannelInstance, instance.ID,
+			); err == nil {
+				token = val
+			}
+		}
+
 		allowedIDs = tgCfg.AllowedIDs
 		if tgCfg.DebounceWindow != "" {
 			if d, err := time.ParseDuration(tgCfg.DebounceWindow); err == nil {
@@ -770,12 +834,21 @@ func (m *Manager) createDiscordChannel(instance domain.ChannelInstance) (*discor
 		return nil, fmt.Errorf("parsing discord config JSON: %w", err)
 	}
 
-	if dcCfg.Token == "" {
+	token := dcCfg.Token
+	// Try credential binding if no embedded token.
+	if token == "" && m.credentialResolver != nil {
+		if val, err := m.credentialResolver.ResolveForConsumer(
+			context.Background(), domain.CredentialConsumerChannelInstance, instance.ID,
+		); err == nil {
+			token = val
+		}
+	}
+	if token == "" {
 		return nil, fmt.Errorf("empty token for discord instance %s", instance.ID)
 	}
 
 	clearFn := discordch.ClearFunc(m.clearFn)
-	dc, err := discordch.New(dcCfg.Token, dcCfg.AllowedChannelIDs, clearFn, m.logger)
+	dc, err := discordch.New(token, dcCfg.AllowedChannelIDs, clearFn, m.logger)
 	if err != nil {
 		return nil, err
 	}

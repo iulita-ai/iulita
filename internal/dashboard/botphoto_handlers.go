@@ -23,7 +23,7 @@ func (s *Server) handleSetBotPhoto(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusNotImplemented, "bot photo setting not supported")
 	}
 
-	instanceID := c.Params("id")
+	instanceID := channelID(c)
 
 	file, err := c.FormFile("photo")
 	if err != nil {

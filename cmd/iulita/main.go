@@ -28,6 +28,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/channelmgr"
 	"github.com/iulita-ai/iulita/internal/config"
 	"github.com/iulita-ai/iulita/internal/cost"
+	"github.com/iulita-ai/iulita/internal/credential"
 	"github.com/iulita-ai/iulita/internal/dashboard"
 	"github.com/iulita-ai/iulita/internal/doctor"
 	"github.com/iulita-ai/iulita/internal/domain"
@@ -249,6 +250,26 @@ func main() {
 	if err := cfgStore.LoadOverrides(ctx); err != nil {
 		logger.Fatal("failed to load config overrides", zap.Error(err))
 	}
+
+	// Credential store: unified secret management.
+	credRepo := credential.NewStorageAdapter(store)
+	var credCrypto credential.CryptoProvider
+	if encryptor != nil {
+		credCrypto = encryptor
+	}
+	credStore := credential.NewStore(credRepo, credCrypto, logger)
+	if loadErr := credStore.LoadAll(ctx); loadErr != nil {
+		logger.Fatal("failed to load credentials", zap.Error(loadErr))
+	}
+	// Register env → credential name mappings for priority chain resolution.
+	credStore.RegisterEnvMapping("claude.api_key", "ANTHROPIC_API_KEY")
+	credStore.RegisterEnvMapping("openai.api_key", "OPENAI_API_KEY")
+	credStore.RegisterEnvMapping("telegram.token", "TELEGRAM_TOKEN")
+	credStore.RegisterEnvMapping("skills.todoist.api_token", "TODOIST_API_TOKEN")
+	credStore.RegisterEnvMapping("skills.websearch.brave_api_key", "BRAVE_API_KEY")
+	// Wire credential store ↔ config store delegation.
+	cfgStore.SetCredentialProvider(credStore)
+	credStore.SetConfigFallback(cfgStore)
 
 	// Check wizard completion state and determine validation mode.
 	// DB overrides may contain LLM keys from a previous wizard run.
@@ -892,8 +913,22 @@ func main() {
 	if len(skillKeys) > 0 {
 		logger.Info("registered skill config keys", zap.Int("count", len(skillKeys)))
 	}
-	// Register secret keys so Store auto-encrypts and rejects placeholders.
-	cfgStore.SetSecretKeys(registry.SecretKeys())
+	// Register secret keys so Store auto-encrypts, rejects placeholders,
+	// and delegates to credential provider for resolution.
+	// Merge core schema secrets (claude.api_key, telegram.token, etc.)
+	// with skill manifest secrets (skills.todoist.api_token, etc.).
+	allSecretKeys := config.SchemaSecretKeys()
+	for k, v := range registry.SecretKeys() {
+		allSecretKeys[k] = v
+	}
+	cfgStore.SetSecretKeys(allSecretKeys)
+
+	// Auto-migrate secrets from config_overrides → credentials table.
+	if migrated, migrErr := credStore.MigrateFromConfigOverrides(ctx, cfgStore); migrErr != nil {
+		logger.Warn("credential migration from config_overrides failed", zap.Error(migrErr))
+	} else if migrated > 0 {
+		logger.Info("migrated credentials from config_overrides", zap.Int("count", migrated))
+	}
 
 	// Assistant
 	asst := assistant.New(llmProvider, store, registry, cfg.App.SystemPrompt, cfg.App.DefaultTimezone, cfg.Claude.ContextWindow, logger)
@@ -907,8 +942,12 @@ func main() {
 	cfgStore.SetPublisher(&eventbus.ConfigChangeAdapter{Bus: bus})
 	registerConfigReload(bus, cfgStore, asst, store, registry, rawProvider, extMgr, logger)
 
+	// Wire credential store to event bus.
+	credStore.SetPublisher(&eventbus.CredentialChangeAdapter{Bus: bus})
+
 	// Replay DB-stored config overrides so skills pick up tokens saved via dashboard.
 	cfgStore.ReplayOverrides(ctx)
+	credStore.ReplayCredentials(ctx)
 
 	// Diagnostic: log capabilities and enabled skills after replay.
 	{
@@ -1005,18 +1044,25 @@ func main() {
 	}
 
 	mgr := channelmgr.New(channelmgr.Config{
-		Store:            store,
-		CfgStore:         cfgStore,
-		HTTPClient:       tgHTTPClient,
-		UserResolver:     userResolver,
-		ClearFn:          store.ClearHistory,
-		ConfigToken:      effectiveTelegramToken(cfgStore, cfg.Telegram.Token),
-		ConfigAllowedIDs: cfg.Telegram.AllowedIDs,
-		ConfigDebounce:   debounceWindow,
-		ConfigRateLimit:  configRateLimit,
-		ConfigRateWindow: configRateWindow,
-		Transcriber:      transcriber,
-		Logger:           logger,
+		Store:              store,
+		CfgStore:           cfgStore,
+		CredentialResolver: credStore,
+		HTTPClient:         tgHTTPClient,
+		UserResolver:       userResolver,
+		ClearFn:            store.ClearHistory,
+		ConfigToken:        effectiveTelegramToken(cfgStore, cfg.Telegram.Token),
+		ConfigAllowedIDs:   cfg.Telegram.AllowedIDs,
+		ConfigDebounce:     debounceWindow,
+		ConfigRateLimit:    configRateLimit,
+		ConfigRateWindow:   configRateWindow,
+		Transcriber:        transcriber,
+		Logger:             logger,
+	})
+
+	// Subscribe channelmgr to credential changes for hot-reload.
+	bus.SubscribeAsync(eventbus.CredentialChanged, func(_ context.Context, _ eventbus.Event) error {
+		mgr.HandleCredentialChanged()
+		return nil
 	})
 
 	// Register event bus subscribers (after tg is available).
@@ -1325,21 +1371,22 @@ func main() {
 			dashSkillMgr = &extSkillMgrAdapter{mgr: extMgr}
 		}
 		dashSrv := dashboard.New(dashboard.Config{
-			Address:        cfg.Server.Address,
-			Store:          store,
-			Registry:       registry,
-			StaticFS:       staticFS,
-			Logger:         logger,
-			TaskScheduler:  taskScheduler,
-			WorkerToken:    cfg.Scheduler.WorkerToken,
-			ConfigStore:    cfgStore,
-			AuthService:    authService,
-			ChannelManager: mgr,
-			WSHub:          wsHub,
-			WebChat:        mgr,
-			GoogleClient:   dashboardGoogleClient,
-			SkillManager:   dashSkillMgr,
-			TodoProviders:  todoProviders,
+			Address:           cfg.Server.Address,
+			Store:             store,
+			Registry:          registry,
+			StaticFS:          staticFS,
+			Logger:            logger,
+			TaskScheduler:     taskScheduler,
+			WorkerToken:       cfg.Scheduler.WorkerToken,
+			ConfigStore:       cfgStore,
+			AuthService:       authService,
+			ChannelManager:    mgr,
+			WSHub:             wsHub,
+			WebChat:           mgr,
+			GoogleClient:      dashboardGoogleClient,
+			SkillManager:      dashSkillMgr,
+			TodoProviders:     todoProviders,
+			CredentialManager: credStore,
 		})
 		wg.Add(1)
 		go func() {

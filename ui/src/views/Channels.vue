@@ -32,7 +32,10 @@
         <channel-config-form
           :channel-type="createForm.type"
           v-model:model-value="createForm.config"
-          :required="true"
+          :required="!createForm.credentialId"
+          :credentials="availableCredentials"
+          :selected-credential-id="createForm.credentialId"
+          @update:selected-credential-id="v => createForm.credentialId = v"
         />
       </n-form>
       <template #action>
@@ -62,6 +65,9 @@
           <channel-config-form
             :channel-type="editInstance.type"
             v-model:model-value="editForm.config"
+            :credentials="availableCredentials"
+            :selected-credential-id="editForm.credentialId"
+            @update:selected-credential-id="v => editForm.credentialId = v"
           />
         </template>
         <n-form-item :label="t('common.enabled')">
@@ -151,7 +157,7 @@ import {
 } from 'naive-ui'
 import type { DataTableColumn } from 'naive-ui'
 import { api } from '../api'
-import type { ChannelInstance, ChannelBinding } from '../api'
+import type { ChannelInstance, ChannelBinding, CredentialView } from '../api'
 import ChannelConfigForm from '../components/ChannelConfigForm.vue'
 
 const { t } = useI18n()
@@ -175,13 +181,14 @@ const defaultConfigs: Record<string, string> = {
 // Create modal
 const showCreateModal = ref(false)
 const creating = ref(false)
-const createForm = ref({ id: '', type: 'telegram', name: '', config: defaultConfigs['telegram'] })
+const availableCredentials = ref<CredentialView[]>([])
+const createForm = ref({ id: '', type: 'telegram', name: '', config: defaultConfigs['telegram'], credentialId: null as number | null })
 
 // Edit modal
 const showEditModal = ref(false)
 const saving = ref(false)
 const editInstance = ref<ChannelInstance | null>(null)
-const editForm = ref({ name: '', config: '', enabled: true })
+const editForm = ref({ name: '', config: '', enabled: true, credentialId: null as number | null })
 
 // Bindings modal
 const showBindingsModal = ref(false)
@@ -241,6 +248,7 @@ async function handleSetCustomPhoto() {
 // Reset config when channel type changes in create form
 watch(() => createForm.value.type, (t) => {
   createForm.value.config = defaultConfigs[t] || '{}'
+  createForm.value.credentialId = null
 })
 
 async function toggleEnabled(row: ChannelInstance) {
@@ -259,6 +267,7 @@ function openEdit(row: ChannelInstance) {
     name: row.name,
     config: row.config || '',
     enabled: row.enabled,
+    credentialId: row.credential_id ?? null,
   }
   showEditModal.value = true
 }
@@ -346,17 +355,9 @@ async function handleCreate() {
     message.warning(t('channels.idTypeNameRequired'))
     return
   }
-  if (createForm.value.type === 'telegram' || createForm.value.type === 'discord') {
-    try {
-      const cfg = JSON.parse(createForm.value.config || '{}')
-      if (!cfg.token) {
-        message.warning(t('channels.tokenRequired', { type: createForm.value.type }))
-        return
-      }
-    } catch {
-      message.warning(t('channels.invalidConfig'))
-      return
-    }
+  if ((createForm.value.type === 'telegram' || createForm.value.type === 'discord') && !createForm.value.credentialId) {
+    message.warning(t('channels.credentialRequired'))
+    return
   }
   creating.value = true
   try {
@@ -365,9 +366,10 @@ async function handleCreate() {
       type: createForm.value.type,
       name: createForm.value.name,
       config: createForm.value.config || undefined,
+      credential_id: createForm.value.credentialId ?? undefined,
     })
     showCreateModal.value = false
-    createForm.value = { id: '', type: 'telegram', name: '', config: defaultConfigs['telegram'] }
+    createForm.value = { id: '', type: 'telegram', name: '', config: defaultConfigs['telegram'], credentialId: null }
     message.success(t('channels.created'))
     await loadInstances()
   } catch (e: any) {
@@ -419,5 +421,8 @@ async function loadInstances() {
   }
 }
 
-onMounted(loadInstances)
+onMounted(() => {
+  loadInstances()
+  api.listCredentials({ type: 'bot_token' }).then(c => { availableCredentials.value = c }).catch(() => {})
+})
 </script>
