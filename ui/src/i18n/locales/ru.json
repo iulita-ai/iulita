@@ -530,7 +530,13 @@
     "configJson": "Конфигурация (JSON)",
     "credential": "Токен бота (из хранилища)",
     "selectCredential": "Выберите учетные данные...",
-    "credentialHelp": "Выберите токен бота из хранилища. Сначала создайте его на странице «Учетные данные»."
+    "credentialHelp": "Выберите токен бота из хранилища. Сначала создайте его на странице «Учетные данные».",
+    "slackBotTokenHelp": "Выберите Bot Token для Slack (xoxb-...) из хранилища учетных данных.",
+    "slackAppToken": "App-Level Token",
+    "slackAppTokenHelp": "App-Level Token для Slack (xapp-...) для Socket Mode. Создайте в настройках приложения Slack.",
+    "slackAllowedUserIds": "Разрешённые ID пользователей Slack",
+    "slackAllowedUserIdsHelp": "ID пользователей Slack (U...), которые могут взаимодействовать с ботом. Пусто = все.",
+    "slackAppTokenRequired": "App-Level Token (xapp-...) обязателен для Socket Mode."
   },
   "locale": {
     "label": "Язык",

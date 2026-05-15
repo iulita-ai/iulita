@@ -309,3 +309,6 @@ other = "Уже сохранено"
 
 [BookmarkError]
 other = "❌ Ошибка"
+
+[BookmarkNotYours]
+other = "Эта закладка принадлежит другому пользователю."

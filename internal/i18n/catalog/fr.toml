@@ -300,3 +300,6 @@ other = "Déjà sauvegardé"
 
 [BookmarkError]
 other = "❌ Erreur"
+
+[BookmarkNotYours]
+other = "Ce signet appartient à un autre utilisateur."

@@ -88,6 +88,81 @@
     </n-form-item>
   </template>
 
+  <!-- Slack -->
+  <template v-else-if="channelType === 'slack'">
+    <n-form-item :label="t('channelConfig.credential')" :required="required">
+      <n-select
+        :value="selectedCredentialId"
+        @update:value="v => emit('update:selectedCredentialId', v)"
+        :options="credentialOptions"
+        :placeholder="t('channelConfig.selectCredential')"
+        :disabled="disabled"
+      />
+      <template #feedback>
+        {{ t('channelConfig.slackBotTokenHelp') }}
+      </template>
+    </n-form-item>
+    <n-form-item :label="t('channelConfig.slackAppToken')" :required="required">
+      <n-input
+        :value="slackCfg.app_token"
+        @update:value="v => update('app_token', v)"
+        placeholder="xapp-..."
+        :disabled="disabled"
+        type="password"
+        show-password-on="click"
+      />
+      <template #feedback>
+        {{ t('channelConfig.slackAppTokenHelp') }}
+      </template>
+    </n-form-item>
+    <n-form-item :label="t('channelConfig.slackAllowedUserIds')">
+      <n-dynamic-tags
+        :value="slackCfg.allowedUserIdTags"
+        @update:value="onSlackUserIdsChange"
+        :disabled="disabled"
+      />
+      <template #feedback>
+        {{ t('channelConfig.slackAllowedUserIdsHelp') }}
+      </template>
+    </n-form-item>
+    <n-form-item :label="t('channelConfig.debounceWindow')">
+      <n-input
+        :value="slackCfg.debounce_window"
+        @update:value="v => update('debounce_window', v)"
+        placeholder="2s"
+        :disabled="disabled"
+        style="width: 140px"
+      />
+      <template #feedback>
+        {{ t('channelConfig.debounceHelp') }}
+      </template>
+    </n-form-item>
+    <n-form-item :label="t('channelConfig.rateLimit')">
+      <n-input-number
+        :value="slackCfg.rate_limit"
+        @update:value="v => update('rate_limit', v ?? 0)"
+        :min="0"
+        :disabled="disabled"
+        style="width: 140px"
+      />
+      <template #feedback>
+        {{ t('channelConfig.rateLimitHelp') }}
+      </template>
+    </n-form-item>
+    <n-form-item :label="t('channelConfig.rateWindow')">
+      <n-input
+        :value="slackCfg.rate_window"
+        @update:value="v => update('rate_window', v)"
+        placeholder="1m"
+        :disabled="disabled"
+        style="width: 140px"
+      />
+      <template #feedback>
+        {{ t('channelConfig.rateWindowHelp') }}
+      </template>
+    </n-form-item>
+  </template>
+
   <!-- Web Chat -->
   <template v-else-if="channelType === 'web'">
     <n-form-item>
@@ -186,6 +261,24 @@ function update(field: string, value: unknown) {
 function onAllowedIdsChange(tags: string[]) {
   const ids = tags.map(Number).filter(n => !isNaN(n) && n > 0)
   update('allowed_ids', ids)
+}
+
+// Slack-specific computed
+const slackCfg = computed(() => {
+  const cfg = parseConfig() as { bot_token?: string; app_token?: string; allowed_user_ids?: string[]; debounce_window?: string; rate_limit?: number; rate_window?: string }
+  return {
+    bot_token: cfg.bot_token ?? '',
+    app_token: cfg.app_token ?? '',
+    allowed_user_ids: cfg.allowed_user_ids ?? [],
+    allowedUserIdTags: cfg.allowed_user_ids ?? [],
+    debounce_window: cfg.debounce_window ?? '2s',
+    rate_limit: cfg.rate_limit ?? 0,
+    rate_window: cfg.rate_window ?? '1m',
+  }
+})
+
+function onSlackUserIdsChange(tags: string[]) {
+  update('allowed_user_ids', tags)
 }
 
 // Discord-specific computed

@@ -300,3 +300,6 @@ other = "Ya guardado"
 
 [BookmarkError]
 other = "❌ Error"
+
+[BookmarkNotYours]
+other = "Este marcador pertenece a otro usuario."

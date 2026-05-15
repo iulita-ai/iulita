@@ -309,3 +309,6 @@ other = "Already saved"
 
 [BookmarkError]
 other = "❌ Error"
+
+[BookmarkNotYours]
+other = "This bookmark belongs to another user."

@@ -169,12 +169,14 @@ const loading = ref(false)
 const typeOptions = [
   { label: 'Telegram', value: 'telegram' },
   { label: 'Discord', value: 'discord' },
+  { label: 'Slack', value: 'slack' },
   { label: 'Web Chat', value: 'web' },
 ]
 
 const defaultConfigs: Record<string, string> = {
   telegram: JSON.stringify({ token: '', allowed_ids: [], debounce_window: '1.5s', rate_limit: 0, rate_window: '1m' }),
   discord: JSON.stringify({ token: '', allowed_channel_ids: [] }),
+  slack: JSON.stringify({ bot_token: '', app_token: '', allowed_user_ids: [], debounce_window: '2s', rate_limit: 0, rate_window: '1m' }),
   web: JSON.stringify({}),
 }
 
@@ -355,9 +357,21 @@ async function handleCreate() {
     message.warning(t('channels.idTypeNameRequired'))
     return
   }
-  if ((createForm.value.type === 'telegram' || createForm.value.type === 'discord') && !createForm.value.credentialId) {
+  if ((createForm.value.type === 'telegram' || createForm.value.type === 'discord' || createForm.value.type === 'slack') && !createForm.value.credentialId) {
     message.warning(t('channels.credentialRequired'))
     return
+  }
+  if (createForm.value.type === 'slack') {
+    try {
+      const parsed = JSON.parse(createForm.value.config || '{}')
+      if (!parsed.app_token || typeof parsed.app_token !== 'string' || !parsed.app_token.trim()) {
+        message.warning(t('channelConfig.slackAppTokenRequired'))
+        return
+      }
+    } catch {
+      message.warning(t('channels.invalidConfig'))
+      return
+    }
   }
   creating.value = true
   try {
@@ -381,6 +395,18 @@ async function handleCreate() {
 
 async function handleUpdate() {
   if (!editInstance.value) return
+  if (editInstance.value.source === 'dashboard' && editInstance.value.type === 'slack') {
+    try {
+      const parsed = JSON.parse(editForm.value.config || '{}')
+      if (!parsed.app_token || typeof parsed.app_token !== 'string' || !parsed.app_token.trim()) {
+        message.warning(t('channelConfig.slackAppTokenRequired'))
+        return
+      }
+    } catch {
+      message.warning(t('channels.invalidConfig'))
+      return
+    }
+  }
   saving.value = true
   try {
     const data: { name?: string; config?: string; enabled?: boolean } = {

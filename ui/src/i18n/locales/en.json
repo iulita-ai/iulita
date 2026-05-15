@@ -532,7 +532,13 @@
     "configJson": "Config (JSON)",
     "credential": "Bot Token Credential",
     "selectCredential": "Select a credential...",
-    "credentialHelp": "Select a bot token from the Credential Store. Create one first on the Credentials page."
+    "credentialHelp": "Select a bot token from the Credential Store. Create one first on the Credentials page.",
+    "slackBotTokenHelp": "Select a Slack Bot Token (xoxb-...) from the Credential Store.",
+    "slackAppToken": "App-Level Token",
+    "slackAppTokenHelp": "Slack App-Level Token (xapp-...) for Socket Mode. Generate in Slack App Settings → Basic Information → App-Level Tokens.",
+    "slackAllowedUserIds": "Allowed Slack User IDs",
+    "slackAllowedUserIdsHelp": "Slack user IDs (U...) that can interact with the bot. Empty = allow all.",
+    "slackAppTokenRequired": "Slack App-Level Token (xapp-...) is required for Socket Mode."
   },
   "locale": {
     "label": "Language",

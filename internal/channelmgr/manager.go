@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/channel"
 	consolech "github.com/iulita-ai/iulita/internal/channel/console"
 	discordch "github.com/iulita-ai/iulita/internal/channel/discord"
+	slackch "github.com/iulita-ai/iulita/internal/channel/slack"
 	"github.com/iulita-ai/iulita/internal/channel/telegram"
 	"github.com/iulita-ai/iulita/internal/channel/webchat"
 	"github.com/iulita-ai/iulita/internal/domain"
@@ -33,6 +35,16 @@ type DiscordInstanceConfig struct {
 	AllowedChannelIDs []string `json:"allowed_channel_ids"`
 	RateLimit         int      `json:"rate_limit"`
 	RateWindow        string   `json:"rate_window"`
+}
+
+// SlackInstanceConfig is the JSON stored in channel_instances.config for Slack channels.
+type SlackInstanceConfig struct {
+	BotToken       string   `json:"bot_token"`        // xoxb-...
+	AppToken       string   `json:"app_token"`        // xapp-... (Socket Mode)
+	AllowedUserIDs []string `json:"allowed_user_ids"` // Slack user IDs (U...)
+	DebounceWindow string   `json:"debounce_window"`
+	RateLimit      int      `json:"rate_limit"`
+	RateWindow     string   `json:"rate_window"`
 }
 
 // TelegramInstanceConfig is the JSON stored in channel_instances.config for Telegram channels
@@ -55,6 +67,7 @@ type ManagedChannel struct {
 	web      *webchat.Channel   // non-nil for Web Chat instances
 	discord  *discordch.Channel // non-nil for Discord instances
 	console  *consolech.Channel // non-nil for Console instances
+	slack    *slackch.Channel   // non-nil for Slack instances
 	cancel   context.CancelFunc
 	done     chan struct{} // closed when Start() returns
 }
@@ -517,6 +530,25 @@ func (m *Manager) NotifyStatus(ctx context.Context, chatID string, event channel
 		if mc.web != nil {
 			return mc.web.NotifyStatus(ctx, chatID, event)
 		}
+		if mc.slack != nil {
+			return mc.slack.NotifyStatus(ctx, chatID, event)
+		}
+	}
+
+	// Slack: chatID starts with "slack:" (public channel) or matched via DB lookup above.
+	if strings.HasPrefix(chatID, "slack:") {
+		var slackNotifier channel.StatusNotifier
+		m.mu.RLock()
+		for _, rmc := range m.running {
+			if rmc.slack != nil {
+				slackNotifier = rmc.slack
+				break
+			}
+		}
+		m.mu.RUnlock()
+		if slackNotifier != nil {
+			return slackNotifier.NotifyStatus(ctx, chatID, event)
+		}
 	}
 
 	// DB lookup may fail (e.g. channel_instance_id not populated in user_channels).
@@ -576,6 +608,11 @@ func (m *Manager) PrompterFor(chatID string) interact.PromptAsker {
 	for _, mc := range m.running {
 		if mc.tg != nil {
 			if p := mc.tg.PrompterFor(chatID); p != nil {
+				return p
+			}
+		}
+		if mc.slack != nil {
+			if p := mc.slack.PrompterFor(chatID); p != nil {
 				return p
 			}
 		}
@@ -680,6 +717,21 @@ func (m *Manager) startInstance(parentCtx context.Context, instance domain.Chann
 		mc.discord = dc
 		startFn = dc.Start
 
+	case domain.ChannelTypeSlack:
+		sl, err := m.createSlackChannel(instance)
+		if err != nil {
+			cancel()
+			return fmt.Errorf("creating slack channel for %s: %w", instance.ID, err)
+		}
+		sl.SetInstanceID(instance.ID)
+		sl.SetUserResolver(m.userResolver)
+		sl.SetStore(m.store)
+		if m.bookmarkSvc != nil {
+			sl.SetBookmarkService(m.bookmarkSvc)
+		}
+		mc.slack = sl
+		startFn = sl.Start
+
 	case domain.ChannelTypeConsole:
 		con := consolech.New(m.logger)
 		con.SetInstanceID(instance.ID)
@@ -728,7 +780,8 @@ func (m *Manager) startInstance(parentCtx context.Context, instance domain.Chann
 
 func (m *Manager) isSupportedType(channelType string) bool {
 	switch channelType {
-	case domain.ChannelTypeTelegram, domain.ChannelTypeWeb, domain.ChannelTypeDiscord, domain.ChannelTypeConsole:
+	case domain.ChannelTypeTelegram, domain.ChannelTypeWeb, domain.ChannelTypeDiscord,
+		domain.ChannelTypeConsole, domain.ChannelTypeSlack:
 		return true
 	}
 	return false
@@ -866,6 +919,63 @@ func (m *Manager) createDiscordChannel(instance domain.ChannelInstance) (*discor
 	return dc, nil
 }
 
+func (m *Manager) createSlackChannel(instance domain.ChannelInstance) (*slackch.Channel, error) {
+	configJSON := instance.Config
+	if m.cfgStore != nil && m.cfgStore.EncryptionEnabled() {
+		var err error
+		configJSON, err = m.cfgStore.Decrypt(configJSON)
+		if err != nil {
+			return nil, fmt.Errorf("decrypting slack config: %w", err)
+		}
+	}
+
+	var slCfg SlackInstanceConfig
+	if err := json.Unmarshal([]byte(configJSON), &slCfg); err != nil {
+		return nil, fmt.Errorf("parsing slack config JSON: %w", err)
+	}
+
+	botToken := slCfg.BotToken
+	// Try credential binding if no embedded bot token.
+	if botToken == "" && m.credentialResolver != nil {
+		if val, err := m.credentialResolver.ResolveForConsumer(
+			context.Background(), domain.CredentialConsumerChannelInstance, instance.ID,
+		); err == nil {
+			botToken = val
+		}
+	}
+	if botToken == "" {
+		return nil, fmt.Errorf("empty bot_token for slack instance %s", instance.ID)
+	}
+	if slCfg.AppToken == "" {
+		return nil, fmt.Errorf("empty app_token for slack instance %s (required for Socket Mode)", instance.ID)
+	}
+
+	var debounceWindow time.Duration
+	if slCfg.DebounceWindow != "" {
+		if d, err := time.ParseDuration(slCfg.DebounceWindow); err == nil {
+			debounceWindow = d
+		}
+	}
+
+	clearFn := slackch.ClearFunc(m.clearFn)
+	sl, err := slackch.New(botToken, slCfg.AppToken, slCfg.AllowedUserIDs, debounceWindow, clearFn, m.logger)
+	if err != nil {
+		return nil, err
+	}
+
+	if slCfg.RateLimit > 0 {
+		rateWindow := time.Minute
+		if slCfg.RateWindow != "" {
+			if d, err := time.ParseDuration(slCfg.RateWindow); err == nil {
+				rateWindow = d
+			}
+		}
+		sl.SetRateLimiter(ratelimit.New(slCfg.RateLimit, rateWindow))
+	}
+
+	return sl, nil
+}
+
 // lookupInstanceForChat finds the channel_instance_id stored in user_channels for this chatID.
 func (m *Manager) lookupInstanceForChat(ctx context.Context, chatID string) string {
 	id, err := m.store.GetChannelInstanceIDByChat(ctx, chatID)
@@ -889,6 +999,9 @@ func channelSender(mc *ManagedChannel) channel.StreamingSender {
 	}
 	if mc.console != nil {
 		return mc.console
+	}
+	if mc.slack != nil {
+		return mc.slack
 	}
 	return nil
 }

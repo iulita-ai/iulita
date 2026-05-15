@@ -300,3 +300,6 @@ other = "כבר נשמר"
 
 [BookmarkError]
 other = "❌ שגיאה"
+
+[BookmarkNotYours]
+other = "סימנייה זו שייכת למשתמש אחר."
