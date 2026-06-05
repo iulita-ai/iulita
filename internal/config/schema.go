@@ -143,7 +143,7 @@ func CoreConfigSchema() []ConfigSection {
 			Description: "Route queries to different providers",
 			Fields: []ConfigField{
 				{Key: "routing.enabled", Label: "Enabled", Description: "Enable hint-based model routing", Type: FieldBool, Default: "false", Section: "routing"},
-				{Key: "routing.default_provider", Label: "Default Provider", Description: "Default provider for unclassified queries", Type: FieldSelect, Default: "claude", Options: []string{"claude", "openai", "deepseek", "ollama"}, Section: "routing"},
+				{Key: "routing.default_provider", Label: "Default Provider", Description: "Default LLM provider (e.g. switch claude→deepseek). Requires the provider's API key/model to be set; applies after restart.", Type: FieldSelect, Default: "claude", Options: []string{"claude", "openai", "deepseek", "ollama"}, Section: "routing"},
 				{Key: "routing.classification_enabled", Label: "Auto-Classification", Description: "Automatically classify queries (requires Ollama)", Type: FieldBool, Default: "false", Section: "routing"},
 				{Key: "routing.classification_provider", Label: "Classification Provider", Description: "Provider for query classification", Type: FieldSelect, Options: []string{"claude", "ollama"}, Section: "routing"},
 				{Key: "routing.max_actions_per_hour", Label: "Max Actions/Hour", Description: "Global action rate limit (0 = unlimited)", Type: FieldInt, Default: "0", Section: "routing"},

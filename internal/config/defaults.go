@@ -139,11 +139,12 @@ func defaultModelPrices() map[string]ModelPrice {
 		"claude-opus-4-0":            {InputPerMillion: 15.0, OutputPerMillion: 75.0},
 		"claude-3-haiku-20240307":    {InputPerMillion: 0.25, OutputPerMillion: 1.25},
 
-		// DeepSeek. Input billed at the cache-MISS rate; cached input at the
-		// discounted CacheHitPerMillion rate. Verify cache_hit against current
-		// DeepSeek pricing; all rates are config-overridable. deepseek-chat is a
-		// live alias for deepseek-v4-flash; deepseek-reasoner kept for back-compat.
+		// DeepSeek (official rates per 1M tokens, api-docs.deepseek.com/quick_start/pricing).
+		// Input billed at the cache-MISS rate; cached input at the discounted
+		// CacheHitPerMillion rate; all config-overridable. deepseek-chat/-reasoner are
+		// deprecated aliases (removal 2026-07-24) mapping to v4-flash non-thinking/thinking.
 		"deepseek-v4-flash": {InputPerMillion: 0.14, OutputPerMillion: 0.28, CacheHitPerMillion: 0.0028},
+		"deepseek-v4-pro":   {InputPerMillion: 0.435, OutputPerMillion: 0.87, CacheHitPerMillion: 0.003625},
 		"deepseek-chat":     {InputPerMillion: 0.14, OutputPerMillion: 0.28, CacheHitPerMillion: 0.0028},
 		"deepseek-reasoner": {InputPerMillion: 0.14, OutputPerMillion: 0.28, CacheHitPerMillion: 0.0028},
 	}

@@ -618,7 +618,20 @@ func main() {
 				routes[route.Hint] = p
 			}
 		}
-		router := llm.NewRoutingProvider(llmProvider, routes)
+		// Honor routing.default_provider so the dashboard/config can switch the
+		// default LLM (e.g. claude -> deepseek) without removing the other's key.
+		// Falls back to the build-order primary when unset/unknown.
+		routingDefault := llmProvider
+		if cfg.Routing.DefaultProvider != "" {
+			if p, ok := providerMap[cfg.Routing.DefaultProvider]; ok {
+				routingDefault = p
+				logger.Info("routing default provider selected", zap.String("provider", cfg.Routing.DefaultProvider))
+			} else {
+				logger.Warn("routing.default_provider not available; using build-order primary",
+					zap.String("requested", cfg.Routing.DefaultProvider))
+			}
+		}
+		router := llm.NewRoutingProvider(routingDefault, routes)
 
 		// Optionally wrap with query classification.
 		if cfg.Routing.ClassificationEnabled && ollamaProvider != nil {
