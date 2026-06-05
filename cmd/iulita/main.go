@@ -36,6 +36,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/i18n"
 	"github.com/iulita-ai/iulita/internal/llm"
 	"github.com/iulita-ai/iulita/internal/llm/claude"
+	deepseekllm "github.com/iulita-ai/iulita/internal/llm/deepseek"
 	"github.com/iulita-ai/iulita/internal/llm/ollama"
 	"github.com/iulita-ai/iulita/internal/llm/onnx"
 	openaillm "github.com/iulita-ai/iulita/internal/llm/openai"
@@ -264,6 +265,7 @@ func main() {
 	// Register env → credential name mappings for priority chain resolution.
 	credStore.RegisterEnvMapping("claude.api_key", "ANTHROPIC_API_KEY")
 	credStore.RegisterEnvMapping("openai.api_key", "OPENAI_API_KEY")
+	credStore.RegisterEnvMapping("deepseek.api_key", "DEEPSEEK_API_KEY")
 	credStore.RegisterEnvMapping("telegram.token", "TELEGRAM_TOKEN")
 	credStore.RegisterEnvMapping("skills.todoist.api_token", "TODOIST_API_TOKEN")
 	credStore.RegisterEnvMapping("skills.websearch.brave_api_key", "BRAVE_API_KEY")
@@ -295,6 +297,8 @@ func main() {
 		{"claude.model", &cfg.Claude.Model},
 		{"openai.api_key", &cfg.OpenAI.APIKey},
 		{"openai.model", &cfg.OpenAI.Model},
+		{"deepseek.api_key", &cfg.DeepSeek.APIKey},
+		{"deepseek.model", &cfg.DeepSeek.Model},
 		{"ollama.url", &cfg.Ollama.URL},
 		{"ollama.model", &cfg.Ollama.Model},
 		{"telegram.token", &cfg.Telegram.Token},
@@ -471,10 +475,13 @@ func main() {
 	// LLM provider chain — build from configured providers.
 	var rawProvider *claude.Provider // may be nil if Claude not configured
 	var llmProvider llm.Provider
+	// Track the actual primary provider/model for usage-tracking fallback labeling.
+	var primaryModel, primaryProvider string
 
 	if cfg.Claude.APIKey != "" {
 		rawProvider = claude.New(cfg.Claude.APIKey, cfg.Claude.Model, cfg.Claude.MaxTokens, cfg.Claude.BaseURL, llmHTTPClient)
 		llmProvider = llm.NewRetryProvider(rawProvider, llm.DefaultRetryConfig())
+		primaryModel, primaryProvider = cfg.Claude.Model, "claude"
 		logger.Info("claude provider ready", zap.String("model", cfg.Claude.Model))
 	}
 
@@ -488,12 +495,44 @@ func main() {
 		if llmProvider == nil {
 			// OpenAI is primary provider.
 			llmProvider = llm.NewRetryProvider(openaiProvider, llm.DefaultRetryConfig())
+			primaryModel, primaryProvider = cfg.OpenAI.Model, "openai"
 			logger.Info("openai primary provider configured", zap.String("model", cfg.OpenAI.Model))
 		} else if cfg.OpenAI.Fallback {
 			llmProvider = llm.NewFallbackProvider(llmProvider, openaiProvider)
 			logger.Info("openai fallback provider configured", zap.String("model", cfg.OpenAI.Model))
 		} else {
 			logger.Info("openai provider available", zap.String("model", cfg.OpenAI.Model))
+		}
+	}
+
+	// DeepSeek (OpenAI-compatible) provider. Built before the response-cache wrap
+	// so a DeepSeek primary is cache-wrapped consistently. deepseekIsPrimary is
+	// captured here (pre-cache-wrap) because after wrapping, identity comparison
+	// against the cache provider would no longer hold.
+	var deepseekProvider llm.Provider
+	deepseekIsPrimary := false
+	if cfg.DeepSeek.APIKey != "" && cfg.DeepSeek.Model != "" {
+		dsMaxTokens := cfg.DeepSeek.MaxTokens
+		if dsMaxTokens <= 0 {
+			dsMaxTokens = 4096
+		}
+		// Use llmHTTPClient (no client-level timeout) so long streaming/reasoning
+		// responses aren't cut off; cancellation is context-driven.
+		rawDS := deepseekllm.New(cfg.DeepSeek.APIKey, cfg.DeepSeek.Model, dsMaxTokens, cfg.DeepSeek.BaseURL, llmHTTPClient, logger)
+		deepseekProvider = llm.NewRetryProvider(rawDS, llm.DefaultRetryConfig())
+		switch {
+		case llmProvider == nil:
+			llmProvider = deepseekProvider
+			deepseekIsPrimary = true
+			primaryModel, primaryProvider = cfg.DeepSeek.Model, "deepseek"
+			logger.Info("deepseek primary provider configured", zap.String("model", cfg.DeepSeek.Model))
+		case cfg.DeepSeek.Fallback:
+			// FallbackProvider implements only Complete, so wiring DeepSeek as a
+			// fallback disables streaming for the whole session (documented tradeoff).
+			llmProvider = llm.NewFallbackProvider(llmProvider, deepseekProvider)
+			logger.Warn("deepseek fallback configured — streaming degraded for ALL responses this session (FallbackProvider has no CompleteStream)", zap.String("model", cfg.DeepSeek.Model))
+		default:
+			logger.Info("deepseek provider available", zap.String("model", cfg.DeepSeek.Model))
 		}
 	}
 
@@ -522,6 +561,7 @@ func main() {
 		if llmProvider == nil {
 			// Ollama is primary provider.
 			llmProvider = ollamaProvider
+			primaryModel, primaryProvider = cfg.Ollama.Model, "ollama"
 			logger.Info("ollama primary provider configured (XML tool enabled)", zap.String("model", cfg.Ollama.Model))
 		} else {
 			logger.Info("ollama provider ready (XML tool enabled)", zap.String("model", cfg.Ollama.Model))
@@ -546,6 +586,7 @@ func main() {
 	// Activate routing when there are genuinely distinct providers to route between.
 	hasSecondaryProviders := claudeHaikuProvider != nil ||
 		(openaiProvider != nil && llmProvider != openaiProvider) ||
+		(deepseekProvider != nil && !deepseekIsPrimary) ||
 		(ollamaProvider != nil && llmProvider != ollamaProvider)
 	if cfg.Routing.Enabled || hasSecondaryProviders {
 		routes := make(map[string]llm.Provider)
@@ -557,6 +598,15 @@ func main() {
 		if openaiProvider != nil {
 			providerMap["openai"] = openaiProvider
 			routes["openai"] = openaiProvider
+		}
+		if deepseekProvider != nil {
+			providerMap["deepseek"] = deepseekProvider
+			routes["deepseek"] = deepseekProvider
+		}
+		if deepseekIsPrimary {
+			// Alias hint:deepseek to the actual (possibly cache-wrapped) primary.
+			providerMap["deepseek"] = llmProvider
+			routes["deepseek"] = llmProvider
 		}
 		if ollamaProvider != nil {
 			providerMap["ollama"] = ollamaProvider
@@ -588,6 +638,13 @@ func main() {
 	if cfg.Cost.Enabled {
 		costTracker = cost.New(cfg.Cost)
 		logger.Info("cost tracking enabled", zap.Float64("daily_limit_usd", cfg.Cost.DailyLimitUSD))
+		// Surface silent $0 billing when a configured DeepSeek model has no price entry.
+		if cfg.DeepSeek.Model != "" {
+			if _, ok := cfg.Cost.Prices[cfg.DeepSeek.Model]; !ok {
+				logger.Warn("deepseek model has no cost price entry — its usage will be tracked as $0",
+					zap.String("model", cfg.DeepSeek.Model))
+			}
+		}
 	}
 
 	// Global action rate limiter.
@@ -832,6 +889,16 @@ func main() {
 			defaultDelegate = "openai"
 		}
 	}
+	if cfg.DeepSeek.APIKey != "" && cfg.DeepSeek.Model != "" {
+		dsMaxTokens := cfg.DeepSeek.MaxTokens
+		if dsMaxTokens <= 0 {
+			dsMaxTokens = 4096
+		}
+		delegateProviders["deepseek"] = deepseekllm.New(cfg.DeepSeek.APIKey, cfg.DeepSeek.Model, dsMaxTokens, cfg.DeepSeek.BaseURL, llmHTTPClient, logger)
+		if defaultDelegate == "" {
+			defaultDelegate = "deepseek"
+		}
+	}
 	if len(delegateProviders) > 0 {
 		delegateManifest, err := delegate.LoadManifest()
 		if err != nil {
@@ -943,7 +1010,7 @@ func main() {
 
 	// Assistant
 	asst := assistant.New(llmProvider, store, registry, cfg.App.SystemPrompt, cfg.App.DefaultTimezone, cfg.Claude.ContextWindow, logger)
-	asst.SetModelInfo(cfg.Claude.Model, "claude")
+	asst.SetModelInfo(primaryModel, primaryProvider)
 
 	// Event bus for decoupled event handling.
 	bus := eventbus.New(logger)
