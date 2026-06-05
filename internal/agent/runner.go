@@ -179,8 +179,9 @@ func (r *Runner) Run(ctx context.Context, spec AgentSpec, budget Budget, sharedT
 
 		// Execute tool calls.
 		exchange := llm.ToolExchange{
-			AssistantText: lastResp.Content,
-			ToolCalls:     lastResp.ToolCalls,
+			AssistantText:    lastResp.Content,
+			ToolCalls:        lastResp.ToolCalls,
+			ReasoningContent: lastResp.ReasoningContent,
 		}
 
 		for _, tc := range lastResp.ToolCalls {

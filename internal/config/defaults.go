@@ -22,6 +22,13 @@ func DefaultConfig(paths *Paths) *Config {
 		OpenAI: OpenAIConfig{
 			MaxTokens: 4096,
 		},
+		DeepSeek: DeepSeekConfig{
+			Model: "deepseek-v4-flash", // live, non-deprecated default
+			// V4 models are thinking models: reasoning_content counts against the
+			// completion budget, so give headroom or complex queries return empty
+			// content (reasoning consumes all of max_tokens).
+			MaxTokens: 8192,
+		},
 		Storage: StorageConfig{
 			Path: paths.DatabaseFile(),
 		},
@@ -131,5 +138,14 @@ func defaultModelPrices() map[string]ModelPrice {
 		"claude-opus-4-20250514":     {InputPerMillion: 15.0, OutputPerMillion: 75.0},
 		"claude-opus-4-0":            {InputPerMillion: 15.0, OutputPerMillion: 75.0},
 		"claude-3-haiku-20240307":    {InputPerMillion: 0.25, OutputPerMillion: 1.25},
+
+		// DeepSeek (official rates per 1M tokens, api-docs.deepseek.com/quick_start/pricing).
+		// Input billed at the cache-MISS rate; cached input at the discounted
+		// CacheHitPerMillion rate; all config-overridable. deepseek-chat/-reasoner are
+		// deprecated aliases (removal 2026-07-24) mapping to v4-flash non-thinking/thinking.
+		"deepseek-v4-flash": {InputPerMillion: 0.14, OutputPerMillion: 0.28, CacheHitPerMillion: 0.0028},
+		"deepseek-v4-pro":   {InputPerMillion: 0.435, OutputPerMillion: 0.87, CacheHitPerMillion: 0.003625},
+		"deepseek-chat":     {InputPerMillion: 0.14, OutputPerMillion: 0.28, CacheHitPerMillion: 0.0028},
+		"deepseek-reasoner": {InputPerMillion: 0.14, OutputPerMillion: 0.28, CacheHitPerMillion: 0.0028},
 	}
 }

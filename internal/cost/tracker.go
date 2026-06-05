@@ -44,10 +44,19 @@ func (t *Tracker) Calculate(model string, usage llm.Usage) float64 {
 		return 0
 	}
 
-	inputTokens := float64(usage.InputTokens + usage.CacheReadInputTokens + usage.CacheCreationInputTokens)
+	// Cache-read (hit) tokens bill at the discounted rate when configured;
+	// otherwise they fall back to the standard input rate (no behavior change
+	// for providers without a cache discount, e.g. Claude/OpenAI).
+	cacheHitRate := price.CacheHitPerMillion
+	if cacheHitRate == 0 {
+		cacheHitRate = price.InputPerMillion
+	}
+	fullRateInput := float64(usage.InputTokens + usage.CacheCreationInputTokens)
+	cacheReadInput := float64(usage.CacheReadInputTokens)
 	outputTokens := float64(usage.OutputTokens)
 
-	inputCost := (inputTokens / 1_000_000) * price.InputPerMillion
+	inputCost := (fullRateInput/1_000_000)*price.InputPerMillion +
+		(cacheReadInput/1_000_000)*cacheHitRate
 	outputCost := (outputTokens / 1_000_000) * price.OutputPerMillion
 
 	return inputCost + outputCost

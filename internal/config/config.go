@@ -32,6 +32,7 @@ type Config struct {
 	Telegram      TelegramConfig      `koanf:"telegram"`
 	Claude        ClaudeConfig        `koanf:"claude"`
 	OpenAI        OpenAIConfig        `koanf:"openai"`
+	DeepSeek      DeepSeekConfig      `koanf:"deepseek"`
 	Ollama        OllamaConfig        `koanf:"ollama"`
 	Storage       StorageConfig       `koanf:"storage"`
 	Server        ServerConfig        `koanf:"server"`
@@ -60,8 +61,12 @@ type CostConfig struct {
 
 // ModelPrice defines cost per million tokens for a model.
 type ModelPrice struct {
-	InputPerMillion  float64 `koanf:"input"`  // $ per 1M input tokens
+	InputPerMillion  float64 `koanf:"input"`  // $ per 1M input tokens (cache miss)
 	OutputPerMillion float64 `koanf:"output"` // $ per 1M output tokens
+	// CacheHitPerMillion is the discounted rate for cached input tokens (e.g.
+	// DeepSeek context cache). Zero means "bill cache hits at InputPerMillion",
+	// which preserves existing behavior for providers without a cache discount.
+	CacheHitPerMillion float64 `koanf:"cache_hit"`
 }
 
 // RoutingConfig controls model routing and query classification.
@@ -237,6 +242,15 @@ type OpenAIConfig struct {
 	Fallback  bool   `koanf:"fallback"` // use as fallback for Claude
 }
 
+// DeepSeekConfig configures the DeepSeek (OpenAI-compatible) provider.
+type DeepSeekConfig struct {
+	APIKey    string `koanf:"api_key"`
+	Model     string `koanf:"model"`
+	MaxTokens int    `koanf:"max_tokens"`
+	BaseURL   string `koanf:"base_url"` // default https://api.deepseek.com/v1
+	Fallback  bool   `koanf:"fallback"` // use as fallback (disables session streaming)
+}
+
 type StorageConfig struct {
 	Path string `koanf:"path"`
 }
@@ -324,6 +338,9 @@ func (c *Config) HasAnyLLMProvider() bool {
 	if c.OpenAI.APIKey != "" && c.OpenAI.Model != "" {
 		return true
 	}
+	if c.DeepSeek.APIKey != "" && c.DeepSeek.Model != "" {
+		return true
+	}
 	if c.Ollama.URL != "" && c.Ollama.Model != "" {
 		return true
 	}
@@ -340,7 +357,7 @@ func (c *Config) Validate(mode ValidateMode) error {
 		return nil
 	}
 	if !c.HasAnyLLMProvider() {
-		return fmt.Errorf("at least one LLM provider is required (Claude, OpenAI, or Ollama). Run 'iulita init' to configure")
+		return fmt.Errorf("at least one LLM provider is required (Claude, OpenAI, DeepSeek, or Ollama). Run 'iulita init' to configure")
 	}
 	if mode == ValidateServer && c.Telegram.Token == "" && !c.Server.Enabled {
 		return fmt.Errorf("server mode requires at least one channel: set telegram.token or enable server with web chat")
@@ -406,6 +423,15 @@ func Load(path string, paths *Paths) (*Config, *koanf.Koanf, bool, error) {
 			"telegram.token": tgToken,
 		}, "."), nil)
 	}
+	// DeepSeek api_key saved to keyring by the console wizard (account name is the
+	// single source of truth via keyringAccountForKey, so save/read can't drift).
+	if apiKey := ks.GetSecret("IULITA_DEEPSEEK_API_KEY", keyringAccountForKey("deepseek.api_key")); apiKey != "" {
+		if err := k.Load(confmap.Provider(map[string]interface{}{
+			"deepseek.api_key": apiKey,
+		}, "."), nil); err != nil {
+			return nil, nil, false, fmt.Errorf("loading deepseek keyring secret: %w", err)
+		}
+	}
 
 	// Layer 5: JWT secret — ensure it's stable across restarts.
 	if jwtSecret, err := ks.EnsureJWTSecret(); err == nil && jwtSecret != "" {
@@ -443,6 +469,11 @@ func structToMap(cfg *Config) map[string]interface{} {
 
 	// OpenAI
 	m["openai.max_tokens"] = cfg.OpenAI.MaxTokens
+
+	// DeepSeek (mirror OpenAI: only the non-secret numeric default goes through
+	// structToMap; model default is injected via DefaultConfig so empty strings
+	// don't shadow keyring/env layers during koanf merge).
+	m["deepseek.max_tokens"] = cfg.DeepSeek.MaxTokens
 
 	// Storage
 	m["storage.path"] = cfg.Storage.Path

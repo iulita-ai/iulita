@@ -626,8 +626,9 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 
 		// Execute each tool call.
 		exchange := llm.ToolExchange{
-			AssistantText: lastResp.Content,
-			ToolCalls:     lastResp.ToolCalls,
+			AssistantText:    lastResp.Content,
+			ToolCalls:        lastResp.ToolCalls,
+			ReasoningContent: lastResp.ReasoningContent,
 		}
 
 		for _, tc := range lastResp.ToolCalls {

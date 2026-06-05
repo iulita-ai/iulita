@@ -34,6 +34,10 @@ type ToolExchange struct {
 	AssistantText string
 	ToolCalls     []ToolCall
 	Results       []ToolResult
+	// ReasoningContent is the model's chain-of-thought for this turn. It is
+	// provider-specific (DeepSeek thinking-mode REQUIRES it to be replayed on
+	// assistant tool-call turns); providers that don't use it leave it empty.
+	ReasoningContent string
 }
 
 // ImageAttachment holds raw image data to send to the LLM.
@@ -83,6 +87,11 @@ type Response struct {
 	Usage     Usage
 	Model     string // actual model used (populated by provider)
 	Provider  string // provider name (populated by provider)
+	// ReasoningContent is the model's chain-of-thought, when the provider
+	// exposes it separately from Content (e.g. DeepSeek thinking mode). It is
+	// never streamed to the user; it is threaded back via ToolExchange so
+	// providers that mandate replaying it on tool-call turns don't error.
+	ReasoningContent string
 }
 
 // FullSystemPrompt returns the combined system prompt for providers that don't
