@@ -467,14 +467,22 @@ func buildToolChoice(req llm.Request) any {
 
 // mapUsage maps DeepSeek usage to llm.Usage.
 //
-// Phase 1: all prompt tokens are billed at the single input rate (cache fields
-// left zero). The cache-hit/miss split is parsed but deferred to Phase 2, where
-// the cost model gains a cache-hit price.
+// DeepSeek guarantees prompt_tokens == prompt_cache_hit_tokens +
+// prompt_cache_miss_tokens. We map miss → InputTokens (full rate) and hit →
+// CacheReadInputTokens (discounted rate), preserving the invariant
+// InputTokens + CacheReadInputTokens + CacheCreationInputTokens == prompt_tokens
+// so the cost tracker bills exactly prompt_tokens worth of input. When the
+// split isn't reported (older/compatible endpoints), all prompt tokens fall
+// back to InputTokens at the full rate.
 func mapUsage(u chatUsage) llm.Usage {
-	return llm.Usage{
-		InputTokens:  u.PromptTokens,
-		OutputTokens: u.CompletionTokens,
+	out := llm.Usage{OutputTokens: u.CompletionTokens}
+	if u.PromptCacheHitTokens > 0 || u.PromptCacheMissTokens > 0 {
+		out.InputTokens = u.PromptCacheMissTokens
+		out.CacheReadInputTokens = u.PromptCacheHitTokens
+	} else {
+		out.InputTokens = u.PromptTokens
 	}
+	return out
 }
 
 // toolCallAccumulator reassembles streamed tool calls that arrive fragmented

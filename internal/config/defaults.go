@@ -136,12 +136,12 @@ func defaultModelPrices() map[string]ModelPrice {
 		"claude-opus-4-0":            {InputPerMillion: 15.0, OutputPerMillion: 75.0},
 		"claude-3-haiku-20240307":    {InputPerMillion: 0.25, OutputPerMillion: 1.25},
 
-		// DeepSeek. Phase 1 bills all input at the cache-MISS rate (over-estimates
-		// cache hits — a safe direction). The cache-hit/miss split is deferred to
-		// Phase 2 (see docs/deepseek-integration-plan.md §6). deepseek-chat and
-		// deepseek-reasoner are legacy aliases kept for backward compatibility.
-		"deepseek-v4-flash": {InputPerMillion: 0.14, OutputPerMillion: 0.28},
-		"deepseek-chat":     {InputPerMillion: 0.14, OutputPerMillion: 0.28},
-		"deepseek-reasoner": {InputPerMillion: 0.14, OutputPerMillion: 0.28},
+		// DeepSeek. Input billed at the cache-MISS rate; cached input at the
+		// discounted CacheHitPerMillion rate. Verify cache_hit against current
+		// DeepSeek pricing; all rates are config-overridable. deepseek-chat is a
+		// live alias for deepseek-v4-flash; deepseek-reasoner kept for back-compat.
+		"deepseek-v4-flash": {InputPerMillion: 0.14, OutputPerMillion: 0.28, CacheHitPerMillion: 0.0028},
+		"deepseek-chat":     {InputPerMillion: 0.14, OutputPerMillion: 0.28, CacheHitPerMillion: 0.0028},
+		"deepseek-reasoner": {InputPerMillion: 0.14, OutputPerMillion: 0.28, CacheHitPerMillion: 0.0028},
 	}
 }

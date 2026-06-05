@@ -227,16 +227,28 @@ func TestToolCallAccumulator_Empty(t *testing.T) {
 	}
 }
 
-func TestMapUsage_Phase1Fallback(t *testing.T) {
+func TestMapUsage_CacheSplit(t *testing.T) {
 	u := mapUsage(chatUsage{PromptTokens: 100, CompletionTokens: 40, PromptCacheHitTokens: 80, PromptCacheMissTokens: 20})
-	if u.InputTokens != 100 {
-		t.Errorf("InputTokens = %d, want 100 (all prompt tokens at input rate in P1)", u.InputTokens)
+	if u.InputTokens != 20 {
+		t.Errorf("InputTokens (miss) = %d, want 20", u.InputTokens)
+	}
+	if u.CacheReadInputTokens != 80 {
+		t.Errorf("CacheReadInputTokens (hit) = %d, want 80", u.CacheReadInputTokens)
 	}
 	if u.OutputTokens != 40 {
 		t.Errorf("OutputTokens = %d, want 40", u.OutputTokens)
 	}
-	if u.CacheReadInputTokens != 0 || u.CacheCreationInputTokens != 0 {
-		t.Errorf("cache fields must be zero in P1, got read=%d create=%d", u.CacheReadInputTokens, u.CacheCreationInputTokens)
+	// Invariant: input components must sum to prompt_tokens.
+	if u.InputTokens+u.CacheReadInputTokens+u.CacheCreationInputTokens != 100 {
+		t.Errorf("input components must sum to prompt_tokens (100), got %d", u.InputTokens+u.CacheReadInputTokens+u.CacheCreationInputTokens)
+	}
+}
+
+func TestMapUsage_NoSplitReported(t *testing.T) {
+	// When the hit/miss split isn't reported, all prompt tokens bill at full rate.
+	u := mapUsage(chatUsage{PromptTokens: 100, CompletionTokens: 40})
+	if u.InputTokens != 100 || u.CacheReadInputTokens != 0 {
+		t.Errorf("fallback: InputTokens=%d CacheRead=%d, want 100/0", u.InputTokens, u.CacheReadInputTokens)
 	}
 }
 
@@ -331,7 +343,8 @@ func TestComplete_RequestAndResponse(t *testing.T) {
 	if len(resp.ToolCalls) != 1 || resp.ToolCalls[0].Name != "search" || string(resp.ToolCalls[0].Input) != `{"q":"go"}` {
 		t.Errorf("tool calls = %+v", resp.ToolCalls)
 	}
-	if resp.Usage.InputTokens != 12 || resp.Usage.OutputTokens != 5 {
+	// prompt_tokens 12 = 4 miss + 8 hit.
+	if resp.Usage.InputTokens != 4 || resp.Usage.CacheReadInputTokens != 8 || resp.Usage.OutputTokens != 5 {
 		t.Errorf("usage = %+v", resp.Usage)
 	}
 	if resp.ReasoningContent != "let me think" {

@@ -61,8 +61,12 @@ type CostConfig struct {
 
 // ModelPrice defines cost per million tokens for a model.
 type ModelPrice struct {
-	InputPerMillion  float64 `koanf:"input"`  // $ per 1M input tokens
+	InputPerMillion  float64 `koanf:"input"`  // $ per 1M input tokens (cache miss)
 	OutputPerMillion float64 `koanf:"output"` // $ per 1M output tokens
+	// CacheHitPerMillion is the discounted rate for cached input tokens (e.g.
+	// DeepSeek context cache). Zero means "bill cache hits at InputPerMillion",
+	// which preserves existing behavior for providers without a cache discount.
+	CacheHitPerMillion float64 `koanf:"cache_hit"`
 }
 
 // RoutingConfig controls model routing and query classification.
