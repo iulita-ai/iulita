@@ -306,7 +306,7 @@ export interface ConfigSchemaField {
   secret: boolean
   required: boolean
   section: string
-  model_source?: '' | 'openai' | 'ollama'
+  model_source?: '' | 'openai' | 'ollama' | 'deepseek'
   // Enriched by backend:
   value?: string
   has_value?: boolean

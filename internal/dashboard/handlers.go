@@ -713,6 +713,22 @@ func (s *Server) handleListModels(c *fiber.Ctx) error {
 		}
 		return c.JSON(fiber.Map{"models": models, "source": "dynamic"})
 
+	case "deepseek":
+		apiKey, _ := s.configStore.GetEffective("deepseek.api_key")
+		if apiKey == "" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "deepseek.api_key not configured"})
+		}
+		baseURL, _ := s.configStore.GetEffective("deepseek.base_url")
+		if baseURL == "" {
+			baseURL = "https://api.deepseek.com/v1"
+		}
+		// DeepSeek's /v1/models endpoint is OpenAI-compatible.
+		models, err := openaillm.ListModels(baseURL, apiKey, httpClient)
+		if err != nil {
+			return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"models": models, "source": "dynamic"})
+
 	case "ollama":
 		ollamaURL, _ := s.configStore.GetEffective("ollama.url")
 		if ollamaURL == "" {

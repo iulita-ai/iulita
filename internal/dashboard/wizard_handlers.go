@@ -31,6 +31,11 @@ func (s *Server) handleWizardStatus(c *fiber.Ctx) error {
 				hasLLM = true
 			}
 		}
+		if v, ok := s.configStore.GetEffective("deepseek.api_key"); ok && v != "" {
+			if m, ok2 := s.configStore.GetEffective("deepseek.model"); ok2 && m != "" {
+				hasLLM = true
+			}
+		}
 		if v, ok := s.configStore.GetEffective("ollama.url"); ok && v != "" {
 			if m, ok2 := s.configStore.GetEffective("ollama.model"); ok2 && m != "" {
 				hasLLM = true
@@ -60,6 +65,11 @@ func (s *Server) handleWizardComplete(c *fiber.Ctx) error {
 	}
 	if v, ok := s.configStore.GetEffective("openai.api_key"); ok && v != "" {
 		if m, ok2 := s.configStore.GetEffective("openai.model"); ok2 && m != "" {
+			hasLLM = true
+		}
+	}
+	if v, ok := s.configStore.GetEffective("deepseek.api_key"); ok && v != "" {
+		if m, ok2 := s.configStore.GetEffective("deepseek.model"); ok2 && m != "" {
 			hasLLM = true
 		}
 	}
@@ -226,7 +236,7 @@ func (s *Server) handleWizardSchema(c *fiber.Ctx) error {
 			fields = append(fields, f)
 		}
 
-		sectionProviders := []string{"claude", "openai", "ollama"}
+		sectionProviders := []string{"claude", "openai", "deepseek", "ollama"}
 		isLLMSection := false
 		for _, p := range sectionProviders {
 			if strings.EqualFold(section.Name, p) {
