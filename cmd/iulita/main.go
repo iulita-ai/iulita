@@ -589,9 +589,22 @@ func main() {
 		(openaiProvider != nil && llmProvider != openaiProvider) ||
 		(deepseekProvider != nil && !deepseekIsPrimary) ||
 		(ollamaProvider != nil && llmProvider != ollamaProvider)
+	// Hoisted so the runtime config-reload handler can hot-swap the default
+	// provider (routing.default_provider) without a restart.
+	var routingProvider *llm.RoutingProvider
+	var providerMap map[string]llm.Provider
+	if cfg.Routing.DefaultProvider != "" && !cfg.Routing.Enabled && !hasSecondaryProviders {
+		logger.Warn("routing.default_provider is set but routing is inactive (only one provider); setting has no effect until a second provider is configured",
+			zap.String("requested", cfg.Routing.DefaultProvider))
+	}
 	if cfg.Routing.Enabled || hasSecondaryProviders {
 		routes := make(map[string]llm.Provider)
-		providerMap := map[string]llm.Provider{"claude": llmProvider}
+		providerMap = make(map[string]llm.Provider)
+		// Only label "claude" when Claude is actually the configured provider —
+		// llmProvider may be a different build-order primary.
+		if cfg.Claude.APIKey != "" {
+			providerMap["claude"] = llmProvider
+		}
 		if claudeHaikuProvider != nil {
 			providerMap["claude-haiku"] = claudeHaikuProvider
 			routes["claude-haiku"] = claudeHaikuProvider
@@ -631,18 +644,19 @@ func main() {
 					zap.String("requested", cfg.Routing.DefaultProvider))
 			}
 		}
-		router := llm.NewRoutingProvider(routingDefault, routes)
+		routingProvider = llm.NewRoutingProvider(routingDefault, routes)
 
-		// Optionally wrap with query classification.
+		// Optionally wrap with query classification. The classifier holds the
+		// *RoutingProvider pointer, so SetDefault hot-swaps propagate through it.
 		if cfg.Routing.ClassificationEnabled && ollamaProvider != nil {
 			classifier := ollamaProvider
 			if p, ok := providerMap[cfg.Routing.ClassificationProvider]; ok {
 				classifier = p
 			}
-			llmProvider = llm.NewClassifyingProvider(classifier, router)
+			llmProvider = llm.NewClassifyingProvider(classifier, routingProvider)
 			logger.Info("query classification enabled", zap.String("classifier", cfg.Routing.ClassificationProvider))
 		} else {
-			llmProvider = router
+			llmProvider = routingProvider
 		}
 		logger.Info("model routing enabled", zap.Int("routes", len(routes)))
 	}
@@ -1032,7 +1046,7 @@ func main() {
 
 	// Wire config store to event bus for hot-reload.
 	cfgStore.SetPublisher(&eventbus.ConfigChangeAdapter{Bus: bus})
-	registerConfigReload(bus, cfgStore, asst, store, registry, rawProvider, rawDeepSeek, extMgr, logger)
+	registerConfigReload(bus, cfgStore, asst, store, registry, rawProvider, rawDeepSeek, routingProvider, providerMap, extMgr, logger)
 
 	// Wire credential store to event bus.
 	credStore.SetPublisher(&eventbus.CredentialChangeAdapter{Bus: bus})
@@ -1735,7 +1749,7 @@ func backfillEmbeddings(ctx context.Context, store *sqlite.Store, embedder llm.E
 
 // registerConfigReload subscribes to config.changed events and applies runtime updates.
 // Core keys have explicit handlers; skill keys are dispatched to the registry.
-func registerConfigReload(bus *eventbus.Bus, cfgStore *config.Store, asst *assistant.Assistant, store *sqlite.Store, registry *skill.Registry, claudeProvider *claude.Provider, deepseekProvider *deepseekllm.Provider, extMgr *skillmgr.Manager, logger *zap.Logger) {
+func registerConfigReload(bus *eventbus.Bus, cfgStore *config.Store, asst *assistant.Assistant, store *sqlite.Store, registry *skill.Registry, claudeProvider *claude.Provider, deepseekProvider *deepseekllm.Provider, routingProvider *llm.RoutingProvider, providerMap map[string]llm.Provider, extMgr *skillmgr.Manager, logger *zap.Logger) {
 	bus.Subscribe(eventbus.ConfigChanged, func(_ context.Context, evt eventbus.Event) error {
 		p, ok := evt.Payload.(eventbus.ConfigChangedPayload)
 		if !ok {
@@ -1816,6 +1830,26 @@ func registerConfigReload(bus *eventbus.Bus, cfgStore *config.Store, asst *assis
 					deepseekProvider.UpdateMaxTokens(cfgStore.Base().DeepSeek.MaxTokens)
 					logger.Info("deepseek.max_tokens reverted to default")
 				}
+			}
+
+		case "routing.default_provider":
+			// Live-switch the active LLM (e.g. claude -> deepseek) from the
+			// dashboard. Requires routing to be active (>=2 providers) so a
+			// *RoutingProvider exists.
+			if routingProvider == nil {
+				logger.Warn("routing.default_provider changed but routing is inactive (only one provider); restart after configuring a second provider")
+				break
+			}
+			name, ok := cfgStore.Get("routing.default_provider")
+			if !ok || name == "" {
+				name = cfgStore.Base().Routing.DefaultProvider
+			}
+			if p, ok := providerMap[name]; ok {
+				routingProvider.SetDefault(p)
+				logger.Info("hot-reloaded routing.default_provider", zap.String("provider", name))
+			} else {
+				logger.Warn("routing.default_provider not available; unchanged",
+					zap.String("requested", name))
 			}
 
 		case "skills.memory.half_life_days":

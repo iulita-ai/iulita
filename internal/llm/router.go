@@ -3,11 +3,14 @@ package llm
 import (
 	"context"
 	"strings"
+	"sync"
 )
 
 // RoutingProvider routes requests to different providers based on hints.
 type RoutingProvider struct {
-	providers       map[string]Provider // hint -> provider
+	providers map[string]Provider // hint -> provider
+
+	mu              sync.RWMutex
 	defaultProvider Provider
 }
 
@@ -20,6 +23,23 @@ func NewRoutingProvider(defaultProvider Provider, routes map[string]Provider) *R
 		providers:       routes,
 		defaultProvider: defaultProvider,
 	}
+}
+
+// SetDefault swaps the default provider at runtime (thread-safe). Used to switch
+// the active LLM (e.g. claude -> deepseek) from the dashboard without a restart.
+func (p *RoutingProvider) SetDefault(provider Provider) {
+	if provider == nil {
+		return
+	}
+	p.mu.Lock()
+	p.defaultProvider = provider
+	p.mu.Unlock()
+}
+
+func (p *RoutingProvider) getDefault() Provider {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.defaultProvider
 }
 
 // Complete routes the request based on RouteHint or message prefix.
@@ -63,5 +83,5 @@ func (p *RoutingProvider) resolveProvider(req Request) (Provider, Request) {
 		}
 	}
 
-	return p.defaultProvider, req
+	return p.getDefault(), req
 }
