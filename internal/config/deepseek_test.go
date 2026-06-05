@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func testPaths(t *testing.T) *Paths {
 	t.Helper()
@@ -86,6 +89,19 @@ func TestDefaultModelPrices_DeepSeek(t *testing.T) {
 		if p.InputPerMillion <= 0 || p.OutputPerMillion <= 0 {
 			t.Errorf("%s has non-positive price: %+v", model, p)
 		}
+	}
+}
+
+func TestGenerateDefaultConfig_IncludesDeepSeek(t *testing.T) {
+	out, err := GenerateDefaultConfig(testPaths(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "[deepseek]") {
+		t.Error("generated config must include a [deepseek] section")
+	}
+	if !strings.Contains(out, "deepseek-v4-flash") {
+		t.Error("generated [deepseek] section must reference the default model")
 	}
 }
 

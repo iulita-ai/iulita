@@ -419,6 +419,15 @@ func Load(path string, paths *Paths) (*Config, *koanf.Koanf, bool, error) {
 			"telegram.token": tgToken,
 		}, "."), nil)
 	}
+	// DeepSeek api_key saved to keyring by the console wizard (account name is the
+	// single source of truth via keyringAccountForKey, so save/read can't drift).
+	if apiKey := ks.GetSecret("IULITA_DEEPSEEK_API_KEY", keyringAccountForKey("deepseek.api_key")); apiKey != "" {
+		if err := k.Load(confmap.Provider(map[string]interface{}{
+			"deepseek.api_key": apiKey,
+		}, "."), nil); err != nil {
+			return nil, nil, false, fmt.Errorf("loading deepseek keyring secret: %w", err)
+		}
+	}
 
 	// Layer 5: JWT secret — ensure it's stable across restarts.
 	if jwtSecret, err := ks.EnsureJWTSecret(); err == nil && jwtSecret != "" {

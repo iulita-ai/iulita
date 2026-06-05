@@ -39,6 +39,7 @@ func RunSetupWizard(paths *Paths) (*SetupResult, error) {
 	}{
 		{"claude", "claude", "Claude (Anthropic)"},
 		{"openai", "openai", "OpenAI-Compatible"},
+		{"deepseek", "deepseek", "DeepSeek"},
 		{"ollama", "ollama", "Ollama (Local)"},
 	}
 
@@ -78,7 +79,7 @@ func RunSetupWizard(paths *Paths) (*SetupResult, error) {
 
 	for _, section := range sections {
 		// LLM provider sections: skip if not selected.
-		isLLMSection := section.Name == "claude" || section.Name == "openai" || section.Name == "ollama"
+		isLLMSection := section.Name == "claude" || section.Name == "openai" || section.Name == "deepseek" || section.Name == "ollama"
 		if isLLMSection && !selectedProviders[section.Name] {
 			continue
 		}
@@ -136,7 +137,7 @@ func RunSetupWizard(paths *Paths) (*SetupResult, error) {
 
 	// Validate required fields — only for selected providers.
 	for _, section := range WizardSections() {
-		isLLMSection := section.Name == "claude" || section.Name == "openai" || section.Name == "ollama"
+		isLLMSection := section.Name == "claude" || section.Name == "openai" || section.Name == "deepseek" || section.Name == "ollama"
 		if isLLMSection && !selectedProviders[section.Name] {
 			continue
 		}
@@ -235,6 +236,8 @@ func keyringAccountForKey(key string) string {
 		return keyringAccountTG
 	case "openai.api_key":
 		return "openai-api-key"
+	case "deepseek.api_key":
+		return "deepseek-api-key"
 	default:
 		return ""
 	}
@@ -415,6 +418,25 @@ func fetchModelsForWizard(source ModelSource, values map[string]string) []string
 		}
 		return models
 
+	case ModelSourceDeepSeek:
+		apiKey := values["deepseek.api_key"]
+		if apiKey == "" {
+			return nil
+		}
+		baseURL := values["deepseek.base_url"]
+		if baseURL == "" {
+			baseURL = "https://api.deepseek.com/v1"
+		}
+		fmt.Print("  Fetching available models... ")
+		// DeepSeek's /v1/models endpoint is OpenAI-compatible.
+		models, err := openaillm.ListModels(baseURL, apiKey, httpClient)
+		if err != nil {
+			fmt.Printf("failed (%v)\n", err)
+			return nil
+		}
+		fmt.Printf("found %d models\n", len(models))
+		return models
+
 	case ModelSourceOllama:
 		ollamaURL := values["ollama.url"]
 		if ollamaURL == "" {
@@ -551,9 +573,17 @@ func GenerateDefaultConfig(paths *Paths) (string, error) {
 	b.WriteString("[openai]\n")
 	b.WriteString("# api_key = \"\"  # Set via IULITA_OPENAI_API_KEY env var\n")
 	b.WriteString("# model = \"\"  # e.g. gpt-4o\n")
-	b.WriteString(fmt.Sprintf("max_tokens = %d\n", cfg.OpenAI.MaxTokens))
+	fmt.Fprintf(&b, "max_tokens = %d\n", cfg.OpenAI.MaxTokens)
 	b.WriteString("# base_url = \"\"  # custom endpoint for compatible APIs\n")
 	b.WriteString("# fallback = false  # use as fallback when Claude fails\n")
+	b.WriteString("\n")
+
+	b.WriteString("[deepseek]\n")
+	b.WriteString("# api_key = \"\"  # Set via IULITA_DEEPSEEK_API_KEY env var or system keyring\n")
+	fmt.Fprintf(&b, "model = %q\n", cfg.DeepSeek.Model)
+	fmt.Fprintf(&b, "max_tokens = %d\n", cfg.DeepSeek.MaxTokens)
+	b.WriteString("# base_url = \"\"  # default https://api.deepseek.com/v1\n")
+	b.WriteString("# fallback = false  # use as fallback (disables session streaming)\n")
 	b.WriteString("\n")
 
 	b.WriteString("[ollama]\n")
