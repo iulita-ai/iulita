@@ -23,8 +23,11 @@ func DefaultConfig(paths *Paths) *Config {
 			MaxTokens: 4096,
 		},
 		DeepSeek: DeepSeekConfig{
-			Model:     "deepseek-v4-flash", // live, non-deprecated default
-			MaxTokens: 4096,
+			Model: "deepseek-v4-flash", // live, non-deprecated default
+			// V4 models are thinking models: reasoning_content counts against the
+			// completion budget, so give headroom or complex queries return empty
+			// content (reasoning consumes all of max_tokens).
+			MaxTokens: 8192,
 		},
 		Storage: StorageConfig{
 			Path: paths.DatabaseFile(),

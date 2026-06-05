@@ -515,7 +515,7 @@ func main() {
 	if cfg.DeepSeek.APIKey != "" && cfg.DeepSeek.Model != "" {
 		dsMaxTokens := cfg.DeepSeek.MaxTokens
 		if dsMaxTokens <= 0 {
-			dsMaxTokens = 4096
+			dsMaxTokens = 8192
 		}
 		// Use llmHTTPClient (no client-level timeout) so long streaming/reasoning
 		// responses aren't cut off; cancellation is context-driven.
@@ -893,7 +893,7 @@ func main() {
 	if cfg.DeepSeek.APIKey != "" && cfg.DeepSeek.Model != "" {
 		dsMaxTokens := cfg.DeepSeek.MaxTokens
 		if dsMaxTokens <= 0 {
-			dsMaxTokens = 4096
+			dsMaxTokens = 8192
 		}
 		delegateProviders["deepseek"] = deepseekllm.New(cfg.DeepSeek.APIKey, cfg.DeepSeek.Model, dsMaxTokens, cfg.DeepSeek.BaseURL, llmHTTPClient, logger)
 		if defaultDelegate == "" {

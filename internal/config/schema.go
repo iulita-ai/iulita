@@ -91,7 +91,7 @@ func CoreConfigSchema() []ConfigSection {
 			Fields: []ConfigField{
 				{Key: "deepseek.api_key", Label: "API Key", Description: "DeepSeek API key", Type: FieldSecret, Secret: true, Section: "deepseek", WizardOrder: 1},
 				{Key: "deepseek.model", Label: "Model", Description: "Model name (e.g. deepseek-v4-flash)", Type: FieldString, Default: "deepseek-v4-flash", Section: "deepseek", WizardOrder: 2, ModelSource: ModelSourceDeepSeek},
-				{Key: "deepseek.max_tokens", Label: "Max Tokens", Description: "Maximum output tokens", Type: FieldInt, Default: "4096", Section: "deepseek"},
+				{Key: "deepseek.max_tokens", Label: "Max Tokens", Description: "Max output tokens (incl. reasoning; thinking models need headroom)", Type: FieldInt, Default: "8192", Section: "deepseek"},
 				{Key: "deepseek.base_url", Label: "Base URL", Description: "Custom base URL (default https://api.deepseek.com/v1)", Type: FieldURL, Section: "deepseek", WizardOrder: 3},
 				{Key: "deepseek.fallback", Label: "Use as Fallback", Description: "Use as fallback when primary fails (NOTE: disables streaming for the session)", Type: FieldBool, Default: "false", Section: "deepseek", WizardOrder: 4},
 			},
