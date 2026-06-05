@@ -510,6 +510,7 @@ func main() {
 	// captured here (pre-cache-wrap) because after wrapping, identity comparison
 	// against the cache provider would no longer hold.
 	var deepseekProvider llm.Provider
+	var rawDeepSeek *deepseekllm.Provider // concrete type for hot-reload; nil if not configured
 	deepseekIsPrimary := false
 	if cfg.DeepSeek.APIKey != "" && cfg.DeepSeek.Model != "" {
 		dsMaxTokens := cfg.DeepSeek.MaxTokens
@@ -518,8 +519,8 @@ func main() {
 		}
 		// Use llmHTTPClient (no client-level timeout) so long streaming/reasoning
 		// responses aren't cut off; cancellation is context-driven.
-		rawDS := deepseekllm.New(cfg.DeepSeek.APIKey, cfg.DeepSeek.Model, dsMaxTokens, cfg.DeepSeek.BaseURL, llmHTTPClient, logger)
-		deepseekProvider = llm.NewRetryProvider(rawDS, llm.DefaultRetryConfig())
+		rawDeepSeek = deepseekllm.New(cfg.DeepSeek.APIKey, cfg.DeepSeek.Model, dsMaxTokens, cfg.DeepSeek.BaseURL, llmHTTPClient, logger)
+		deepseekProvider = llm.NewRetryProvider(rawDeepSeek, llm.DefaultRetryConfig())
 		switch {
 		case llmProvider == nil:
 			llmProvider = deepseekProvider
@@ -1018,7 +1019,7 @@ func main() {
 
 	// Wire config store to event bus for hot-reload.
 	cfgStore.SetPublisher(&eventbus.ConfigChangeAdapter{Bus: bus})
-	registerConfigReload(bus, cfgStore, asst, store, registry, rawProvider, extMgr, logger)
+	registerConfigReload(bus, cfgStore, asst, store, registry, rawProvider, rawDeepSeek, extMgr, logger)
 
 	// Wire credential store to event bus.
 	credStore.SetPublisher(&eventbus.CredentialChangeAdapter{Bus: bus})
@@ -1721,7 +1722,7 @@ func backfillEmbeddings(ctx context.Context, store *sqlite.Store, embedder llm.E
 
 // registerConfigReload subscribes to config.changed events and applies runtime updates.
 // Core keys have explicit handlers; skill keys are dispatched to the registry.
-func registerConfigReload(bus *eventbus.Bus, cfgStore *config.Store, asst *assistant.Assistant, store *sqlite.Store, registry *skill.Registry, claudeProvider *claude.Provider, extMgr *skillmgr.Manager, logger *zap.Logger) {
+func registerConfigReload(bus *eventbus.Bus, cfgStore *config.Store, asst *assistant.Assistant, store *sqlite.Store, registry *skill.Registry, claudeProvider *claude.Provider, deepseekProvider *deepseekllm.Provider, extMgr *skillmgr.Manager, logger *zap.Logger) {
 	bus.Subscribe(eventbus.ConfigChanged, func(_ context.Context, evt eventbus.Event) error {
 		p, ok := evt.Payload.(eventbus.ConfigChangedPayload)
 		if !ok {
@@ -1777,6 +1778,30 @@ func registerConfigReload(bus *eventbus.Bus, cfgStore *config.Store, asst *assis
 				} else {
 					claudeProvider.UpdateMaxTokens(cfgStore.Base().Claude.MaxTokens)
 					logger.Info("claude.max_tokens reverted to default")
+				}
+			}
+
+		case "deepseek.model":
+			if deepseekProvider != nil {
+				if val, ok := cfgStore.Get("deepseek.model"); ok && val != "" {
+					deepseekProvider.UpdateModel(val)
+					logger.Info("hot-reloaded deepseek.model", zap.String("value", val))
+				} else {
+					deepseekProvider.UpdateModel(cfgStore.Base().DeepSeek.Model)
+					logger.Info("deepseek.model reverted to default")
+				}
+			}
+
+		case "deepseek.max_tokens":
+			if deepseekProvider != nil {
+				if val, ok := cfgStore.Get("deepseek.max_tokens"); ok {
+					if n, err := strconv.Atoi(val); err == nil && n > 0 {
+						deepseekProvider.UpdateMaxTokens(n)
+						logger.Info("hot-reloaded deepseek.max_tokens", zap.Int("value", n))
+					}
+				} else {
+					deepseekProvider.UpdateMaxTokens(cfgStore.Base().DeepSeek.MaxTokens)
+					logger.Info("deepseek.max_tokens reverted to default")
 				}
 			}
 
