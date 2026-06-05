@@ -1,3 +1,34 @@
+> ## ✅ IMPLEMENTED & LIVE-VERIFIED (branch `feat/deepseek`)
+>
+> Both Phase 1 and Phase 2 are implemented, reviewed (code+architect per commit), and
+> verified against the live `api.deepseek.com`. Key corrections the live API forced on
+> the original plan below:
+>
+> - **Live models are `deepseek-v4-flash` and `deepseek-v4-pro`** (from `/v1/models`).
+>   `deepseek-chat`/`deepseek-reasoner` no longer appear but still resolve as aliases
+>   (`deepseek-chat` → `deepseek-v4-flash`). Default model `deepseek-v4-flash` is correct.
+> - **BOTH V4 models are thinking models** — every response carries `reasoning_content`.
+>   This made reasoning_content threading a **Phase-1 correctness requirement, not a Phase-2
+>   nicety**: V4 returns HTTP 400 `"reasoning_content ... must be passed back"` if it is
+>   absent on an assistant **tool-call** turn. So multi-turn tool use is broken without it.
+>   Fix: `ReasoningContent` added to `llm.Response`+`llm.ToolExchange`; the deepseek provider
+>   captures it (Complete+stream, never streamed to the user) and replays it on tool-call
+>   turns only; the assistant loop + agent runner thread it. Plain history never carries it.
+> - **Tool-use works fine alongside reasoning on v4-flash** (no special R1 restriction) —
+>   the legacy "reasoner 400 rule" feared in the plan does NOT apply to V4 except the
+>   replay-on-tool-call requirement above.
+> - **`max_tokens` default raised 4096 → 8192**: reasoning_content counts against the
+>   completion budget, so a low cap returns empty `content` (`finish_reason: length`).
+> - **Cache usage fields confirmed**: `prompt_cache_hit_tokens`/`prompt_cache_miss_tokens`
+>   (top-level) with `prompt_tokens == hit + miss`. Cache-hit/miss cost split implemented.
+> - **`deepseek-v4-pro` is unpriced** (no public rate captured) → startup WARN surfaces $0.
+> - Commits: provider · config/schema/prices · dashboard+wizard · console wizard+keyring ·
+>   DI wiring · reasoning_content · cache cost · hot-reload · max_tokens.
+>
+> The remainder of this document is the original (pre-implementation) plan.
+
+---
+
 # Implementation Plan — DeepSeek Provider Support for iulita
 
 **Module:** `github.com/iulita-ai/iulita` · **Branch:** `feat/deepseek` · **Date context:** 2026-06-05
