@@ -15,10 +15,12 @@ const (
 // ModelSource indicates where to get the options list for a select field.
 type ModelSource string
 
+// Model source identifiers for dynamic option fetching.
 const (
-	ModelSourceStatic ModelSource = ""       // use Options as-is
-	ModelSourceOpenAI ModelSource = "openai" // fetch from OpenAI /v1/models
-	ModelSourceOllama ModelSource = "ollama" // fetch from Ollama /api/tags
+	ModelSourceStatic   ModelSource = ""         // use Options as-is
+	ModelSourceOpenAI   ModelSource = "openai"   // fetch from OpenAI /v1/models
+	ModelSourceOllama   ModelSource = "ollama"   // fetch from Ollama /api/tags
+	ModelSourceDeepSeek ModelSource = "deepseek" // fetch from DeepSeek /v1/models (OpenAI-compatible)
 )
 
 // ConfigField describes a single configurable key.
@@ -81,10 +83,24 @@ func CoreConfigSchema() []ConfigSection {
 			},
 		},
 		{
+			Name:        "deepseek",
+			Label:       "DeepSeek",
+			Description: "DeepSeek (OpenAI-compatible) provider",
+			WizardOrder: 3,
+			Optional:    true,
+			Fields: []ConfigField{
+				{Key: "deepseek.api_key", Label: "API Key", Description: "DeepSeek API key", Type: FieldSecret, Secret: true, Section: "deepseek", WizardOrder: 1},
+				{Key: "deepseek.model", Label: "Model", Description: "Model name (e.g. deepseek-v4-flash)", Type: FieldString, Default: "deepseek-v4-flash", Section: "deepseek", WizardOrder: 2, ModelSource: ModelSourceDeepSeek},
+				{Key: "deepseek.max_tokens", Label: "Max Tokens", Description: "Maximum output tokens", Type: FieldInt, Default: "4096", Section: "deepseek"},
+				{Key: "deepseek.base_url", Label: "Base URL", Description: "Custom base URL (default https://api.deepseek.com/v1)", Type: FieldURL, Section: "deepseek", WizardOrder: 3},
+				{Key: "deepseek.fallback", Label: "Use as Fallback", Description: "Use as fallback when primary fails (NOTE: disables streaming for the session)", Type: FieldBool, Default: "false", Section: "deepseek", WizardOrder: 4},
+			},
+		},
+		{
 			Name:        "ollama",
 			Label:       "Ollama (Local)",
 			Description: "Local LLM via Ollama",
-			WizardOrder: 3,
+			WizardOrder: 4,
 			Optional:    true,
 			Fields: []ConfigField{
 				{Key: "ollama.url", Label: "URL", Description: "Ollama server URL", Type: FieldURL, Default: "http://localhost:11434", Section: "ollama", WizardOrder: 1},
@@ -95,7 +111,7 @@ func CoreConfigSchema() []ConfigSection {
 			Name:        "proxy",
 			Label:       "HTTP Proxy",
 			Description: "Global HTTP proxy for all providers",
-			WizardOrder: 4,
+			WizardOrder: 5,
 			Optional:    true,
 			Fields: []ConfigField{
 				{Key: "proxy.url", Label: "Proxy URL", Description: "HTTP/HTTPS/SOCKS5 proxy URL", Type: FieldURL, Section: "proxy", WizardOrder: 1},
@@ -105,7 +121,7 @@ func CoreConfigSchema() []ConfigSection {
 			Name:        "embedding",
 			Label:       "Embedding",
 			Description: "Vector embeddings for hybrid search (ONNX, ~30MB download)",
-			WizardOrder: 5,
+			WizardOrder: 6,
 			Fields: []ConfigField{
 				{Key: "embedding.provider", Label: "Provider", Description: "Embedding provider (onnx = local, empty = disabled)", Type: FieldSelect, Default: "onnx", Options: []string{"onnx", ""}, Section: "embedding", WizardOrder: 1},
 				{Key: "embedding.model_dir", Label: "Model Directory", Description: "Directory for ONNX model files", Type: FieldString, Section: "embedding"},
@@ -115,7 +131,7 @@ func CoreConfigSchema() []ConfigSection {
 			Name:        "telegram",
 			Label:       "Telegram",
 			Description: "Telegram bot channel",
-			WizardOrder: 6,
+			WizardOrder: 7,
 			Optional:    true,
 			Fields: []ConfigField{
 				{Key: "telegram.token", Label: "Bot Token", Description: "Telegram bot token from @BotFather", Type: FieldSecret, Secret: true, Section: "telegram", WizardOrder: 1},
@@ -127,7 +143,7 @@ func CoreConfigSchema() []ConfigSection {
 			Description: "Route queries to different providers",
 			Fields: []ConfigField{
 				{Key: "routing.enabled", Label: "Enabled", Description: "Enable hint-based model routing", Type: FieldBool, Default: "false", Section: "routing"},
-				{Key: "routing.default_provider", Label: "Default Provider", Description: "Default provider for unclassified queries", Type: FieldSelect, Default: "claude", Options: []string{"claude", "openai", "ollama"}, Section: "routing"},
+				{Key: "routing.default_provider", Label: "Default Provider", Description: "Default provider for unclassified queries", Type: FieldSelect, Default: "claude", Options: []string{"claude", "openai", "deepseek", "ollama"}, Section: "routing"},
 				{Key: "routing.classification_enabled", Label: "Auto-Classification", Description: "Automatically classify queries (requires Ollama)", Type: FieldBool, Default: "false", Section: "routing"},
 				{Key: "routing.classification_provider", Label: "Classification Provider", Description: "Provider for query classification", Type: FieldSelect, Options: []string{"claude", "ollama"}, Section: "routing"},
 				{Key: "routing.max_actions_per_hour", Label: "Max Actions/Hour", Description: "Global action rate limit (0 = unlimited)", Type: FieldInt, Default: "0", Section: "routing"},

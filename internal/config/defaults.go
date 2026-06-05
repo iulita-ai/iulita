@@ -22,6 +22,10 @@ func DefaultConfig(paths *Paths) *Config {
 		OpenAI: OpenAIConfig{
 			MaxTokens: 4096,
 		},
+		DeepSeek: DeepSeekConfig{
+			Model:     "deepseek-v4-flash", // live, non-deprecated default
+			MaxTokens: 4096,
+		},
 		Storage: StorageConfig{
 			Path: paths.DatabaseFile(),
 		},
@@ -131,5 +135,13 @@ func defaultModelPrices() map[string]ModelPrice {
 		"claude-opus-4-20250514":     {InputPerMillion: 15.0, OutputPerMillion: 75.0},
 		"claude-opus-4-0":            {InputPerMillion: 15.0, OutputPerMillion: 75.0},
 		"claude-3-haiku-20240307":    {InputPerMillion: 0.25, OutputPerMillion: 1.25},
+
+		// DeepSeek. Phase 1 bills all input at the cache-MISS rate (over-estimates
+		// cache hits — a safe direction). The cache-hit/miss split is deferred to
+		// Phase 2 (see docs/deepseek-integration-plan.md §6). deepseek-chat and
+		// deepseek-reasoner are legacy aliases kept for backward compatibility.
+		"deepseek-v4-flash": {InputPerMillion: 0.14, OutputPerMillion: 0.28},
+		"deepseek-chat":     {InputPerMillion: 0.14, OutputPerMillion: 0.28},
+		"deepseek-reasoner": {InputPerMillion: 0.14, OutputPerMillion: 0.28},
 	}
 }
