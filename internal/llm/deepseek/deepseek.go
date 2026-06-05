@@ -102,10 +102,13 @@ func (p *Provider) endpoint() string { return p.baseURL + "/chat/completions" }
 // --- Wire types (OpenAI shape) -------------------------------------------------
 
 type chatMessage struct {
-	Role       string     `json:"role"`
-	Content    *string    `json:"content,omitempty"` // pointer: distinguish "" from absent
-	ToolCalls  []toolCall `json:"tool_calls,omitempty"`
-	ToolCallID string     `json:"tool_call_id,omitempty"`
+	Role    string  `json:"role"`
+	Content *string `json:"content,omitempty"` // pointer: distinguish "" from absent
+	// ReasoningContent must be replayed on assistant tool-call turns in thinking
+	// mode, or DeepSeek rejects the request with a 400.
+	ReasoningContent *string    `json:"reasoning_content,omitempty"`
+	ToolCalls        []toolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string     `json:"tool_call_id,omitempty"`
 }
 
 type toolCall struct {
@@ -148,8 +151,9 @@ type chatUsage struct {
 }
 
 type respMessage struct {
-	Content   *string    `json:"content"`
-	ToolCalls []toolCall `json:"tool_calls"`
+	Content          *string    `json:"content"`
+	ReasoningContent *string    `json:"reasoning_content"`
+	ToolCalls        []toolCall `json:"tool_calls"`
 }
 
 type chatResponse struct {
@@ -162,8 +166,9 @@ type chatResponse struct {
 type streamChunk struct {
 	Choices []struct {
 		Delta struct {
-			Content   string `json:"content"`
-			ToolCalls []struct {
+			Content          string `json:"content"`
+			ReasoningContent string `json:"reasoning_content"`
+			ToolCalls        []struct {
 				Index    int    `json:"index"`
 				ID       string `json:"id"`
 				Function struct {
@@ -225,6 +230,9 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 		if msg.Content != nil {
 			response.Content = *msg.Content
 		}
+		if msg.ReasoningContent != nil {
+			response.ReasoningContent = *msg.ReasoningContent
+		}
 		for _, tc := range msg.ToolCalls {
 			response.ToolCalls = append(response.ToolCalls, llm.ToolCall{
 				ID:    tc.ID,
@@ -280,6 +288,7 @@ func (p *Provider) CompleteStream(ctx context.Context, req llm.Request, callback
 	}
 
 	var response llm.Response
+	var reasoning strings.Builder
 	acc := newToolCallAccumulator()
 
 	scanner := bufio.NewScanner(resp.Body)
@@ -317,6 +326,11 @@ func (p *Provider) CompleteStream(ctx context.Context, req llm.Request, callback
 				callback(ch.Delta.Content)
 				response.Content += ch.Delta.Content
 			}
+			// Reasoning (chain-of-thought) is captured but never streamed to the
+			// user; it is threaded back via ToolExchange on tool-call turns.
+			if ch.Delta.ReasoningContent != "" {
+				reasoning.WriteString(ch.Delta.ReasoningContent)
+			}
 			for _, tc := range ch.Delta.ToolCalls {
 				acc.add(tc.Index, tc.ID, tc.Function.Name, tc.Function.Arguments)
 			}
@@ -334,6 +348,7 @@ func (p *Provider) CompleteStream(ctx context.Context, req llm.Request, callback
 	}
 
 	response.ToolCalls = acc.finalize()
+	response.ReasoningContent = reasoning.String()
 	response.Model = model
 	response.Provider = "deepseek"
 	return response, nil
@@ -393,6 +408,12 @@ func buildMessages(req llm.Request) []chatMessage {
 			c.Function.Name = tc.Name
 			c.Function.Arguments = argsString(tc.Input)
 			am.ToolCalls = append(am.ToolCalls, c)
+		}
+		// DeepSeek thinking-mode REQUIRES reasoning_content to be replayed on an
+		// assistant turn that carries tool_calls (otherwise: 400 "must be passed
+		// back"). Emit it (possibly empty) whenever there are tool calls.
+		if len(am.ToolCalls) > 0 {
+			am.ReasoningContent = strPtr(ex.ReasoningContent)
 		}
 		// A bare {"role":"assistant"} with neither content nor tool_calls is
 		// rejected by the API; only append a turn that carries something.

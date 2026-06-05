@@ -150,6 +150,46 @@ func TestBuildMessages_EmptyExchangeNotEmitted(t *testing.T) {
 	}
 }
 
+func TestBuildMessages_ReplaysReasoningOnToolCallTurn(t *testing.T) {
+	// DeepSeek thinking mode 400s if reasoning_content is absent on an assistant
+	// tool-call turn; it must be replayed.
+	req := llm.Request{
+		Message: "go",
+		ToolExchanges: []llm.ToolExchange{{
+			ReasoningContent: "I should call the tool.",
+			ToolCalls:        []llm.ToolCall{{ID: "c1", Name: "t", Input: json.RawMessage(`{}`)}},
+			Results:          []llm.ToolResult{{ToolCallID: "c1", Content: "r"}},
+		}},
+	}
+	msgs := buildMessages(req)
+	var asst chatMessage
+	for _, m := range msgs {
+		if m.Role == "assistant" {
+			asst = m
+		}
+	}
+	if asst.ReasoningContent == nil || *asst.ReasoningContent != "I should call the tool." {
+		t.Errorf("assistant tool-call turn must carry reasoning_content, got %v", asst.ReasoningContent)
+	}
+	b, _ := json.Marshal(asst)
+	if !strings.Contains(string(b), `"reasoning_content"`) {
+		t.Errorf("serialized assistant tool-call turn must include reasoning_content: %s", b)
+	}
+}
+
+func TestBuildMessages_NoReasoningOnPlainHistory(t *testing.T) {
+	// Plain assistant history (no tool_calls) must NOT carry reasoning_content.
+	req := llm.Request{
+		History: []domain.ChatMessage{{Role: domain.RoleAssistant, Content: "hello"}},
+		Message: "hi",
+	}
+	for _, m := range buildMessages(req) {
+		if m.Role == "assistant" && m.ReasoningContent != nil {
+			t.Errorf("plain assistant history must not carry reasoning_content")
+		}
+	}
+}
+
 func TestBuildToolChoice(t *testing.T) {
 	if buildToolChoice(llm.Request{}) != nil {
 		t.Error("expected nil tool choice by default")
@@ -265,7 +305,8 @@ func TestComplete_RequestAndResponse(t *testing.T) {
 		gotBody, _ = io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, `{
-			"choices":[{"message":{"content":"hi there","tool_calls":[
+			"choices":[{"message":{"content":"hi there","reasoning_content":"let me think",
+				"tool_calls":[
 				{"id":"call_1","type":"function","function":{"name":"search","arguments":"{\"q\":\"go\"}"}}
 			]}}],
 			"usage":{"prompt_tokens":12,"completion_tokens":5,"prompt_cache_hit_tokens":8,"prompt_cache_miss_tokens":4}
@@ -293,6 +334,9 @@ func TestComplete_RequestAndResponse(t *testing.T) {
 	if resp.Usage.InputTokens != 12 || resp.Usage.OutputTokens != 5 {
 		t.Errorf("usage = %+v", resp.Usage)
 	}
+	if resp.ReasoningContent != "let me think" {
+		t.Errorf("reasoning content = %q", resp.ReasoningContent)
+	}
 	// Non-stream request must not contain stream fields (checked separately so
 	// neither assertion subsumes the other).
 	if strings.Contains(string(gotBody), `"stream":`) {
@@ -314,6 +358,7 @@ func TestCompleteStream_SSE(t *testing.T) {
 		fl, _ := w.(http.Flusher)
 		lines := []string{
 			": keep-alive\n\n",
+			`data: {"choices":[{"delta":{"content":null,"reasoning_content":"thinking..."}}]}` + "\n\n",
 			`data: {"choices":[{"delta":{"content":"Hel"}}]}` + "\n\n",
 			`data: {"choices":[{"delta":{"content":"lo"}}]}` + "\n\n",
 			`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_x","function":{"name":"search","arguments":"{\"q\":"}}]}}]}` + "\n\n",
@@ -340,6 +385,13 @@ func TestCompleteStream_SSE(t *testing.T) {
 	}
 	if strings.Join(chunks, "") != "Hello" || resp.Content != "Hello" {
 		t.Errorf("streamed content = %q (chunks %v)", resp.Content, chunks)
+	}
+	// Reasoning must be captured but NEVER delivered to the user callback.
+	if resp.ReasoningContent != "thinking..." {
+		t.Errorf("reasoning content = %q, want captured", resp.ReasoningContent)
+	}
+	if strings.Contains(strings.Join(chunks, ""), "thinking") {
+		t.Errorf("reasoning_content must not be streamed to the callback: %v", chunks)
 	}
 	if len(resp.ToolCalls) != 1 || resp.ToolCalls[0].ID != "call_x" || string(resp.ToolCalls[0].Input) != `{"q":"go"}` {
 		t.Errorf("reassembled tool calls = %+v", resp.ToolCalls)
