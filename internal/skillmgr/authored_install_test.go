@@ -71,6 +71,44 @@ func TestInstallAuthored_BlockedBySecurityScan(t *testing.T) {
 	}
 }
 
+func TestInstallAuthored_ReinstallSameSlug(t *testing.T) {
+	mgr, store, dir := setupTestManager(t)
+	mgr.RegisterSource(NewLocalSource())
+	ctx := context.Background()
+
+	if _, _, err := mgr.InstallAuthored(ctx, "deploy-checklist", "Deploy Checklist", "v1", "First body version here.", []string{"deploy"}); err != nil {
+		t.Fatalf("first install: %v", err)
+	}
+	installed, _, err := mgr.InstallAuthored(ctx, "deploy-checklist", "Deploy Checklist", "v2", "Second body version replaces the first.", []string{"deploy"})
+	if err != nil {
+		t.Fatalf("reinstall: %v", err)
+	}
+
+	// Deterministic overwrite: latest body present, no duplicate registration.
+	md, _ := os.ReadFile(filepath.Join(installed.InstallDir, "SKILL.md"))
+	if !strings.Contains(string(md), "Second body version") {
+		t.Errorf("reinstall did not overwrite body:\n%s", md)
+	}
+	all, _ := store.ListInstalledSkills(ctx)
+	count := 0
+	for _, s := range all {
+		if s.Slug == "deploy-checklist" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("expected exactly 1 installed entry for slug, got %d", count)
+	}
+
+	// No leftover staging dirs after reinstall.
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "authored-") {
+			t.Errorf("leftover staging dir: %s", e.Name())
+		}
+	}
+}
+
 func TestRenderAuthoredSkillMD_EscapesFrontmatter(t *testing.T) {
 	// A name with a colon and quotes must not break the YAML frontmatter.
 	md := renderAuthoredSkillMD(`Deploy: "prod"`, "line\nbreak", "body")

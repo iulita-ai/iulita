@@ -673,6 +673,7 @@
     "installConfirm": "¿Instalar este borrador como skill activa? Sus instrucciones se convertirán en guía permanente del asistente.",
     "installed": "Skill instalada",
     "installedWithWarnings": "Skill instalada con {count} advertencia(s)",
-    "installFailed": "Error al instalar la skill"
+    "installFailed": "Error al instalar la skill",
+    "user": "usuario"
   }
 }

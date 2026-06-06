@@ -1909,6 +1909,27 @@ func registerConfigReload(bus *eventbus.Bus, cfgStore *config.Store, asst *assis
 				logger.Info("hot-reloaded skills.external.allow_wasm", zap.Bool("value", v))
 			}
 
+		case "skills.selfimprove.enabled", "skills.selfimprove.complexity_threshold":
+			base := cfgStore.Base().Skills.SelfImprove
+			enabled := base.Enabled
+			if v, ok := cfgStore.Get("skills.selfimprove.enabled"); ok {
+				enabled = strings.EqualFold(v, "true")
+			}
+			threshold := base.ComplexityThreshold
+			if v, ok := cfgStore.Get("skills.selfimprove.complexity_threshold"); ok {
+				if n, err := strconv.Atoi(v); err == nil {
+					threshold = n
+				}
+			}
+			asst.SetSelfImprove(enabled, threshold)
+			logger.Info("hot-reloaded selfimprove gate", zap.Bool("enabled", enabled), zap.Int("threshold", threshold))
+
+		case "skills.selfimprove.propose_skills":
+			// Consumed by the background SkillReviewHandler, which holds config by
+			// value — this key takes effect on restart. Logged explicitly so it
+			// doesn't fall through to the misleading "hot-reloaded skill config".
+			logger.Info("skills.selfimprove.propose_skills changed; applies on restart")
+
 		default:
 			// Dispatch skill config changes to the registry.
 			if strings.HasPrefix(p.Key, "skills.") {

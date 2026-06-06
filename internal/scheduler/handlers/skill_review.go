@@ -16,10 +16,6 @@ import (
 	"github.com/iulita-ai/iulita/internal/storage"
 )
 
-// TaskTypeSkillReview must match the literal used by the assistant's complexity
-// gate (assistant.taskTypeSkillReview).
-const TaskTypeSkillReview = "skill.review"
-
 // lessonTTL is how long a workflow lesson stays retrievable before expiring.
 const lessonTTL = 90 * 24 * time.Hour
 
@@ -29,12 +25,6 @@ const maxReviewMessages = 40
 // reviewNoLesson is the sentinel the reviewer LLM returns when there's nothing
 // worth recording.
 const reviewNoLesson = "NONE"
-
-type skillReviewPayload struct {
-	ChatID        string `json:"chat_id"`
-	UserID        string `json:"user_id,omitempty"`
-	LastMessageID int64  `json:"last_message_id"`
-}
 
 // SkillReviewHandler reflects on a completed "hard" turn and records a reusable
 // lesson as an insight. This is the first slice of the self-improvement loop:
@@ -52,7 +42,7 @@ func NewSkillReviewHandler(store storage.Repository, provider llm.Provider, cfg 
 }
 
 // Type returns the task type this handler serves.
-func (h *SkillReviewHandler) Type() string { return TaskTypeSkillReview }
+func (h *SkillReviewHandler) Type() string { return domain.TaskTypeSkillReview }
 
 // Handle reviews one completed turn's transcript and persists a reusable lesson.
 func (h *SkillReviewHandler) Handle(ctx context.Context, payload string) (string, error) {
@@ -60,7 +50,7 @@ func (h *SkillReviewHandler) Handle(ctx context.Context, payload string) (string
 		return `{"reviewed":0,"reason":"disabled"}`, nil
 	}
 
-	var p skillReviewPayload
+	var p domain.SkillReviewPayload
 	if err := json.Unmarshal([]byte(payload), &p); err != nil {
 		return "", fmt.Errorf("invalid payload: %w", err)
 	}
@@ -75,6 +65,11 @@ func (h *SkillReviewHandler) Handle(ctx context.Context, payload string) (string
 	}
 
 	transcript := renderTranscript(history)
+	// Intermediate tool calls aren't persisted as chat messages, so fold the
+	// gate's tool summary into the transcript — it's what made the turn "hard".
+	if p.ToolSummary != "" {
+		transcript += "\nTools used this turn:\n" + p.ToolSummary
+	}
 
 	resp, err := h.provider.Complete(ctx, llm.Request{
 		SystemPrompt: "You review an assistant's completed conversation that required many tool calls. " +
@@ -135,7 +130,7 @@ type proposedSkill struct {
 // maybeProposeSkill asks the LLM whether the turn generalizes into a reusable
 // text-only skill, scans the draft, and persists it as an INERT proposal (never
 // registered or injected). Returns true if a proposal row was written.
-func (h *SkillReviewHandler) maybeProposeSkill(ctx context.Context, p skillReviewPayload, transcript, lesson string) bool {
+func (h *SkillReviewHandler) maybeProposeSkill(ctx context.Context, p domain.SkillReviewPayload, transcript, lesson string) bool {
 	resp, err := h.provider.Complete(ctx, llm.Request{
 		SystemPrompt: "You decide whether a conversation reveals a reusable, well-scoped PROCEDURE worth saving as a " +
 			"lightweight text-only skill (instructions only, no code). Only propose one if it is genuinely reusable and " +
@@ -163,6 +158,9 @@ func (h *SkillReviewHandler) maybeProposeSkill(ctx context.Context, p skillRevie
 	}
 
 	warnings, blocked := skillmgr.ScanAuthoredSkill(draft.Slug, draft.Name, draft.Body, draft.Triggers)
+	if warnings == nil {
+		warnings = []string{} // marshal to "[]", never "null" (it's a documented JSON array)
+	}
 	status := domain.SkillProposalPending
 	if blocked {
 		status = domain.SkillProposalRejected

@@ -3,6 +3,7 @@ package assistant
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"go.uber.org/zap"
@@ -70,6 +71,73 @@ func TestComplexityGate_BelowThresholdNoTask(t *testing.T) {
 
 	if n := countReviewTasks(t, store); n != 0 {
 		t.Fatalf("expected no skill.review task, got %d", n)
+	}
+}
+
+func TestComplexityGate_AtExactThreshold(t *testing.T) {
+	registry := skill.NewRegistry()
+	registry.Register(&cheapSkill{})
+
+	store := newSynthTestStore(t)
+	asst := New(toolThenDoneProvider(2), store, registry, "test", "", 200000, zap.NewNop())
+	asst.SetSelfImprove(true, 2) // exactly 2 tool iterations == threshold 2 must trigger
+
+	if _, err := asst.HandleMessage(context.Background(), newTestMsg("chat1", "boundary")); err != nil {
+		t.Fatalf("HandleMessage: %v", err)
+	}
+	if n := countReviewTasks(t, store); n != 1 {
+		t.Fatalf("equality boundary should enqueue exactly 1 task, got %d", n)
+	}
+}
+
+func TestComplexityGate_PayloadCarriesToolSummary(t *testing.T) {
+	registry := skill.NewRegistry()
+	registry.Register(&cheapSkill{})
+
+	store := newSynthTestStore(t)
+	asst := New(toolThenDoneProvider(2), store, registry, "test", "", 200000, zap.NewNop())
+	asst.SetSelfImprove(true, 2)
+
+	if _, err := asst.HandleMessage(context.Background(), newTestMsg("chat1", "hard")); err != nil {
+		t.Fatalf("HandleMessage: %v", err)
+	}
+	tasks, err := store.ListTasks(context.Background(), storage.TaskFilter{Type: "skill.review", Limit: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(tasks))
+	}
+	if !strings.Contains(tasks[0].Payload, "tool_summary") || !strings.Contains(tasks[0].Payload, "cheap_tool") {
+		t.Errorf("payload missing tool summary: %s", tasks[0].Payload)
+	}
+}
+
+func TestComplexityGate_DedupSameTurn(t *testing.T) {
+	registry := skill.NewRegistry()
+	registry.Register(&cheapSkill{})
+	store := newSynthTestStore(t)
+	asst := New(toolThenDoneProvider(1), store, registry, "test", "", 200000, zap.NewNop())
+	asst.SetSelfImprove(true, 1)
+
+	ctx := context.Background()
+	asst.maybeEnqueueSkillReview(ctx, "chat1", "user1", 3, 100, "1. cheap_tool -> ok\n")
+	asst.maybeEnqueueSkillReview(ctx, "chat1", "user1", 3, 100, "1. cheap_tool -> ok\n")
+	if n := countReviewTasks(t, store); n != 1 {
+		t.Fatalf("same turn boundary must dedup to 1 task, got %d", n)
+	}
+}
+
+func TestComplexityGate_NoTaskWhenBoundaryUnsaved(t *testing.T) {
+	registry := skill.NewRegistry()
+	store := newSynthTestStore(t)
+	asst := New(toolThenDoneProvider(1), store, registry, "test", "", 200000, zap.NewNop())
+	asst.SetSelfImprove(true, 1)
+
+	// lastMessageID==0 means the assistant message failed to save — no boundary.
+	asst.maybeEnqueueSkillReview(context.Background(), "chat1", "user1", 5, 0, "x")
+	if n := countReviewTasks(t, store); n != 0 {
+		t.Fatalf("must not enqueue with no turn boundary, got %d", n)
 	}
 }
 

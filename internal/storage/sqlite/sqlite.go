@@ -221,7 +221,7 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_skill_proposals_status ON skill_proposals(status, created_at)`,
 	} {
 		if _, err = s.db.ExecContext(ctx, stmt); err != nil {
-			return fmt.Errorf("creating skill_executions index: %w", err)
+			return fmt.Errorf("creating index (%s): %w", stmt, err)
 		}
 	}
 

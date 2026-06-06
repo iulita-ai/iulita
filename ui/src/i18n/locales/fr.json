@@ -673,6 +673,7 @@
     "installConfirm": "Installer ce brouillon comme compétence active ? Ses instructions deviendront des consignes permanentes pour lassistant.",
     "installed": "Compétence installée",
     "installedWithWarnings": "Compétence installée avec {count} avertissement(s)",
-    "installFailed": "Échec de linstallation de la compétence"
+    "installFailed": "Échec de linstallation de la compétence",
+    "user": "utilisateur"
   }
 }

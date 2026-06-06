@@ -69,7 +69,7 @@
             </ul>
           </n-alert>
           <n-text depth="3" style="font-size: 12px">
-            {{ t('skillProposals.from') }} {{ p.chat_id }} · {{ formatDate(p.created_at) }}
+            {{ t('skillProposals.from') }} {{ p.chat_id }}<template v-if="p.user_id"> · {{ t('skillProposals.user') }} {{ p.user_id }}</template> · {{ formatDate(p.created_at) }}
           </n-text>
         </n-space>
       </n-card>

@@ -49,7 +49,7 @@ func seedTurn(t *testing.T, store *sqlite.Store, chatID, userID string) int64 {
 
 func reviewPayload(t *testing.T, chatID, userID string, lastID int64) string {
 	t.Helper()
-	b, _ := json.Marshal(skillReviewPayload{ChatID: chatID, UserID: userID, LastMessageID: lastID})
+	b, _ := json.Marshal(domain.SkillReviewPayload{ChatID: chatID, UserID: userID, LastMessageID: lastID})
 	return string(b)
 }
 

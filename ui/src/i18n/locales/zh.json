@@ -673,6 +673,7 @@
     "installConfirm": "将此草稿安装为活动技能？其指令将成为助手的常驻指引。",
     "installed": "技能已安装",
     "installedWithWarnings": "技能已安装，带有 {count} 条警告",
-    "installFailed": "安装技能失败"
+    "installFailed": "安装技能失败",
+    "user": "用户"
   }
 }

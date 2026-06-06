@@ -609,7 +609,8 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 
 			// Complexity gate: a turn that needed many tool iterations is a
 			// candidate for self-improvement — enqueue a background review.
-			a.maybeEnqueueSkillReview(ctx, msg.ChatID, effectiveUserID, toolIterations, lastMessageID)
+			a.maybeEnqueueSkillReview(ctx, msg.ChatID, effectiveUserID, toolIterations, lastMessageID,
+				summarizeToolExchanges(req.ToolExchanges))
 
 			// Signal channels to skip bookmark button if remember was already used.
 			if hasToolCall(req.ToolExchanges, "remember") {
@@ -694,9 +695,13 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 	}
 
 	// Exhausted iterations — save any partial text so history stays consistent.
+	// This is the most tool-intensive turn possible, so it is also a prime
+	// self-improvement candidate (it needs a saved boundary to anchor the review).
 	a.logger.Warn("agentic loop hit max iterations", zap.Int("max", maxIterations))
 	if lastResp.Content != "" {
-		a.saveAssistantResponse(ctx, msg.ChatID, lastResp.Content)
+		lastMessageID := a.saveAssistantResponse(ctx, msg.ChatID, lastResp.Content)
+		a.maybeEnqueueSkillReview(ctx, msg.ChatID, effectiveUserID, toolIterations, lastMessageID,
+			summarizeToolExchanges(req.ToolExchanges))
 	}
 	return "", fmt.Errorf("tool use loop exceeded %d iterations", maxIterations)
 }
@@ -1180,39 +1185,33 @@ func (a *Assistant) SessionStats() (inputTokens, outputTokens, requests int64) {
 	return a.totalInputTokens.Load(), a.totalOutputTokens.Load(), a.totalRequests.Load()
 }
 
-// taskTypeSkillReview must match handlers.TaskTypeSkillReview — kept as a
-// local literal to avoid an assistant→handlers import dependency.
-const taskTypeSkillReview = "skill.review"
-
-// skillReviewPayload is the JSON contract with handlers.SkillReviewHandler.
-type skillReviewPayload struct {
-	ChatID        string `json:"chat_id"`
-	UserID        string `json:"user_id,omitempty"`
-	LastMessageID int64  `json:"last_message_id"`
-}
-
 // maybeEnqueueSkillReview enqueues a one-shot skill.review task when a turn was
 // "hard" (>= complexityThreshold tool iterations). Idempotent per turn via
 // UniqueKey; best-effort — failures are logged, never surfaced to the user.
-func (a *Assistant) maybeEnqueueSkillReview(ctx context.Context, chatID, userID string, toolIterations int, lastMessageID int64) {
+func (a *Assistant) maybeEnqueueSkillReview(ctx context.Context, chatID, userID string, toolIterations int, lastMessageID int64, toolSummary string) {
 	if !a.selfImproveEnabled || toolIterations < a.complexityThreshold {
 		return
 	}
-	payload, err := json.Marshal(skillReviewPayload{
+	if lastMessageID <= 0 {
+		// No usable turn boundary (the assistant message failed to save).
+		return
+	}
+	payload, err := json.Marshal(domain.SkillReviewPayload{
 		ChatID:        chatID,
 		UserID:        userID,
 		LastMessageID: lastMessageID,
+		ToolSummary:   toolSummary,
 	})
 	if err != nil {
 		a.logger.Error("skill.review payload marshal failed", zap.Error(err))
 		return
 	}
 	created, err := a.store.CreateTaskIfNotExists(ctx, &domain.Task{
-		Type:           taskTypeSkillReview,
+		Type:           domain.TaskTypeSkillReview,
 		Payload:        string(payload),
 		Priority:       -1, // background, lowest priority
 		Capabilities:   "llm",
-		UniqueKey:      fmt.Sprintf("%s:%s:%d", taskTypeSkillReview, chatID, lastMessageID),
+		UniqueKey:      fmt.Sprintf("%s:%s:%d", domain.TaskTypeSkillReview, chatID, lastMessageID),
 		ScheduledAt:    time.Now(),
 		OneShot:        true,
 		DeleteAfterRun: true,
@@ -1226,6 +1225,29 @@ func (a *Assistant) maybeEnqueueSkillReview(ctx context.Context, chatID, userID 
 			zap.String("chat_id", chatID),
 			zap.Int("tool_iterations", toolIterations))
 	}
+}
+
+// summarizeToolExchanges renders a compact, ordered "step. tool -> ok|error"
+// list of the tool calls in a turn. Intermediate tool calls are never persisted
+// as chat messages, so this is the only workflow record the reviewer can use.
+func summarizeToolExchanges(exchanges []llm.ToolExchange) string {
+	var b strings.Builder
+	step := 0
+	for _, ex := range exchanges {
+		byID := make(map[string]llm.ToolResult, len(ex.Results))
+		for _, r := range ex.Results {
+			byID[r.ToolCallID] = r
+		}
+		for _, tc := range ex.ToolCalls {
+			step++
+			status := "ok"
+			if r, ok := byID[tc.ID]; ok && r.IsError {
+				status = "error"
+			}
+			fmt.Fprintf(&b, "%d. %s -> %s\n", step, tc.Name, status)
+		}
+	}
+	return b.String()
 }
 
 // saveAssistantResponse persists the assistant reply and returns the new

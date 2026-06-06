@@ -604,6 +604,7 @@
     "installedWithWarnings": "Skill installed with {count} warning(s)",
     "installFailed": "Failed to install skill",
     "from": "From",
+    "user": "user",
     "noData": "No skill proposals yet",
     "loadFailed": "Failed to load skill proposals"
   },

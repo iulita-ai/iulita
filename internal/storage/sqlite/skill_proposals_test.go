@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/iulita-ai/iulita/internal/domain"
 	"github.com/iulita-ai/iulita/internal/storage"
@@ -73,5 +74,44 @@ func TestSkillProposalCRUD(t *testing.T) {
 	got, _ = store.GetSkillProposal(ctx, p.ID)
 	if got.Status != domain.SkillProposalDiscarded {
 		t.Errorf("expected discarded, got %q", got.Status)
+	}
+}
+
+func TestListSkillProposalsLimitAndOrder(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	base := time.Now().Add(-time.Hour)
+	for i := 0; i < 3; i++ {
+		p := &domain.SkillProposal{
+			ChatID:    "c1",
+			Slug:      "s",
+			Name:      "n",
+			CreatedAt: base.Add(time.Duration(i) * time.Minute), // distinct, increasing
+		}
+		if err := store.SaveSkillProposal(ctx, p); err != nil {
+			t.Fatalf("save: %v", err)
+		}
+	}
+
+	// Limit clamps; newest-first ordering.
+	one, err := store.ListSkillProposals(ctx, storage.SkillProposalFilter{Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(one) != 1 {
+		t.Fatalf("expected 1 row with Limit:1, got %d", len(one))
+	}
+
+	// Limit:0 falls back to the default cap and returns all rows.
+	all, err := store.ListSkillProposals(ctx, storage.SkillProposalFilter{Limit: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("expected 3 rows with default cap, got %d", len(all))
+	}
+	if !all[0].CreatedAt.After(all[1].CreatedAt) {
+		t.Errorf("expected newest-first ordering, got %v then %v", all[0].CreatedAt, all[1].CreatedAt)
 	}
 }

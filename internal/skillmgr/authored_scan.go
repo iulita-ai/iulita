@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 // Bounds for self-authored (machine-proposed) skill drafts. These are stricter
@@ -16,6 +17,19 @@ const (
 )
 
 var validAuthoredSlug = regexp.MustCompile(`^[a-z][a-z0-9_-]{2,40}$`)
+
+// authoredInjectionPatterns supplements the shared scanForInjection patterns
+// with phrasings especially relevant to a body that becomes standing
+// system-prompt guidance. Matched against whitespace-normalized text so a
+// directive split across lines cannot evade detection.
+var authoredInjectionPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)from\s+now\s+on`),
+	regexp.MustCompile(`(?i)new\s+instructions`),
+	regexp.MustCompile(`(?i)reveal\s+(your\s+)?(the\s+)?(system\s+)?prompt`),
+	regexp.MustCompile(`(?i)ignore\s+(the\s+|all\s+)?above`),
+	regexp.MustCompile(`(?i)\bsystem\s*prompt\b`),
+	regexp.MustCompile(`(?i)\b(assistant|system|user)\s*:`),
+}
 
 // genericTriggers are words too broad to safely force a skill — a self-authored
 // skill that triggers on these would hijack large swaths of normal conversation.
@@ -49,16 +63,31 @@ func ScanAuthoredSkill(slug, name, body string, triggers []string) (warnings []s
 		warnings = append(warnings, "empty body")
 		blocked = true
 	}
-	if len(body) > maxAuthoredBodyLen {
-		warnings = append(warnings, fmt.Sprintf("body too long: %d > %d chars", len(body), maxAuthoredBodyLen))
+	if n := utf8.RuneCountInString(body); n > maxAuthoredBodyLen {
+		warnings = append(warnings, fmt.Sprintf("body too long: %d > %d chars", n, maxAuthoredBodyLen))
 		blocked = true
 	}
 
 	// Prompt-injection patterns in the body are a hard block: the body would
-	// otherwise land in the static system prompt verbatim.
+	// otherwise land in the static system prompt verbatim. Scan both line-by-line
+	// (shared patterns) and against whitespace-normalized text (so a directive
+	// split across lines can't evade matching).
 	if inj := scanForInjection(body); len(inj) > 0 {
 		warnings = append(warnings, inj...)
 		blocked = true
+	}
+	normalized := strings.Join(strings.Fields(body), " ")
+	for _, pat := range injectionPatterns {
+		if pat.MatchString(normalized) {
+			warnings = append(warnings, "normalized body matches injection pattern: "+pat.String())
+			blocked = true
+		}
+	}
+	for _, pat := range authoredInjectionPatterns {
+		if pat.MatchString(normalized) {
+			warnings = append(warnings, "body matches disallowed directive pattern: "+pat.String())
+			blocked = true
+		}
 	}
 
 	if len(triggers) > maxAuthoredTriggers {
