@@ -62,6 +62,10 @@ func DefaultConfig(paths *Paths) *Config {
 			Google: GoogleConfig{
 				RedirectURL: "http://localhost:8080/api/google/callback",
 			},
+			SelfImprove: SelfImproveConfig{
+				Enabled:             false,
+				ComplexityThreshold: 5,
+			},
 			External: ExternalSkillsConfig{
 				Enabled:      true,
 				Dir:          paths.ExternalSkillsDir(),

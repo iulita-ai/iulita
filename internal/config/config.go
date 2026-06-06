@@ -261,15 +261,24 @@ type ServerConfig struct {
 }
 
 type SkillsConfig struct {
-	Dir       string               `koanf:"dir"`
-	Memory    MemoryConfig         `koanf:"memory"`
-	Insights  InsightsConfig       `koanf:"insights"`
-	Web       WebConfig            `koanf:"web"`
-	ShellExec ShellExecConfig      `koanf:"shell_exec"`
-	Craft     CraftConfig          `koanf:"craft"`
-	Google    GoogleConfig         `koanf:"google"`
-	Todoist   TodoistConfig        `koanf:"todoist"`
-	External  ExternalSkillsConfig `koanf:"external"`
+	Dir         string               `koanf:"dir"`
+	Memory      MemoryConfig         `koanf:"memory"`
+	Insights    InsightsConfig       `koanf:"insights"`
+	Web         WebConfig            `koanf:"web"`
+	ShellExec   ShellExecConfig      `koanf:"shell_exec"`
+	Craft       CraftConfig          `koanf:"craft"`
+	Google      GoogleConfig         `koanf:"google"`
+	Todoist     TodoistConfig        `koanf:"todoist"`
+	External    ExternalSkillsConfig `koanf:"external"`
+	SelfImprove SelfImproveConfig    `koanf:"selfimprove"`
+}
+
+// SelfImproveConfig controls the self-improvement loop: after a "hard" turn
+// (many tool-executing iterations), a background task reflects on the transcript
+// and records a reusable lesson as an insight. Disabled by default.
+type SelfImproveConfig struct {
+	Enabled             bool `koanf:"enabled"`
+	ComplexityThreshold int  `koanf:"complexity_threshold"` // min tool-executing iterations in a turn to trigger a review
 }
 
 // ExternalSkillsConfig controls external skill downloading, installation, and isolation.

@@ -1103,6 +1103,13 @@ func main() {
 		logger.Info("memory triggers configured", zap.Strings("triggers", cfg.Skills.Memory.Triggers))
 	}
 
+	// Configure the self-improvement complexity gate.
+	asst.SetSelfImprove(cfg.Skills.SelfImprove.Enabled, cfg.Skills.SelfImprove.ComplexityThreshold)
+	if cfg.Skills.SelfImprove.Enabled {
+		logger.Info("self-improvement enabled",
+			zap.Int("complexity_threshold", cfg.Skills.SelfImprove.ComplexityThreshold))
+	}
+
 	// Configure request timeout.
 	if cfg.Claude.RequestTimeout != "" {
 		if d, err := time.ParseDuration(cfg.Claude.RequestTimeout); err == nil {
@@ -1416,6 +1423,10 @@ func main() {
 	worker.Register(insightHandler)
 
 	worker.Register(handlers.NewInsightCleanupHandler(store))
+
+	// Self-improvement: review hard turns and record reusable lessons.
+	selfImproveProvider := resolveJobProvider("", llmProvider, cfg.Ollama, httpClient, logger, "skill-review")
+	worker.Register(handlers.NewSkillReviewHandler(store, selfImproveProvider, cfg.Skills.SelfImprove, logger))
 
 	techfactProvider := resolveJobProvider(cfg.TechFacts.Model, llmProvider, cfg.Ollama, httpClient, logger, "techfact")
 	techFactHandler := handlers.NewTechFactAnalyzeHandler(store, techfactProvider, logger)
