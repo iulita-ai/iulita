@@ -14,7 +14,8 @@
     "users": "用户",
     "usage": "使用统计",
     "logout": "退出登录",
-    "credentials": "凭据"
+    "credentials": "凭据",
+    "skillStats": "技能统计"
   },
   "common": {
     "save": "保存",
@@ -628,5 +629,26 @@
     "unbound": "绑定已移除",
     "ownerId": "所有者",
     "ownerIdPlaceholder": "用户ID"
+  },
+  "skillStats": {
+    "title": "技能遥测",
+    "allOrigins": "全部来源",
+    "originMain": "主循环",
+    "originSubagent": "子代理",
+    "skillCount": "使用技能数",
+    "totalCalls": "总调用",
+    "successCalls": "成功",
+    "failureCalls": "失败",
+    "skill": "技能",
+    "calls": "调用",
+    "success": "成功",
+    "failures": "失败",
+    "successRate": "成功率",
+    "avgDuration": "平均耗时",
+    "maxDuration": "最大耗时",
+    "lastUsed": "最后使用",
+    "bySkill": "按技能",
+    "noData": "此期间无技能执行",
+    "loadFailed": "加载技能统计失败"
   }
 }

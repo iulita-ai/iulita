@@ -237,10 +237,12 @@ func New(cfg Config) *Server {
 		usageGroup.Get("/summary", s.handleUsageSummaryV2)
 		usageGroup.Get("/daily", s.handleUsageByDay)
 		usageGroup.Get("/by-model", s.handleUsageByModel)
+		usageGroup.Get("/skills", s.handleSkillStats)
 	} else {
 		api.Get("/usage/summary", s.handleUsageSummaryV2)
 		api.Get("/usage/daily", s.handleUsageByDay)
 		api.Get("/usage/by-model", s.handleUsageByModel)
+		api.Get("/usage/skills", s.handleSkillStats)
 	}
 	api.Put("/facts/:id", s.handleUpdateFact)
 	api.Delete("/facts/:id", s.handleDeleteFact)

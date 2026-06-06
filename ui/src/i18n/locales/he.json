@@ -14,7 +14,8 @@
     "users": "משתמשים",
     "usage": "שימוש בטוקנים",
     "logout": "התנתקות",
-    "credentials": "אישורים"
+    "credentials": "אישורים",
+    "skillStats": "סטטיסטיקת כישורים"
   },
   "common": {
     "save": "שמירה",
@@ -628,5 +629,26 @@
     "unbound": "קשר הוסר",
     "ownerId": "בעלים",
     "ownerIdPlaceholder": "מזהה משתמש"
+  },
+  "skillStats": {
+    "title": "טלמטריית כישורים",
+    "allOrigins": "כל המקורות",
+    "originMain": "לולאה ראשית",
+    "originSubagent": "תת-סוכן",
+    "skillCount": "כישורים בשימוש",
+    "totalCalls": "סך הקריאות",
+    "successCalls": "הצליחו",
+    "failureCalls": "נכשלו",
+    "skill": "כישור",
+    "calls": "קריאות",
+    "success": "הצלחות",
+    "failures": "כשלים",
+    "successRate": "שיעור הצלחה",
+    "avgDuration": "משך ממוצע",
+    "maxDuration": "משך מרבי",
+    "lastUsed": "שימוש אחרון",
+    "bySkill": "לפי כישור",
+    "noData": "אין ביצועים לתקופה זו",
+    "loadFailed": "טעינת הסטטיסטיקה נכשלה"
   }
 }
