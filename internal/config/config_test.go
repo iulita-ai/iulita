@@ -258,3 +258,17 @@ func TestHasAnyLLMProvider(t *testing.T) {
 		})
 	}
 }
+
+func TestCoreKeys_IncludeSelfImprove(t *testing.T) {
+	// These assistant/handler-level keys are not owned by a registry skill, so
+	// they must be in coreKeys or Store.Set rejects them with "unknown config key".
+	for _, k := range []string{
+		"skills.selfimprove.enabled",
+		"skills.selfimprove.complexity_threshold",
+		"skills.selfimprove.propose_skills",
+	} {
+		if !coreKeys[k] {
+			t.Errorf("coreKeys missing %q (DB/dashboard override would be rejected)", k)
+		}
+	}
+}

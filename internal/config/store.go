@@ -246,6 +246,11 @@ var coreKeys = map[string]bool{
 	"skills.external.allow_shell":     true,
 	"skills.external.allow_docker":    true,
 	"skills.external.allow_wasm":      true,
+	// Self-improvement gate — assistant/handler-level keys (not owned by a
+	// registry skill), hot-reloaded via registerConfigReload.
+	"skills.selfimprove.enabled":              true,
+	"skills.selfimprove.complexity_threshold": true,
+	"skills.selfimprove.propose_skills":       true,
 }
 
 // RegisterKey adds a config key that can be overridden at runtime.
