@@ -205,7 +205,9 @@
     "selectCredential": "从凭据存储选择...",
     "orEnterDirectly": "— 或直接输入值 —",
     "credentialBound": "凭据已绑定",
-    "credentialUnbound": "凭据已解绑"
+    "credentialUnbound": "凭据已解绑",
+    "savedRequiresRestart": "已保存 {label} — 重启后生效",
+    "requiresRestart": "需要重启"
   },
   "agentJobs": {
     "title": "代理任务",

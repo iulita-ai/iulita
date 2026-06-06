@@ -186,6 +186,8 @@
     "keyValueRequired": "Key and value are required",
     "plain": "Plain",
     "savedField": "Saved {label}",
+    "savedRequiresRestart": "Saved {label} — takes effect after restart",
+    "requiresRestart": "restart required",
     "resetField": "Reset {key} to default",
     "resetFieldConfirm": "Reset \"{key}\" to base config value?",
     "resetSkillKeyConfirm": "Reset \"{key}\" to default?",

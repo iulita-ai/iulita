@@ -205,7 +205,9 @@
     "selectCredential": "בחר מהמאגר...",
     "orEnterDirectly": "— או הזן ערך ישירות —",
     "credentialBound": "אישור קושר",
-    "credentialUnbound": "אישור נותק"
+    "credentialUnbound": "אישור נותק",
+    "savedRequiresRestart": "נשמר {label} — ייכנס לתוקף לאחר הפעלה מחדש",
+    "requiresRestart": "נדרשת הפעלה מחדש"
   },
   "agentJobs": {
     "title": "משימות סוכן",

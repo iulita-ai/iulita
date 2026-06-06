@@ -111,6 +111,7 @@
                   <n-tag v-if="field.required" size="small" type="error" :bordered="false">{{ t('settings.required') }}</n-tag>
                   <n-tag v-if="field.secret" size="small" type="warning" :bordered="false">{{ t('settings.secret') }}</n-tag>
                   <n-tag v-if="field.has_override" size="small" type="info" :bordered="false">{{ t('settings.override') }}</n-tag>
+                  <n-tag v-if="field.restart_required" size="small" type="warning" :bordered="false">{{ t('settings.requiresRestart') }}</n-tag>
                 </n-space>
                 <n-text :depth="3" style="font-size: 12px;">{{ field.description }} <code>{{ field.key }}</code></n-text>
 
@@ -762,7 +763,7 @@ async function loadSchema() {
         if (!f.secret && f.value !== undefined && f.value !== '') {
           schemaEdits[f.key] = f.value
         } else if (!f.secret && f.default) {
-          schemaEdits[f.key] = schemaEdits[f.key] ?? ''
+          schemaEdits[f.key] = schemaEdits[f.key] ?? f.default ?? ''
         }
       }
     }
@@ -801,7 +802,7 @@ function schemaFieldChanged(field: ConfigSchemaField): boolean {
   const edit = schemaEdits[field.key]
   if (field.secret) return !!edit
   if (edit === undefined) return false
-  const current = field.value ?? ''
+  const current = field.value ?? field.default ?? ''
   return edit !== current
 }
 
@@ -813,8 +814,12 @@ async function saveSchemaField(field: ConfigSchemaField) {
   }
   schemaSaving[field.key] = true
   try {
-    await api.setConfig(field.key, value, field.secret)
-    message.success(t('settings.savedField', { label: field.label }))
+    const result = await api.setConfig(field.key, value, field.secret)
+    if (result.restart_required) {
+      message.warning(t('settings.savedRequiresRestart', { label: field.label }))
+    } else {
+      message.success(t('settings.savedField', { label: field.label }))
+    }
     // Refresh schema + overrides
     await Promise.all([loadSchema(), loadConfig()])
     if (field.secret) delete schemaEdits[field.key]
@@ -1094,8 +1099,12 @@ async function saveConfig() {
   }
   saving.value = true
   try {
-    await api.setConfig(newKey.value, newValue.value, newEncrypt.value)
-    message.success(t('settings.configSaved', { key: newKey.value }))
+    const result = await api.setConfig(newKey.value, newValue.value, newEncrypt.value)
+    if (result.restart_required) {
+      message.warning(t('settings.savedRequiresRestart', { label: newKey.value }))
+    } else {
+      message.success(t('settings.configSaved', { key: newKey.value }))
+    }
     newKey.value = ''
     newValue.value = ''
     newEncrypt.value = false

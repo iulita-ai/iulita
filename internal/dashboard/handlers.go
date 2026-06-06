@@ -776,10 +776,21 @@ func (s *Server) handleSetConfig(c *fiber.Ctx) error {
 	if claims != nil {
 		username = claims.Username
 	}
-	if err := s.configStore.Set(c.Context(), key, body.Value, username, body.Encrypt); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+
+	// Restart-only keys (e.g. proxy.url, server.address) can't be hot-reloaded but
+	// must still persist for the next start — store them via SetForImport, which
+	// Set would otherwise reject with "requires restart".
+	restartRequired := config.IsRestartOnlyKey(key)
+	var saveErr error
+	if restartRequired {
+		saveErr = s.configStore.SetForImport(c.Context(), key, body.Value, username, body.Encrypt)
+	} else {
+		saveErr = s.configStore.Set(c.Context(), key, body.Value, username, body.Encrypt)
 	}
-	return c.JSON(fiber.Map{"status": "ok", "key": key})
+	if saveErr != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": saveErr.Error()})
+	}
+	return c.JSON(fiber.Map{"status": "ok", "key": key, "restart_required": restartRequired})
 }
 
 func (s *Server) handleDeleteConfig(c *fiber.Ctx) error {

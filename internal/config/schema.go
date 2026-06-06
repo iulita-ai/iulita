@@ -36,6 +36,10 @@ type ConfigField struct {
 	Section     string      `json:"section"`
 	WizardOrder int         `json:"-"`                      // 0 = not shown in wizard
 	ModelSource ModelSource `json:"model_source,omitempty"` // dynamic model fetching
+	// RestartRequired marks keys that persist to DB but need a process restart to
+	// take effect (they cannot be hot-reloaded). The save path stores them via
+	// SetForImport; the UI shows a "restart required" badge.
+	RestartRequired bool `json:"restart_required,omitempty"`
 }
 
 // ConfigSection describes a group of related config fields.
@@ -114,7 +118,7 @@ func CoreConfigSchema() []ConfigSection {
 			WizardOrder: 5,
 			Optional:    true,
 			Fields: []ConfigField{
-				{Key: "proxy.url", Label: "Proxy URL", Description: "HTTP/HTTPS/SOCKS5 proxy URL", Type: FieldURL, Section: "proxy", WizardOrder: 1},
+				{Key: "proxy.url", Label: "Proxy URL", Description: "HTTP/HTTPS/SOCKS5 proxy URL", Type: FieldURL, Section: "proxy", WizardOrder: 1, RestartRequired: true},
 			},
 		},
 		{
@@ -186,7 +190,7 @@ func CoreConfigSchema() []ConfigSection {
 			Description: "Dashboard web server",
 			Fields: []ConfigField{
 				{Key: "server.enabled", Label: "Enabled", Description: "Enable web dashboard server", Type: FieldBool, Default: "false", Section: "server"},
-				{Key: "server.address", Label: "Address", Description: "Listen address", Type: FieldString, Default: ":8080", Section: "server"},
+				{Key: "server.address", Label: "Address", Description: "Listen address (restart required)", Type: FieldString, Default: ":8080", Section: "server", RestartRequired: true},
 			},
 		},
 		{
@@ -197,6 +201,16 @@ func CoreConfigSchema() []ConfigSection {
 				{Key: "cost.enabled", Label: "Enabled", Description: "Enable cost tracking", Type: FieldBool, Default: "true", Section: "cost"},
 				{Key: "cost.daily_limit_usd", Label: "Daily Limit (USD)", Description: "Max daily spend (0 = unlimited)", Type: FieldString, Default: "0", Section: "cost"},
 				{Key: "cost.alert_threshold", Label: "Alert Threshold", Description: "Warning threshold (0-1 fraction of daily limit)", Type: FieldString, Default: "0.8", Section: "cost"},
+			},
+		},
+		{
+			Name:        "selfimprove",
+			Label:       "Self-Improvement",
+			Description: "Experimental: reflect on complex turns and record reusable lessons (and optional skill drafts)",
+			Fields: []ConfigField{
+				{Key: "skills.selfimprove.enabled", Label: "Enabled", Description: "Enable the post-turn self-improvement review loop", Type: FieldBool, Default: "false", Section: "selfimprove"},
+				{Key: "skills.selfimprove.complexity_threshold", Label: "Complexity Threshold", Description: "Min tool-executing iterations in a turn to trigger a review", Type: FieldInt, Default: "5", Section: "selfimprove"},
+				{Key: "skills.selfimprove.propose_skills", Label: "Propose Skills", Description: "Also draft inert, human-approved skill proposals from reviews", Type: FieldBool, Default: "false", Section: "selfimprove"},
 			},
 		},
 	}
