@@ -205,7 +205,9 @@
     "selectCredential": "Sélectionner du magasin...",
     "orEnterDirectly": "— ou saisir directement —",
     "credentialBound": "Identifiant lié",
-    "credentialUnbound": "Identifiant délié"
+    "credentialUnbound": "Identifiant délié",
+    "savedRequiresRestart": "Enregistré {label} — prend effet après redémarrage",
+    "requiresRestart": "redémarrage requis"
   },
   "agentJobs": {
     "title": "Taches de l'agent",

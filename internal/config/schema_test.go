@@ -149,3 +149,72 @@ func TestWriteConfigFromValues(t *testing.T) {
 		t.Errorf("expected embedding.provider=onnx, got %q", cfg.Embedding.Provider)
 	}
 }
+
+// TestSchemaKeys_AllSaveableViaHandler asserts every schema key is saveable:
+// it must be in coreKeys (Store.Set) or restartOnlyKeys (Store.SetForImport).
+// This catches the proxy.url / server.address bug where schema keys were
+// rejected by the save handler with HTTP 400.
+func TestSchemaKeys_AllSaveableViaHandler(t *testing.T) {
+	for _, sec := range CoreConfigSchema() {
+		for _, f := range sec.Fields {
+			if !coreKeys[f.Key] && !restartOnlyKeys[f.Key] {
+				t.Errorf("schema key %q is in neither coreKeys nor restartOnlyKeys; "+
+					"handleSetConfig would reject it with HTTP 400", f.Key)
+			}
+		}
+	}
+}
+
+// TestSchemaKeys_RestartOnlyMarked asserts schema fields whose key is restart-only
+// carry RestartRequired:true so the UI badge and the SetForImport path engage.
+func TestSchemaKeys_RestartOnlyMarked(t *testing.T) {
+	for _, sec := range CoreConfigSchema() {
+		for _, f := range sec.Fields {
+			if restartOnlyKeys[f.Key] && !f.RestartRequired {
+				t.Errorf("schema key %q is restart-only but ConfigField.RestartRequired is false", f.Key)
+			}
+			if f.RestartRequired && !restartOnlyKeys[f.Key] {
+				t.Errorf("schema key %q marked RestartRequired but is not in restartOnlyKeys", f.Key)
+			}
+		}
+	}
+}
+
+// TestIsRestartOnlyKey verifies the exported helper used by the save handler.
+func TestIsRestartOnlyKey(t *testing.T) {
+	for key, want := range map[string]bool{
+		"proxy.url":                  true,
+		"server.address":             true,
+		"claude.model":               false,
+		"skills.selfimprove.enabled": false,
+	} {
+		if got := IsRestartOnlyKey(key); got != want {
+			t.Errorf("IsRestartOnlyKey(%q) = %v, want %v", key, got, want)
+		}
+	}
+}
+
+// TestStructToMap_BoolIntDefaultsCovered asserts every non-secret bool/int schema
+// field with a non-empty default appears in structToMap, so GetBaseValue returns
+// the compiled-in default and the UI shows the real value (not "unconfigured").
+func TestStructToMap_BoolIntDefaultsCovered(t *testing.T) {
+	excluded := map[string]bool{
+		"server.address": true, // restart-only, not a koanf default
+		"proxy.url":      true, // restart-only
+	}
+	m := structToMap(DefaultConfig(testPaths(t)))
+	for _, sec := range CoreConfigSchema() {
+		for _, f := range sec.Fields {
+			if excluded[f.Key] || f.Secret || f.Default == "" {
+				continue
+			}
+			if f.Type != FieldBool && f.Type != FieldInt {
+				continue
+			}
+			if _, ok := m[f.Key]; !ok {
+				t.Errorf("structToMap missing %q (type=%s default=%q); UI would show wrong default",
+					f.Key, f.Type, f.Default)
+			}
+		}
+	}
+}

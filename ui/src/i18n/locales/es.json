@@ -205,7 +205,9 @@
     "selectCredential": "Seleccionar del almacén...",
     "orEnterDirectly": "— o ingrese directamente —",
     "credentialBound": "Credencial vinculada",
-    "credentialUnbound": "Credencial desvinculada"
+    "credentialUnbound": "Credencial desvinculada",
+    "savedRequiresRestart": "Guardado {label} — surte efecto tras reiniciar",
+    "requiresRestart": "requiere reinicio"
   },
   "agentJobs": {
     "title": "Trabajos del agente",

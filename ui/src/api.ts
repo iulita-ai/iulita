@@ -307,6 +307,7 @@ export interface ConfigSchemaField {
   required: boolean
   section: string
   model_source?: '' | 'openai' | 'ollama' | 'deepseek'
+  restart_required?: boolean
   // Enriched by backend:
   value?: string
   has_value?: boolean
@@ -867,7 +868,7 @@ export const api = {
   getConfigSchema: () => get<ConfigSchemaResponse>('/api/config/schema'),
   getModels: (provider: string) => get<ModelsResponse>(`/api/config/models/${provider}`),
   setConfig: (key: string, value: string, encrypt: boolean) =>
-    put<{ status: string; key: string }>(`/api/config/${key}`, { value, encrypt }),
+    put<{ status: string; key: string; restart_required?: boolean }>(`/api/config/${key}`, { value, encrypt }),
   deleteConfig: (key: string) =>
     del<{ status: string; key: string }>(`/api/config/${key}`),
 

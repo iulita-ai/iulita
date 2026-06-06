@@ -205,7 +205,9 @@
     "selectCredential": "Выбрать из хранилища...",
     "orEnterDirectly": "— или введите значение напрямую —",
     "credentialBound": "Учетные данные привязаны",
-    "credentialUnbound": "Привязка удалена"
+    "credentialUnbound": "Привязка удалена",
+    "savedRequiresRestart": "Сохранено: {label} — вступит в силу после перезапуска",
+    "requiresRestart": "нужен перезапуск"
   },
   "agentJobs": {
     "title": "Задания агента",

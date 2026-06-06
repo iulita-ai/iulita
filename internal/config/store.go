@@ -303,6 +303,13 @@ var restartOnlyKeys = map[string]bool{
 	"security.config_key_env": true,
 }
 
+// IsRestartOnlyKey reports whether a key persists to DB but needs a process
+// restart to take effect (it is not hot-reloaded). Such keys must be stored via
+// SetForImport, not Set.
+func IsRestartOnlyKey(key string) bool {
+	return restartOnlyKeys[key]
+}
+
 // SetSecretKeys registers keys that must always be encrypted when stored.
 func (s *Store) SetSecretKeys(keys map[string]bool) {
 	s.mu.Lock()
