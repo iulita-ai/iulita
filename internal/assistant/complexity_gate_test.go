@@ -33,7 +33,7 @@ func toolThenDoneProvider(toolTurns int) *funcProvider {
 
 func countReviewTasks(t *testing.T, store storage.Repository) int {
 	t.Helper()
-	tasks, err := store.ListTasks(context.Background(), storage.TaskFilter{Type: "skill.review", Limit: 10})
+	tasks, err := store.ListTasks(context.Background(), storage.TaskFilter{Type: "skill.review", Limit: 100})
 	if err != nil {
 		t.Fatalf("listing tasks: %v", err)
 	}
@@ -138,6 +138,28 @@ func TestComplexityGate_NoTaskWhenBoundaryUnsaved(t *testing.T) {
 	asst.maybeEnqueueSkillReview(context.Background(), "chat1", "user1", 5, 0, "x")
 	if n := countReviewTasks(t, store); n != 0 {
 		t.Fatalf("must not enqueue with no turn boundary, got %d", n)
+	}
+}
+
+func TestComplexityGate_PerUserRateLimit(t *testing.T) {
+	registry := skill.NewRegistry()
+	store := newSynthTestStore(t)
+	asst := New(toolThenDoneProvider(1), store, registry, "test", "", 200000, zap.NewNop())
+	asst.SetSelfImprove(true, 1)
+
+	ctx := context.Background()
+	// Distinct boundaries (avoid per-turn dedup) for the same user, past the cap.
+	for i := 1; i <= maxReviewsPerUserPerHour+5; i++ {
+		asst.maybeEnqueueSkillReview(ctx, "chat1", "user1", 3, int64(i), "x")
+	}
+	if n := countReviewTasks(t, store); n != maxReviewsPerUserPerHour {
+		t.Fatalf("expected cap of %d review tasks, got %d", maxReviewsPerUserPerHour, n)
+	}
+
+	// A different user is unaffected by the first user's cap.
+	asst.maybeEnqueueSkillReview(ctx, "chat2", "user2", 3, 9001, "x")
+	if n := countReviewTasks(t, store); n != maxReviewsPerUserPerHour+1 {
+		t.Fatalf("second user should not be rate-limited, got %d", n)
 	}
 }
 

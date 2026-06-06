@@ -67,6 +67,7 @@ type Assistant struct {
 
 	selfImproveEnabled  atomic.Bool  // enqueue skill.review after hard turns (hot-reloadable)
 	complexityThreshold atomic.Int64 // min tool-executing iterations to trigger a review
+	reviewRate          *reviewRateLimiter
 }
 
 // New creates a new Assistant.
@@ -87,6 +88,7 @@ func New(provider llm.Provider, store storage.Repository, registry *skill.Regist
 		steerCh:         make(chan InjectedMessage, steerBufferSize),
 		followUpCh:      make(chan InjectedMessage, followUpBufferSize),
 		approvals:       newApprovalStore(),
+		reviewRate:      newReviewRateLimiter(),
 	}
 	a.modelName.Store("")
 	a.providerName.Store("")
@@ -1185,6 +1187,45 @@ func (a *Assistant) SessionStats() (inputTokens, outputTokens, requests int64) {
 	return a.totalInputTokens.Load(), a.totalOutputTokens.Load(), a.totalRequests.Load()
 }
 
+// maxReviewsPerUserPerHour caps how many skill.review tasks a single user can
+// trigger in a rolling hour. The gate fires only on hard turns, so this is a
+// generous safety bound against a user flooding the review queue / LLM spend.
+const maxReviewsPerUserPerHour = 20
+
+// reviewRateLimiter is a per-user sliding-window counter for skill.review enqueues.
+type reviewRateLimiter struct {
+	mu     sync.Mutex
+	window time.Duration
+	hits   map[string][]time.Time
+}
+
+func newReviewRateLimiter() *reviewRateLimiter {
+	return &reviewRateLimiter{window: time.Hour, hits: make(map[string][]time.Time)}
+}
+
+// allow reports whether another review is permitted for userID and records it.
+// A non-positive max means unlimited.
+func (l *reviewRateLimiter) allow(userID string, limit int) bool {
+	if limit <= 0 {
+		return true
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	cutoff := time.Now().Add(-l.window)
+	kept := l.hits[userID][:0]
+	for _, t := range l.hits[userID] {
+		if t.After(cutoff) {
+			kept = append(kept, t)
+		}
+	}
+	if len(kept) >= limit {
+		l.hits[userID] = kept
+		return false
+	}
+	l.hits[userID] = append(kept, time.Now())
+	return true
+}
+
 // maybeEnqueueSkillReview enqueues a one-shot skill.review task when a turn was
 // "hard" (>= complexityThreshold tool iterations). Idempotent per turn via
 // UniqueKey; best-effort — failures are logged, never surfaced to the user.
@@ -1194,6 +1235,10 @@ func (a *Assistant) maybeEnqueueSkillReview(ctx context.Context, chatID, userID 
 	}
 	if lastMessageID <= 0 {
 		// No usable turn boundary (the assistant message failed to save).
+		return
+	}
+	if !a.reviewRate.allow(userID, maxReviewsPerUserPerHour) {
+		a.logger.Debug("skill.review rate-limited for user", zap.String("user_id", userID))
 		return
 	}
 	payload, err := json.Marshal(domain.SkillReviewPayload{
