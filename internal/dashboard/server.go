@@ -231,6 +231,16 @@ func New(cfg Config) *Server {
 	api.Put("/skills/:name/config/:key", s.handleSetSkillConfig)
 	api.Get("/techfacts", s.handleTechFacts)
 
+	// Self-authored skill proposals (admin only — review queue for drafts).
+	if s.authService != nil {
+		proposals := api.Group("/skills/proposals", auth.AdminOnly())
+		proposals.Get("/", s.handleListSkillProposals)
+		proposals.Delete("/:id", s.handleDiscardSkillProposal)
+	} else {
+		api.Get("/skills/proposals", s.handleListSkillProposals)
+		api.Delete("/skills/proposals/:id", s.handleDiscardSkillProposal)
+	}
+
 	// Usage stats API (admin only — exposes system-wide cost/token data).
 	if s.authService != nil {
 		usageGroup := api.Group("/usage", auth.AdminOnly())

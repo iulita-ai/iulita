@@ -15,7 +15,8 @@
     "usage": "使用统计",
     "logout": "退出登录",
     "credentials": "凭据",
-    "skillStats": "技能统计"
+    "skillStats": "技能统计",
+    "skillProposals": "技能提案"
   },
   "common": {
     "save": "保存",
@@ -650,5 +651,23 @@
     "bySkill": "按技能",
     "noData": "此期间无技能执行",
     "loadFailed": "加载技能统计失败"
+  },
+  "skillProposals": {
+    "title": "技能提案",
+    "subtitle": "待人工审核的自创技能草稿",
+    "safetyNote": "这些草稿是惰性的：在你明确安装之前，它们永远不会注入提示或被激活。被拒绝的草稿未通过自动安全扫描。",
+    "allStatuses": "全部状态",
+    "statusPending": "待处理",
+    "statusRejected": "已拒绝",
+    "statusDiscarded": "已丢弃",
+    "slug": "标识",
+    "triggers": "触发词",
+    "body": "建议指令",
+    "discard": "丢弃",
+    "discarded": "提案已丢弃",
+    "discardFailed": "丢弃提案失败",
+    "from": "来自",
+    "noData": "暂无提案",
+    "loadFailed": "加载提案失败"
   }
 }

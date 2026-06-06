@@ -15,7 +15,8 @@
     "usage": "Uso de tokens",
     "logout": "Cerrar sesion",
     "credentials": "Credenciales",
-    "skillStats": "Estadísticas de skills"
+    "skillStats": "Estadísticas de skills",
+    "skillProposals": "Propuestas de skills"
   },
   "common": {
     "save": "Guardar",
@@ -650,5 +651,23 @@
     "bySkill": "Por skill",
     "noData": "Sin ejecuciones en este período",
     "loadFailed": "Error al cargar estadísticas de skills"
+  },
+  "skillProposals": {
+    "title": "Propuestas de skills",
+    "subtitle": "Borradores de skills autogenerados pendientes de revisión humana",
+    "safetyNote": "Estos borradores son inertes: nunca se inyectan en prompts ni se activan hasta que los instales explícitamente. Los borradores rechazados no pasaron un escaneo de seguridad automático.",
+    "allStatuses": "Todos los estados",
+    "statusPending": "Pendiente",
+    "statusRejected": "Rechazado",
+    "statusDiscarded": "Descartado",
+    "slug": "Slug",
+    "triggers": "Disparadores",
+    "body": "Instrucciones propuestas",
+    "discard": "Descartar",
+    "discarded": "Propuesta descartada",
+    "discardFailed": "Error al descartar la propuesta",
+    "from": "De",
+    "noData": "Aún no hay propuestas",
+    "loadFailed": "Error al cargar las propuestas"
   }
 }

@@ -15,6 +15,7 @@
     "credentials": "Credentials",
     "usage": "Usage",
     "skillStats": "Skill Stats",
+    "skillProposals": "Skill Proposals",
     "logout": "Logout"
   },
   "common": {
@@ -582,6 +583,24 @@
     "bySkill": "By Skill",
     "noData": "No skill executions for this period",
     "loadFailed": "Failed to load skill statistics"
+  },
+  "skillProposals": {
+    "title": "Skill Proposals",
+    "subtitle": "Self-authored skill drafts awaiting human review",
+    "safetyNote": "These drafts are inert: they are never injected into prompts or activated until you explicitly install them. Rejected drafts failed an automatic security scan.",
+    "allStatuses": "All statuses",
+    "statusPending": "Pending",
+    "statusRejected": "Rejected",
+    "statusDiscarded": "Discarded",
+    "slug": "Slug",
+    "triggers": "Triggers",
+    "body": "Proposed instructions",
+    "discard": "Discard",
+    "discarded": "Proposal discarded",
+    "discardFailed": "Failed to discard proposal",
+    "from": "From",
+    "noData": "No skill proposals yet",
+    "loadFailed": "Failed to load skill proposals"
   },
   "credentials": {
     "title": "Credentials",
