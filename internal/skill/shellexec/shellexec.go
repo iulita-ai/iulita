@@ -75,6 +75,7 @@ func (s *Skill) Description() string {
 
 func (s *Skill) InputSchema() json.RawMessage {
 	return json.RawMessage(`{
+		"type": "object",
 		"properties": {
 			"command": {"type": "string", "description": "The command to execute (must be in the allowed list)"},
 			"args": {"type": "array", "items": {"type": "string"}, "description": "Command arguments"}

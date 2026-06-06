@@ -55,6 +55,7 @@ func (s *Skill) Description() string {
 
 func (s *Skill) InputSchema() json.RawMessage {
 	return json.RawMessage(`{
+		"type": "object",
 		"properties": {
 			"prompt": {"type": "string", "description": "The prompt to send to the secondary LLM"},
 			"provider": {"type": "string", "description": "Optional provider name (e.g. 'ollama', 'openai'). Uses default if omitted."}

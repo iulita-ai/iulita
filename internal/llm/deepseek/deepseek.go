@@ -444,6 +444,11 @@ func buildToolDefs(tools []llm.ToolDefinition) []toolDef {
 		if len(params) == 0 || string(params) == "null" {
 			// DeepSeek/OpenAI reject "parameters": null with a 400.
 			params = json.RawMessage(`{"type":"object","properties":{}}`)
+		} else {
+			// DeepSeek strictly requires a top-level "type":"object" on every
+			// function schema; some skills declare only "properties" (Claude is
+			// lenient). Inject the type so a lax schema doesn't 400 the request.
+			params = ensureObjectType(params)
 		}
 		var d toolDef
 		d.Type = "function"
@@ -453,6 +458,26 @@ func buildToolDefs(tools []llm.ToolDefinition) []toolDef {
 		out = append(out, d)
 	}
 	return out
+}
+
+// ensureObjectType guarantees a function parameter schema has a top-level
+// "type":"object". DeepSeek rejects schemas without it ("got type: null"),
+// whereas Claude tolerates the omission. Returns the input unchanged if it
+// already has a type or can't be parsed as an object.
+func ensureObjectType(schema json.RawMessage) json.RawMessage {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(schema, &m); err != nil {
+		return schema // not a JSON object — leave as-is
+	}
+	if _, ok := m["type"]; ok {
+		return schema
+	}
+	m["type"] = json.RawMessage(`"object"`)
+	patched, err := json.Marshal(m)
+	if err != nil {
+		return schema
+	}
+	return patched
 }
 
 func buildToolChoice(req llm.Request) any {

@@ -512,3 +512,22 @@ func ExampleProvider() {
 	fmt.Println(p.endpoint())
 	// Output: https://api.deepseek.com/v1/chat/completions
 }
+
+func TestBuildToolDefs_InjectsObjectType(t *testing.T) {
+	defs := buildToolDefs([]llm.ToolDefinition{
+		{Name: "lax", Description: "d", InputSchema: json.RawMessage(`{"properties":{"p":{"type":"string"}},"required":["p"]}`)},
+	})
+	if len(defs) != 1 {
+		t.Fatalf("expected 1 def, got %d", len(defs))
+	}
+	var m map[string]any
+	if err := json.Unmarshal(defs[0].Function.Parameters, &m); err != nil {
+		t.Fatalf("params not valid JSON: %v", err)
+	}
+	if m["type"] != "object" {
+		t.Errorf("expected injected type=object, got %v (params=%s)", m["type"], defs[0].Function.Parameters)
+	}
+	if _, ok := m["properties"]; !ok {
+		t.Error("properties dropped during normalization")
+	}
+}
