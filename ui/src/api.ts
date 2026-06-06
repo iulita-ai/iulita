@@ -510,6 +510,26 @@ export interface UsageByModelResponse {
   rows: ModelUsageRow[]
 }
 
+export interface SkillStatRow {
+  skill_name: string
+  total_calls: number
+  success_calls: number
+  failure_calls: number
+  avg_duration_ms: number
+  max_duration_ms: number
+  last_used: string
+}
+
+export interface SkillStatsResponse {
+  rows: SkillStatRow[]
+  summary: {
+    skill_count: number
+    total_calls: number
+    success_calls: number
+    failure_calls: number
+  }
+}
+
 // --- Token management ---
 
 const TOKEN_KEY = 'iulita_access_token'
@@ -984,6 +1004,15 @@ export const api = {
     if (params?.chat_id) p.set('chat_id', params.chat_id)
     const qs = p.toString()
     return get<UsageByModelResponse>(`/api/usage/by-model${qs ? `?${qs}` : ''}`)
+  },
+  getSkillStats: (params?: { from?: string; to?: string; user_id?: string; origin?: string }) => {
+    const p = new URLSearchParams()
+    if (params?.from) p.set('from', params.from)
+    if (params?.to) p.set('to', params.to)
+    if (params?.user_id) p.set('user_id', params.user_id)
+    if (params?.origin) p.set('origin', params.origin)
+    const qs = p.toString()
+    return get<SkillStatsResponse>(`/api/usage/skills${qs ? `?${qs}` : ''}`)
   },
 
   // Credentials (admin)

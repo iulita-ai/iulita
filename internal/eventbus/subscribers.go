@@ -23,6 +23,7 @@ func RegisterAuditSubscriber(bus *Bus, store storage.Repository, logger *zap.Log
 		}
 		return store.SaveAuditEntry(ctx, &domain.AuditEntry{
 			ChatID:     p.ChatID,
+			UserID:     p.UserID,
 			Action:     "skill.executed",
 			Detail:     p.SkillName,
 			Success:    p.Success,
@@ -30,6 +31,33 @@ func RegisterAuditSubscriber(bus *Bus, store storage.Repository, logger *zap.Log
 		})
 	})
 	logger.Info("audit subscriber registered")
+}
+
+// RegisterSkillTelemetrySubscriber persists each skill execution into the
+// skill_executions ledger — a typed, queryable outcome record (success rates,
+// latency, usage frequency) distinct from the generic audit_log.
+func RegisterSkillTelemetrySubscriber(bus *Bus, store storage.Repository, logger *zap.Logger) {
+	bus.SubscribeAsync(SkillExecuted, func(ctx context.Context, evt Event) error {
+		p, ok := evt.Payload.(SkillExecutedPayload)
+		if !ok {
+			return nil
+		}
+		origin := p.Origin
+		if origin == "" {
+			origin = domain.SkillOriginMain
+		}
+		return store.SaveSkillExecution(ctx, &domain.SkillExecution{
+			ChatID:     p.ChatID,
+			UserID:     p.UserID,
+			SkillName:  p.SkillName,
+			ToolCallID: p.ToolCallID,
+			Success:    p.Success,
+			DurationMs: p.DurationMs,
+			Iteration:  p.Iteration,
+			Origin:     origin,
+		})
+	})
+	logger.Info("skill telemetry subscriber registered")
 }
 
 // UsageCostCalculator computes the cost for a given model and usage.

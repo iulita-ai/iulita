@@ -14,7 +14,8 @@
     "users": "Utilisateurs",
     "usage": "Utilisation",
     "logout": "Deconnexion",
-    "credentials": "Identifiants"
+    "credentials": "Identifiants",
+    "skillStats": "Stats des compétences"
   },
   "common": {
     "save": "Enregistrer",
@@ -628,5 +629,26 @@
     "unbound": "Liaison supprimée",
     "ownerId": "Propriétaire",
     "ownerIdPlaceholder": "ID utilisateur"
+  },
+  "skillStats": {
+    "title": "Télémétrie des compétences",
+    "allOrigins": "Toutes les origines",
+    "originMain": "Boucle principale",
+    "originSubagent": "Sous-agent",
+    "skillCount": "Compétences utilisées",
+    "totalCalls": "Appels totaux",
+    "successCalls": "Réussis",
+    "failureCalls": "Échoués",
+    "skill": "Compétence",
+    "calls": "Appels",
+    "success": "Réussites",
+    "failures": "Échecs",
+    "successRate": "Taux de réussite",
+    "avgDuration": "Durée moy.",
+    "maxDuration": "Durée max.",
+    "lastUsed": "Dernière utilisation",
+    "bySkill": "Par compétence",
+    "noData": "Aucune exécution pour cette période",
+    "loadFailed": "Échec du chargement des statistiques"
   }
 }

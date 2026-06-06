@@ -42,6 +42,12 @@ const router = createRouter({
       meta: { admin: true },
     },
     {
+      path: '/skill-stats',
+      name: 'skill-stats',
+      component: () => import('./views/SkillStats.vue'),
+      meta: { admin: true },
+    },
+    {
       path: '/settings',
       name: 'settings',
       component: () => import('./views/Settings.vue'),

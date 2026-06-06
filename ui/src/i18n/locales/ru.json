@@ -14,7 +14,8 @@
     "users": "Пользователи",
     "usage": "Статистика",
     "logout": "Выход",
-    "credentials": "Учетные данные"
+    "credentials": "Учетные данные",
+    "skillStats": "Статистика навыков"
   },
   "common": {
     "save": "Сохранить",
@@ -628,5 +629,26 @@
     "unbound": "Привязка удалена",
     "ownerId": "Владелец",
     "ownerIdPlaceholder": "ID пользователя"
+  },
+  "skillStats": {
+    "title": "Телеметрия навыков",
+    "allOrigins": "Все источники",
+    "originMain": "Основной цикл",
+    "originSubagent": "Суб-агент",
+    "skillCount": "Использовано навыков",
+    "totalCalls": "Всего вызовов",
+    "successCalls": "Успешно",
+    "failureCalls": "Ошибок",
+    "skill": "Навык",
+    "calls": "Вызовы",
+    "success": "Успехи",
+    "failures": "Ошибки",
+    "successRate": "Успешность",
+    "avgDuration": "Ср. длительность",
+    "maxDuration": "Макс. длительность",
+    "lastUsed": "Последнее использование",
+    "bySkill": "По навыкам",
+    "noData": "Нет выполнений за период",
+    "loadFailed": "Не удалось загрузить статистику навыков"
   }
 }

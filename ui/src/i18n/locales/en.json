@@ -14,6 +14,7 @@
     "users": "Users",
     "credentials": "Credentials",
     "usage": "Usage",
+    "skillStats": "Skill Stats",
     "logout": "Logout"
   },
   "common": {
@@ -560,6 +561,27 @@
     "byModel": "By Model",
     "noData": "No usage data for this period",
     "loadFailed": "Failed to load usage statistics"
+  },
+  "skillStats": {
+    "title": "Skill Telemetry",
+    "allOrigins": "All origins",
+    "originMain": "Main loop",
+    "originSubagent": "Sub-agent",
+    "skillCount": "Skills Used",
+    "totalCalls": "Total Calls",
+    "successCalls": "Successful",
+    "failureCalls": "Failed",
+    "skill": "Skill",
+    "calls": "Calls",
+    "success": "Success",
+    "failures": "Failures",
+    "successRate": "Success Rate",
+    "avgDuration": "Avg Duration",
+    "maxDuration": "Max Duration",
+    "lastUsed": "Last Used",
+    "bySkill": "By Skill",
+    "noData": "No skill executions for this period",
+    "loadFailed": "Failed to load skill statistics"
   },
   "credentials": {
     "title": "Credentials",

@@ -126,6 +126,10 @@ type Repository interface {
 	// Audit log
 	SaveAuditEntry(ctx context.Context, e *domain.AuditEntry) error
 
+	// Skill execution telemetry
+	SaveSkillExecution(ctx context.Context, e *domain.SkillExecution) error
+	GetSkillStats(ctx context.Context, filter SkillStatsFilter) ([]SkillStat, error)
+
 	// Config overrides
 	GetConfigOverride(ctx context.Context, key string) (*domain.ConfigOverride, error)
 	ListConfigOverrides(ctx context.Context) ([]domain.ConfigOverride, error)
@@ -290,6 +294,25 @@ type DailyUsage struct {
 	CacheCreationTokens int64   `json:"cache_creation_tokens"`
 	Requests            int64   `json:"requests"`
 	CostUSD             float64 `json:"cost_usd"`
+}
+
+// SkillStatsFilter specifies criteria for aggregating skill execution telemetry.
+type SkillStatsFilter struct {
+	UserID string    // restrict to a single user (empty = all)
+	Origin string    // domain.SkillOriginMain | domain.SkillOriginSubagent (empty = all)
+	From   time.Time // inclusive lower bound on created_at (zero = unbounded)
+	To     time.Time // exclusive upper bound on created_at (zero = unbounded)
+}
+
+// SkillStat is the per-skill aggregation of execution telemetry.
+type SkillStat struct {
+	SkillName     string    `json:"skill_name"`
+	TotalCalls    int64     `json:"total_calls"`
+	SuccessCalls  int64     `json:"success_calls"`
+	FailureCalls  int64     `json:"failure_calls"`
+	AvgDurationMs float64   `json:"avg_duration_ms"`
+	MaxDurationMs int64     `json:"max_duration_ms"`
+	LastUsed      time.Time `json:"last_used"`
 }
 
 // ChannelCredentialBinding maps a channel instance to its bound credential.

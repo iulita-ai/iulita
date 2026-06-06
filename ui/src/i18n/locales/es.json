@@ -14,7 +14,8 @@
     "users": "Usuarios",
     "usage": "Uso de tokens",
     "logout": "Cerrar sesion",
-    "credentials": "Credenciales"
+    "credentials": "Credenciales",
+    "skillStats": "Estadísticas de skills"
   },
   "common": {
     "save": "Guardar",
@@ -628,5 +629,26 @@
     "unbound": "Vínculo eliminado",
     "ownerId": "Propietario",
     "ownerIdPlaceholder": "ID de usuario"
+  },
+  "skillStats": {
+    "title": "Telemetría de skills",
+    "allOrigins": "Todos los orígenes",
+    "originMain": "Bucle principal",
+    "originSubagent": "Subagente",
+    "skillCount": "Skills usadas",
+    "totalCalls": "Llamadas totales",
+    "successCalls": "Exitosas",
+    "failureCalls": "Fallidas",
+    "skill": "Skill",
+    "calls": "Llamadas",
+    "success": "Éxitos",
+    "failures": "Fallos",
+    "successRate": "Tasa de éxito",
+    "avgDuration": "Duración media",
+    "maxDuration": "Duración máx.",
+    "lastUsed": "Último uso",
+    "bySkill": "Por skill",
+    "noData": "Sin ejecuciones en este período",
+    "loadFailed": "Error al cargar estadísticas de skills"
   }
 }

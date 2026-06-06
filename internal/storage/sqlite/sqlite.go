@@ -88,6 +88,7 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 		{(*domain.Task)(nil), "tasks"},
 		{(*domain.SchedulerState)(nil), "scheduler_states"},
 		{(*domain.AuditEntry)(nil), "audit_log"},
+		{(*domain.SkillExecution)(nil), "skill_executions"},
 		{(*domain.UsageRecord)(nil), "usage_stats"},
 		{(*domain.ConfigOverride)(nil), "config_overrides"},
 		{(*domain.AgentJob)(nil), "agent_jobs"},
@@ -211,6 +212,16 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 
 	// Audit log: index for querying by chat.
 	s.db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_audit_log_chat ON audit_log(chat_id, created_at)`)
+
+	// Skill execution telemetry: indexes for per-skill and per-user aggregation.
+	for _, stmt := range []string{
+		`CREATE INDEX IF NOT EXISTS idx_skill_exec_name ON skill_executions(skill_name, created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_skill_exec_user ON skill_executions(user_id)`,
+	} {
+		if _, err = s.db.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("creating skill_executions index: %w", err)
+		}
+	}
 
 	// --- Multi-user migration: add user_id columns to all data tables ---
 	// NOTE: SQLite doesn't allow NOT NULL on ALTER TABLE ADD COLUMN unless DEFAULT is provided.

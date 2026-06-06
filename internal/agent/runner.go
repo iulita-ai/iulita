@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/iulita-ai/iulita/internal/channel"
+	"github.com/iulita-ai/iulita/internal/domain"
 	"github.com/iulita-ai/iulita/internal/eventbus"
 	"github.com/iulita-ai/iulita/internal/llm"
 	"github.com/iulita-ai/iulita/internal/skill"
@@ -280,7 +281,26 @@ func (r *Runner) executeTool(ctx context.Context, tc llm.ToolCall) llm.ToolResul
 		}
 	}
 
+	start := time.Now()
 	output, err := s.Execute(ctx, tc.Input)
+	durationMs := time.Since(start).Milliseconds()
+
+	if r.bus != nil {
+		r.bus.Publish(ctx, eventbus.Event{
+			Type: eventbus.SkillExecuted,
+			Payload: eventbus.SkillExecutedPayload{
+				ChatID:     r.chatID,
+				UserID:     r.userID,
+				SkillName:  tc.Name,
+				ToolCallID: tc.ID,
+				Success:    err == nil,
+				DurationMs: durationMs,
+				Iteration:  -1,
+				Origin:     domain.SkillOriginSubagent,
+			},
+		})
+	}
+
 	if err != nil {
 		r.logger.Error("sub-agent: skill execution failed",
 			zap.String("skill", tc.Name), zap.Error(err))
