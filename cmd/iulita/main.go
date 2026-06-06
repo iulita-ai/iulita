@@ -311,16 +311,12 @@ func main() {
 		}
 	}
 
-	// Re-apply DB overrides that are NOT hot-reloaded so dashboard-saved values
-	// take effect on this start. These are consumed directly from cfg (restart-only
-	// keys; the self-improvement gate), so unlike the loop above they must be
-	// applied unconditionally — including over non-empty compiled defaults.
-	if v, ok := cfgStore.GetEffective("proxy.url"); ok && v != "" {
-		cfg.Proxy.URL = v
-	}
-	if v, ok := cfgStore.GetEffective("server.address"); ok && v != "" {
-		cfg.Server.Address = v
-	}
+	// Re-apply DB overrides for non-hot-reloaded, app-level keys so dashboard-saved
+	// values take effect on this start. NOTE: deployment-owned infrastructure keys
+	// (server.address, proxy.url) are deliberately NOT re-applied from the DB — in a
+	// container the listen address/port and proxy belong to the deployment
+	// (containerPort, probes, env). A stale dashboard override must never move the
+	// server off the port the readiness/liveness probes expect.
 	if v, ok := cfgStore.GetEffective("skills.selfimprove.enabled"); ok {
 		cfg.Skills.SelfImprove.Enabled = strings.EqualFold(v, "true")
 	}
