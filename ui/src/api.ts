@@ -530,6 +530,25 @@ export interface SkillStatsResponse {
   }
 }
 
+export interface SkillProposal {
+  id: number
+  chat_id: string
+  user_id: string
+  slug: string
+  name: string
+  description: string
+  body: string
+  triggers: string
+  warnings: string // JSON array string
+  status: string // pending | rejected | discarded | installed
+  source_message_id: number
+  created_at: string
+}
+
+export interface SkillProposalsResponse {
+  rows: SkillProposal[]
+}
+
 // --- Token management ---
 
 const TOKEN_KEY = 'iulita_access_token'
@@ -1014,6 +1033,13 @@ export const api = {
     const qs = p.toString()
     return get<SkillStatsResponse>(`/api/usage/skills${qs ? `?${qs}` : ''}`)
   },
+  listSkillProposals: (status?: string) => {
+    const qs = status ? `?status=${encodeURIComponent(status)}` : ''
+    return get<SkillProposalsResponse>(`/api/skills/proposals${qs}`)
+  },
+  discardSkillProposal: (id: number) => del<{ status: string }>(`/api/skills/proposals/${id}`),
+  installSkillProposal: (id: number) =>
+    post<{ status: string; warnings: string[] }>(`/api/skills/proposals/${id}/install`, {}),
 
   // Credentials (admin)
   listCredentials: (params?: { scope?: string; type?: string; owner_id?: string }) => {

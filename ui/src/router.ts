@@ -48,6 +48,12 @@ const router = createRouter({
       meta: { admin: true },
     },
     {
+      path: '/skill-proposals',
+      name: 'skill-proposals',
+      component: () => import('./views/SkillProposals.vue'),
+      meta: { admin: true },
+    },
+    {
       path: '/settings',
       name: 'settings',
       component: () => import('./views/Settings.vue'),

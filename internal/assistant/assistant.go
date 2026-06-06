@@ -64,6 +64,10 @@ type Assistant struct {
 	prompterFactory   interact.PromptAskerFactory
 	modelName         atomic.Value // LLM model name for usage tracking (string)
 	providerName      atomic.Value // LLM provider name for usage tracking (string)
+
+	selfImproveEnabled  atomic.Bool  // enqueue skill.review after hard turns (hot-reloadable)
+	complexityThreshold atomic.Int64 // min tool-executing iterations to trigger a review
+	reviewRate          *reviewRateLimiter
 }
 
 // New creates a new Assistant.
@@ -84,6 +88,7 @@ func New(provider llm.Provider, store storage.Repository, registry *skill.Regist
 		steerCh:         make(chan InjectedMessage, steerBufferSize),
 		followUpCh:      make(chan InjectedMessage, followUpBufferSize),
 		approvals:       newApprovalStore(),
+		reviewRate:      newReviewRateLimiter(),
 	}
 	a.modelName.Store("")
 	a.providerName.Store("")
@@ -487,6 +492,7 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 		}
 	}()
 	compressedThisTurn := false
+	toolIterations := 0 // iterations that executed at least one tool — feeds the complexity gate
 	for i := 0; i < maxIterations; i++ {
 		// ForceTool only applies to the first iteration.
 		if i > 0 {
@@ -601,7 +607,12 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 			)
 			response := lastResp.Content
 			a.runPostHooks(ctx, &response)
-			a.saveAssistantResponse(ctx, msg.ChatID, response)
+			lastMessageID := a.saveAssistantResponse(ctx, msg.ChatID, response)
+
+			// Complexity gate: a turn that needed many tool iterations is a
+			// candidate for self-improvement — enqueue a background review.
+			a.maybeEnqueueSkillReview(ctx, msg.ChatID, effectiveUserID, toolIterations, lastMessageID,
+				summarizeToolExchanges(req.ToolExchanges))
 
 			// Signal channels to skip bookmark button if remember was already used.
 			if hasToolCall(req.ToolExchanges, "remember") {
@@ -623,6 +634,9 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 
 			return response, nil
 		}
+
+		// This iteration runs tools — count it for the complexity gate.
+		toolIterations++
 
 		// Execute each tool call.
 		exchange := llm.ToolExchange{
@@ -683,9 +697,13 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 	}
 
 	// Exhausted iterations — save any partial text so history stays consistent.
+	// This is the most tool-intensive turn possible, so it is also a prime
+	// self-improvement candidate (it needs a saved boundary to anchor the review).
 	a.logger.Warn("agentic loop hit max iterations", zap.Int("max", maxIterations))
 	if lastResp.Content != "" {
-		a.saveAssistantResponse(ctx, msg.ChatID, lastResp.Content)
+		lastMessageID := a.saveAssistantResponse(ctx, msg.ChatID, lastResp.Content)
+		a.maybeEnqueueSkillReview(ctx, msg.ChatID, effectiveUserID, toolIterations, lastMessageID,
+			summarizeToolExchanges(req.ToolExchanges))
 	}
 	return "", fmt.Errorf("tool use loop exceeded %d iterations", maxIterations)
 }
@@ -928,6 +946,17 @@ func (a *Assistant) SetRequestTimeout(d time.Duration) {
 	a.requestTimeout = d
 }
 
+// SetSelfImprove configures the self-improvement complexity gate. When enabled,
+// a turn that executes at least threshold tool iterations enqueues a background
+// skill.review task. A threshold <= 0 falls back to a sane default.
+func (a *Assistant) SetSelfImprove(enabled bool, threshold int) {
+	if threshold <= 0 {
+		threshold = 5
+	}
+	a.selfImproveEnabled.Store(enabled)
+	a.complexityThreshold.Store(int64(threshold))
+}
+
 // effectiveTimeout returns the timeout for a single message, accounting for
 // thinking budget and tool use iterations. With extended thinking enabled,
 // each LLM call can take much longer.
@@ -1158,7 +1187,117 @@ func (a *Assistant) SessionStats() (inputTokens, outputTokens, requests int64) {
 	return a.totalInputTokens.Load(), a.totalOutputTokens.Load(), a.totalRequests.Load()
 }
 
-func (a *Assistant) saveAssistantResponse(ctx context.Context, chatID string, content string) {
+// maxReviewsPerUserPerHour caps how many skill.review tasks a single user can
+// trigger in a rolling hour. The gate fires only on hard turns, so this is a
+// generous safety bound against a user flooding the review queue / LLM spend.
+const maxReviewsPerUserPerHour = 20
+
+// reviewRateLimiter is a per-user sliding-window counter for skill.review enqueues.
+type reviewRateLimiter struct {
+	mu     sync.Mutex
+	window time.Duration
+	hits   map[string][]time.Time
+}
+
+func newReviewRateLimiter() *reviewRateLimiter {
+	return &reviewRateLimiter{window: time.Hour, hits: make(map[string][]time.Time)}
+}
+
+// allow reports whether another review is permitted for userID and records it.
+// A non-positive max means unlimited.
+func (l *reviewRateLimiter) allow(userID string, limit int) bool {
+	if limit <= 0 {
+		return true
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	cutoff := time.Now().Add(-l.window)
+	kept := l.hits[userID][:0]
+	for _, t := range l.hits[userID] {
+		if t.After(cutoff) {
+			kept = append(kept, t)
+		}
+	}
+	if len(kept) >= limit {
+		l.hits[userID] = kept
+		return false
+	}
+	l.hits[userID] = append(kept, time.Now())
+	return true
+}
+
+// maybeEnqueueSkillReview enqueues a one-shot skill.review task when a turn was
+// "hard" (>= complexityThreshold tool iterations). Idempotent per turn via
+// UniqueKey; best-effort — failures are logged, never surfaced to the user.
+func (a *Assistant) maybeEnqueueSkillReview(ctx context.Context, chatID, userID string, toolIterations int, lastMessageID int64, toolSummary string) {
+	if !a.selfImproveEnabled.Load() || int64(toolIterations) < a.complexityThreshold.Load() {
+		return
+	}
+	if lastMessageID <= 0 {
+		// No usable turn boundary (the assistant message failed to save).
+		return
+	}
+	if !a.reviewRate.allow(userID, maxReviewsPerUserPerHour) {
+		a.logger.Debug("skill.review rate-limited for user", zap.String("user_id", userID))
+		return
+	}
+	payload, err := json.Marshal(domain.SkillReviewPayload{
+		ChatID:        chatID,
+		UserID:        userID,
+		LastMessageID: lastMessageID,
+		ToolSummary:   toolSummary,
+	})
+	if err != nil {
+		a.logger.Error("skill.review payload marshal failed", zap.Error(err))
+		return
+	}
+	created, err := a.store.CreateTaskIfNotExists(ctx, &domain.Task{
+		Type:           domain.TaskTypeSkillReview,
+		Payload:        string(payload),
+		Priority:       -1, // background, lowest priority
+		Capabilities:   "llm",
+		UniqueKey:      fmt.Sprintf("%s:%s:%d", domain.TaskTypeSkillReview, chatID, lastMessageID),
+		ScheduledAt:    time.Now(),
+		OneShot:        true,
+		DeleteAfterRun: true,
+	})
+	if err != nil {
+		a.logger.Error("failed to enqueue skill.review", zap.Error(err))
+		return
+	}
+	if created {
+		a.logger.Info("enqueued skill.review",
+			zap.String("chat_id", chatID),
+			zap.Int("tool_iterations", toolIterations))
+	}
+}
+
+// summarizeToolExchanges renders a compact, ordered "step. tool -> ok|error"
+// list of the tool calls in a turn. Intermediate tool calls are never persisted
+// as chat messages, so this is the only workflow record the reviewer can use.
+func summarizeToolExchanges(exchanges []llm.ToolExchange) string {
+	var b strings.Builder
+	step := 0
+	for _, ex := range exchanges {
+		byID := make(map[string]llm.ToolResult, len(ex.Results))
+		for _, r := range ex.Results {
+			byID[r.ToolCallID] = r
+		}
+		for _, tc := range ex.ToolCalls {
+			step++
+			status := "ok"
+			if r, ok := byID[tc.ID]; ok && r.IsError {
+				status = "error"
+			}
+			fmt.Fprintf(&b, "%d. %s -> %s\n", step, tc.Name, status)
+		}
+	}
+	return b.String()
+}
+
+// saveAssistantResponse persists the assistant reply and returns the new
+// message ID (0 on error), which callers use as a turn boundary.
+func (a *Assistant) saveAssistantResponse(ctx context.Context, chatID, content string) int64 {
 	userID := skill.UserIDFrom(ctx)
 	assistantMsg := &domain.ChatMessage{
 		ChatID:    chatID,
@@ -1169,5 +1308,7 @@ func (a *Assistant) saveAssistantResponse(ctx context.Context, chatID string, co
 	}
 	if err := a.store.SaveMessage(ctx, assistantMsg); err != nil {
 		a.logger.Error("failed to save assistant message", zap.Error(err))
+		return 0
 	}
+	return assistantMsg.ID
 }

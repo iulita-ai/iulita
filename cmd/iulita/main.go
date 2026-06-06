@@ -1040,13 +1040,18 @@ func main() {
 	asst := assistant.New(llmProvider, store, registry, cfg.App.SystemPrompt, cfg.App.DefaultTimezone, cfg.Claude.ContextWindow, logger)
 	asst.SetModelInfo(primaryModel, primaryProvider)
 
+	// Self-improvement review handler — created here (before config-reload wiring)
+	// so its runtime-toggle flags can be hot-reloaded; registered on the worker below.
+	selfImproveProvider := resolveJobProvider("", llmProvider, cfg.Ollama, httpClient, logger, "skill-review")
+	skillReviewHandler := handlers.NewSkillReviewHandler(store, selfImproveProvider, cfg.Skills.SelfImprove, logger)
+
 	// Event bus for decoupled event handling.
 	bus := eventbus.New(logger)
 	asst.SetEventBus(bus)
 
 	// Wire config store to event bus for hot-reload.
 	cfgStore.SetPublisher(&eventbus.ConfigChangeAdapter{Bus: bus})
-	registerConfigReload(bus, cfgStore, asst, store, registry, rawProvider, rawDeepSeek, routingProvider, providerMap, extMgr, logger)
+	registerConfigReload(bus, cfgStore, asst, skillReviewHandler, store, registry, rawProvider, rawDeepSeek, routingProvider, providerMap, extMgr, logger)
 
 	// Wire credential store to event bus.
 	credStore.SetPublisher(&eventbus.CredentialChangeAdapter{Bus: bus})
@@ -1101,6 +1106,13 @@ func main() {
 	if len(cfg.Skills.Memory.Triggers) > 0 {
 		asst.SetMemoryTriggers(cfg.Skills.Memory.Triggers)
 		logger.Info("memory triggers configured", zap.Strings("triggers", cfg.Skills.Memory.Triggers))
+	}
+
+	// Configure the self-improvement complexity gate.
+	asst.SetSelfImprove(cfg.Skills.SelfImprove.Enabled, cfg.Skills.SelfImprove.ComplexityThreshold)
+	if cfg.Skills.SelfImprove.Enabled {
+		logger.Info("self-improvement enabled",
+			zap.Int("complexity_threshold", cfg.Skills.SelfImprove.ComplexityThreshold))
 	}
 
 	// Configure request timeout.
@@ -1417,6 +1429,10 @@ func main() {
 
 	worker.Register(handlers.NewInsightCleanupHandler(store))
 
+	// Self-improvement: review hard turns and record reusable lessons.
+	// (Handler constructed earlier so config hot-reload can toggle it.)
+	worker.Register(skillReviewHandler)
+
 	techfactProvider := resolveJobProvider(cfg.TechFacts.Model, llmProvider, cfg.Ollama, httpClient, logger, "techfact")
 	techFactHandler := handlers.NewTechFactAnalyzeHandler(store, techfactProvider, logger)
 	if cfg.TechFacts.Delivery {
@@ -1569,6 +1585,9 @@ func (a *extSkillMgrAdapter) GetInstalled(ctx context.Context, slug string) (*do
 }
 func (a *extSkillMgrAdapter) Install(ctx context.Context, source, ref string) (*domain.InstalledSkill, []string, error) {
 	return a.mgr.Install(ctx, source, ref)
+}
+func (a *extSkillMgrAdapter) InstallAuthored(ctx context.Context, slug, name, description, body string, triggers []string) (*domain.InstalledSkill, []string, error) {
+	return a.mgr.InstallAuthored(ctx, slug, name, description, body, triggers)
 }
 func (a *extSkillMgrAdapter) Uninstall(ctx context.Context, slug string) error {
 	return a.mgr.Uninstall(ctx, slug)
@@ -1750,7 +1769,7 @@ func backfillEmbeddings(ctx context.Context, store *sqlite.Store, embedder llm.E
 
 // registerConfigReload subscribes to config.changed events and applies runtime updates.
 // Core keys have explicit handlers; skill keys are dispatched to the registry.
-func registerConfigReload(bus *eventbus.Bus, cfgStore *config.Store, asst *assistant.Assistant, store *sqlite.Store, registry *skill.Registry, claudeProvider *claude.Provider, deepseekProvider *deepseekllm.Provider, routingProvider *llm.RoutingProvider, providerMap map[string]llm.Provider, extMgr *skillmgr.Manager, logger *zap.Logger) {
+func registerConfigReload(bus *eventbus.Bus, cfgStore *config.Store, asst *assistant.Assistant, skillReviewHandler *handlers.SkillReviewHandler, store *sqlite.Store, registry *skill.Registry, claudeProvider *claude.Provider, deepseekProvider *deepseekllm.Provider, routingProvider *llm.RoutingProvider, providerMap map[string]llm.Provider, extMgr *skillmgr.Manager, logger *zap.Logger) {
 	bus.Subscribe(eventbus.ConfigChanged, func(_ context.Context, evt eventbus.Event) error {
 		p, ok := evt.Payload.(eventbus.ConfigChangedPayload)
 		if !ok {
@@ -1894,6 +1913,34 @@ func registerConfigReload(bus *eventbus.Bus, cfgStore *config.Store, asst *assis
 				extMgr.SetAllowWASM(v)
 				logger.Info("hot-reloaded skills.external.allow_wasm", zap.Bool("value", v))
 			}
+
+		case "skills.selfimprove.enabled", "skills.selfimprove.complexity_threshold":
+			base := cfgStore.Base().Skills.SelfImprove
+			enabled := base.Enabled
+			if v, ok := cfgStore.Get("skills.selfimprove.enabled"); ok {
+				enabled = strings.EqualFold(v, "true")
+			}
+			threshold := base.ComplexityThreshold
+			if v, ok := cfgStore.Get("skills.selfimprove.complexity_threshold"); ok {
+				if n, err := strconv.Atoi(v); err == nil {
+					threshold = n
+				}
+			}
+			asst.SetSelfImprove(enabled, threshold) // enqueue-side gate
+			if skillReviewHandler != nil {
+				skillReviewHandler.SetEnabled(enabled) // consume-side gate (else toggling on no-ops)
+			}
+			logger.Info("hot-reloaded selfimprove gate", zap.Bool("enabled", enabled), zap.Int("threshold", threshold))
+
+		case "skills.selfimprove.propose_skills":
+			propose := cfgStore.Base().Skills.SelfImprove.ProposeSkills
+			if v, ok := cfgStore.Get("skills.selfimprove.propose_skills"); ok {
+				propose = strings.EqualFold(v, "true")
+			}
+			if skillReviewHandler != nil {
+				skillReviewHandler.SetProposeSkills(propose)
+			}
+			logger.Info("hot-reloaded selfimprove.propose_skills", zap.Bool("enabled", propose))
 
 		default:
 			// Dispatch skill config changes to the registry.

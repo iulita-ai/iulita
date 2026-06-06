@@ -89,6 +89,7 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 		{(*domain.SchedulerState)(nil), "scheduler_states"},
 		{(*domain.AuditEntry)(nil), "audit_log"},
 		{(*domain.SkillExecution)(nil), "skill_executions"},
+		{(*domain.SkillProposal)(nil), "skill_proposals"},
 		{(*domain.UsageRecord)(nil), "usage_stats"},
 		{(*domain.ConfigOverride)(nil), "config_overrides"},
 		{(*domain.AgentJob)(nil), "agent_jobs"},
@@ -217,9 +218,10 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 	for _, stmt := range []string{
 		`CREATE INDEX IF NOT EXISTS idx_skill_exec_name ON skill_executions(skill_name, created_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_skill_exec_user ON skill_executions(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_skill_proposals_status ON skill_proposals(status, created_at)`,
 	} {
 		if _, err = s.db.ExecContext(ctx, stmt); err != nil {
-			return fmt.Errorf("creating skill_executions index: %w", err)
+			return fmt.Errorf("creating index (%s): %w", stmt, err)
 		}
 	}
 

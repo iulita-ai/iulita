@@ -130,6 +130,12 @@ type Repository interface {
 	SaveSkillExecution(ctx context.Context, e *domain.SkillExecution) error
 	GetSkillStats(ctx context.Context, filter SkillStatsFilter) ([]SkillStat, error)
 
+	// Skill proposals (self-improvement drafts, never auto-installed)
+	SaveSkillProposal(ctx context.Context, p *domain.SkillProposal) error
+	ListSkillProposals(ctx context.Context, filter SkillProposalFilter) ([]domain.SkillProposal, error)
+	GetSkillProposal(ctx context.Context, id int64) (*domain.SkillProposal, error)
+	UpdateSkillProposalStatus(ctx context.Context, id int64, status string) error
+
 	// Config overrides
 	GetConfigOverride(ctx context.Context, key string) (*domain.ConfigOverride, error)
 	ListConfigOverrides(ctx context.Context) ([]domain.ConfigOverride, error)
@@ -313,6 +319,12 @@ type SkillStat struct {
 	AvgDurationMs float64   `json:"avg_duration_ms"`
 	MaxDurationMs int64     `json:"max_duration_ms"`
 	LastUsed      time.Time `json:"last_used"`
+}
+
+// SkillProposalFilter specifies criteria for listing skill proposals.
+type SkillProposalFilter struct {
+	Status string // empty = all
+	Limit  int
 }
 
 // ChannelCredentialBinding maps a channel instance to its bound credential.

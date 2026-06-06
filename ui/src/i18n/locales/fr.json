@@ -15,7 +15,8 @@
     "usage": "Utilisation",
     "logout": "Deconnexion",
     "credentials": "Identifiants",
-    "skillStats": "Stats des compétences"
+    "skillStats": "Stats des compétences",
+    "skillProposals": "Propositions de compétences"
   },
   "common": {
     "save": "Enregistrer",
@@ -650,5 +651,29 @@
     "bySkill": "Par compétence",
     "noData": "Aucune exécution pour cette période",
     "loadFailed": "Échec du chargement des statistiques"
+  },
+  "skillProposals": {
+    "title": "Propositions de compétences",
+    "subtitle": "Brouillons de compétences auto-générés en attente de revue humaine",
+    "safetyNote": "Ces brouillons sont inertes : ils ne sont jamais injectés dans les prompts ni activés tant que vous ne les installez pas explicitement. Les brouillons rejetés ont échoué à une analyse de sécurité automatique.",
+    "allStatuses": "Tous les statuts",
+    "statusPending": "En attente",
+    "statusRejected": "Rejeté",
+    "statusDiscarded": "Abandonné",
+    "slug": "Slug",
+    "triggers": "Déclencheurs",
+    "body": "Instructions proposées",
+    "discard": "Abandonner",
+    "discarded": "Proposition abandonnée",
+    "discardFailed": "Échec de labandon de la proposition",
+    "from": "De",
+    "noData": "Aucune proposition pour linstant",
+    "loadFailed": "Échec du chargement des propositions",
+    "install": "Installer",
+    "installConfirm": "Installer ce brouillon comme compétence active ? Ses instructions deviendront des consignes permanentes pour lassistant.",
+    "installed": "Compétence installée",
+    "installedWithWarnings": "Compétence installée avec {count} avertissement(s)",
+    "installFailed": "Échec de linstallation de la compétence",
+    "user": "utilisateur"
   }
 }
