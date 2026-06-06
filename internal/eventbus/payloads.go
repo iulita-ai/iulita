@@ -21,10 +21,13 @@ type ResponseSentPayload struct {
 // SkillExecutedPayload is published after a skill/tool call completes.
 type SkillExecutedPayload struct {
 	ChatID     string
+	UserID     string // iulita user UUID (empty for channels without a resolver)
 	SkillName  string
 	ToolCallID string
 	Success    bool
 	DurationMs int64
+	Iteration  int    // main-loop turn index; -1 when not applicable (e.g. approval re-run)
+	Origin     string // domain.SkillOriginMain | domain.SkillOriginSubagent
 }
 
 // LLMUsagePayload is published after each LLM completion.

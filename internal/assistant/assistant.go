@@ -192,7 +192,7 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 		approved, defined := isApprovalResponse(msg.Text, localeTag)
 		if defined {
 			if approved && a.canApprove(ctx, pending.level) {
-				result := a.executeSkill(ctx, msg.ChatID, pending.tc)
+				result := a.executeSkill(ctx, msg.ChatID, pending.tc, -1)
 				response := i18n.T(ctx, "ApprovalExecuted", map[string]any{"Tool": pending.tc.Name, "Result": result.Content})
 				a.saveAssistantResponse(ctx, msg.ChatID, response)
 				return response, nil
@@ -669,7 +669,7 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 				}
 			}
 
-			result := a.executeSkill(ctx, msg.ChatID, tc)
+			result := a.executeSkill(ctx, msg.ChatID, tc, i)
 			ledger.Record(tc, result)
 			exchange.Results = append(exchange.Results, result)
 		}
@@ -690,7 +690,7 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 	return "", fmt.Errorf("tool use loop exceeded %d iterations", maxIterations)
 }
 
-func (a *Assistant) executeSkill(ctx context.Context, chatID string, tc llm.ToolCall) llm.ToolResult {
+func (a *Assistant) executeSkill(ctx context.Context, chatID string, tc llm.ToolCall, iteration int) llm.ToolResult {
 	s, ok := a.registry.Get(tc.Name)
 	if !ok {
 		a.logger.Warn("unknown or disabled skill requested", zap.String("skill", tc.Name))
@@ -750,10 +750,13 @@ func (a *Assistant) executeSkill(ctx context.Context, chatID string, tc llm.Tool
 			Type: eventbus.SkillExecuted,
 			Payload: eventbus.SkillExecutedPayload{
 				ChatID:     chatID,
+				UserID:     skill.UserIDFrom(ctx),
 				SkillName:  tc.Name,
 				ToolCallID: tc.ID,
 				Success:    err == nil,
 				DurationMs: durationMs,
+				Iteration:  iteration,
+				Origin:     domain.SkillOriginMain,
 			},
 		})
 	}

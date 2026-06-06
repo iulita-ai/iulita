@@ -1173,6 +1173,7 @@ func main() {
 
 	// Register event bus subscribers (after tg is available).
 	eventbus.RegisterAuditSubscriber(bus, store, logger)
+	eventbus.RegisterSkillTelemetrySubscriber(bus, store, logger)
 	eventbus.RegisterConfigAuditSubscriber(bus, store, logger)
 	// Pass costTracker as explicit nil interface when cost tracking is disabled,
 	// to avoid the nil-pointer-in-non-nil-interface trap.
