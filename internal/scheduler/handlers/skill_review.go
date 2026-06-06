@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -32,21 +33,34 @@ const reviewNoLesson = "NONE"
 type SkillReviewHandler struct {
 	store    storage.Repository
 	provider llm.Provider
-	cfg      config.SelfImproveConfig
 	logger   *zap.Logger
+	// enabled/propose are read on every Handle and written by config hot-reload
+	// from another goroutine — kept atomic so runtime toggles take effect without
+	// a restart and without a data race.
+	enabled atomic.Bool
+	propose atomic.Bool
 }
 
 // NewSkillReviewHandler constructs the skill.review task handler.
 func NewSkillReviewHandler(store storage.Repository, provider llm.Provider, cfg config.SelfImproveConfig, logger *zap.Logger) *SkillReviewHandler {
-	return &SkillReviewHandler{store: store, provider: provider, cfg: cfg, logger: logger}
+	h := &SkillReviewHandler{store: store, provider: provider, logger: logger}
+	h.enabled.Store(cfg.Enabled)
+	h.propose.Store(cfg.ProposeSkills)
+	return h
 }
+
+// SetEnabled toggles whether reviews run (hot-reload).
+func (h *SkillReviewHandler) SetEnabled(v bool) { h.enabled.Store(v) }
+
+// SetProposeSkills toggles whether reviews draft skill proposals (hot-reload).
+func (h *SkillReviewHandler) SetProposeSkills(v bool) { h.propose.Store(v) }
 
 // Type returns the task type this handler serves.
 func (h *SkillReviewHandler) Type() string { return domain.TaskTypeSkillReview }
 
 // Handle reviews one completed turn's transcript and persists a reusable lesson.
 func (h *SkillReviewHandler) Handle(ctx context.Context, payload string) (string, error) {
-	if !h.cfg.Enabled {
+	if !h.enabled.Load() {
 		return `{"reviewed":0,"reason":"disabled"}`, nil
 	}
 
@@ -109,7 +123,7 @@ func (h *SkillReviewHandler) Handle(ctx context.Context, payload string) (string
 		zap.Int64("insight_id", insight.ID))
 
 	proposed := 0
-	if h.cfg.ProposeSkills {
+	if h.propose.Load() {
 		if h.maybeProposeSkill(ctx, p, transcript, lesson) {
 			proposed = 1
 		}

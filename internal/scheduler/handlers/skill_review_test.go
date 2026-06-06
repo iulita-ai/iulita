@@ -195,6 +195,32 @@ func TestSkillReview_NoProposalWhenDisabled(t *testing.T) {
 	}
 }
 
+func TestSkillReview_RuntimeEnableToggle(t *testing.T) {
+	store := newReviewStore(t)
+	lastID := seedTurn(t, store, "chat1", "user1")
+	provider := &mockLLMProvider{response: "A reusable lesson."}
+
+	// Start disabled (default-off path): Handle must no-op.
+	h := NewSkillReviewHandler(store, provider, config.SelfImproveConfig{Enabled: false}, zap.NewNop())
+	res, err := h.Handle(context.Background(), reviewPayload(t, "chat1", "user1", lastID))
+	if err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if !strings.Contains(res, `"reviewed":0`) {
+		t.Fatalf("expected no-op while disabled, got %s", res)
+	}
+
+	// Hot-enable at runtime — must now actually record a lesson without a restart.
+	h.SetEnabled(true)
+	res, err = h.Handle(context.Background(), reviewPayload(t, "chat1", "user1", lastID))
+	if err != nil {
+		t.Fatalf("Handle after enable: %v", err)
+	}
+	if !strings.Contains(res, `"lesson_saved":1`) {
+		t.Errorf("runtime enable should record a lesson, got %s", res)
+	}
+}
+
 func TestSkillReview_DisabledNoop(t *testing.T) {
 	store := newReviewStore(t)
 	lastID := seedTurn(t, store, "chat1", "user1")

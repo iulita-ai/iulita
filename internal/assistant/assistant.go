@@ -65,8 +65,8 @@ type Assistant struct {
 	modelName         atomic.Value // LLM model name for usage tracking (string)
 	providerName      atomic.Value // LLM provider name for usage tracking (string)
 
-	selfImproveEnabled  bool // enqueue skill.review after hard turns
-	complexityThreshold int  // min tool-executing iterations to trigger a review
+	selfImproveEnabled  atomic.Bool  // enqueue skill.review after hard turns (hot-reloadable)
+	complexityThreshold atomic.Int64 // min tool-executing iterations to trigger a review
 }
 
 // New creates a new Assistant.
@@ -951,8 +951,8 @@ func (a *Assistant) SetSelfImprove(enabled bool, threshold int) {
 	if threshold <= 0 {
 		threshold = 5
 	}
-	a.selfImproveEnabled = enabled
-	a.complexityThreshold = threshold
+	a.selfImproveEnabled.Store(enabled)
+	a.complexityThreshold.Store(int64(threshold))
 }
 
 // effectiveTimeout returns the timeout for a single message, accounting for
@@ -1189,7 +1189,7 @@ func (a *Assistant) SessionStats() (inputTokens, outputTokens, requests int64) {
 // "hard" (>= complexityThreshold tool iterations). Idempotent per turn via
 // UniqueKey; best-effort — failures are logged, never surfaced to the user.
 func (a *Assistant) maybeEnqueueSkillReview(ctx context.Context, chatID, userID string, toolIterations int, lastMessageID int64, toolSummary string) {
-	if !a.selfImproveEnabled || toolIterations < a.complexityThreshold {
+	if !a.selfImproveEnabled.Load() || int64(toolIterations) < a.complexityThreshold.Load() {
 		return
 	}
 	if lastMessageID <= 0 {
