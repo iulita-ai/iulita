@@ -311,6 +311,28 @@ func main() {
 		}
 	}
 
+	// Re-apply DB overrides that are NOT hot-reloaded so dashboard-saved values
+	// take effect on this start. These are consumed directly from cfg (restart-only
+	// keys; the self-improvement gate), so unlike the loop above they must be
+	// applied unconditionally — including over non-empty compiled defaults.
+	if v, ok := cfgStore.GetEffective("proxy.url"); ok && v != "" {
+		cfg.Proxy.URL = v
+	}
+	if v, ok := cfgStore.GetEffective("server.address"); ok && v != "" {
+		cfg.Server.Address = v
+	}
+	if v, ok := cfgStore.GetEffective("skills.selfimprove.enabled"); ok {
+		cfg.Skills.SelfImprove.Enabled = strings.EqualFold(v, "true")
+	}
+	if v, ok := cfgStore.GetEffective("skills.selfimprove.complexity_threshold"); ok {
+		if n, convErr := strconv.Atoi(v); convErr == nil {
+			cfg.Skills.SelfImprove.ComplexityThreshold = n
+		}
+	}
+	if v, ok := cfgStore.GetEffective("skills.selfimprove.propose_skills"); ok {
+		cfg.Skills.SelfImprove.ProposeSkills = strings.EqualFold(v, "true")
+	}
+
 	validateMode := config.ValidateConsole
 	if serverMode {
 		cfg.Server.Enabled = true

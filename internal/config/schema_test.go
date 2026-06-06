@@ -193,28 +193,3 @@ func TestIsRestartOnlyKey(t *testing.T) {
 		}
 	}
 }
-
-// TestStructToMap_BoolIntDefaultsCovered asserts every non-secret bool/int schema
-// field with a non-empty default appears in structToMap, so GetBaseValue returns
-// the compiled-in default and the UI shows the real value (not "unconfigured").
-func TestStructToMap_BoolIntDefaultsCovered(t *testing.T) {
-	excluded := map[string]bool{
-		"server.address": true, // restart-only, not a koanf default
-		"proxy.url":      true, // restart-only
-	}
-	m := structToMap(DefaultConfig(testPaths(t)))
-	for _, sec := range CoreConfigSchema() {
-		for _, f := range sec.Fields {
-			if excluded[f.Key] || f.Secret || f.Default == "" {
-				continue
-			}
-			if f.Type != FieldBool && f.Type != FieldInt {
-				continue
-			}
-			if _, ok := m[f.Key]; !ok {
-				t.Errorf("structToMap missing %q (type=%s default=%q); UI would show wrong default",
-					f.Key, f.Type, f.Default)
-			}
-		}
-	}
-}

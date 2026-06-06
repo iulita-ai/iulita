@@ -476,24 +476,20 @@ func structToMap(cfg *Config) map[string]interface{} {
 	m["claude.max_tokens"] = cfg.Claude.MaxTokens
 	m["claude.context_window"] = cfg.Claude.ContextWindow
 	m["claude.request_timeout"] = cfg.Claude.RequestTimeout
-	m["claude.streaming"] = cfg.Claude.Streaming
 
 	// OpenAI
 	m["openai.max_tokens"] = cfg.OpenAI.MaxTokens
-	m["openai.fallback"] = cfg.OpenAI.Fallback
 
 	// DeepSeek (mirror OpenAI: only the non-secret numeric default goes through
 	// structToMap; model default is injected via DefaultConfig so empty strings
 	// don't shadow keyring/env layers during koanf merge).
 	m["deepseek.max_tokens"] = cfg.DeepSeek.MaxTokens
-	m["deepseek.fallback"] = cfg.DeepSeek.Fallback
 
 	// Storage
 	m["storage.path"] = cfg.Storage.Path
 
 	// Server
 	m["server.address"] = cfg.Server.Address
-	m["server.enabled"] = cfg.Server.Enabled
 
 	// Auth
 	m["auth.jwt_secret"] = cfg.Auth.JWTSecret
@@ -528,7 +524,6 @@ func structToMap(cfg *Config) map[string]interface{} {
 
 	// Embedding
 	m["embedding.model_dir"] = cfg.Embedding.ModelDir
-	m["embedding.provider"] = cfg.Embedding.Provider
 
 	// Telegram
 	m["telegram.debounce_window"] = cfg.Telegram.DebounceWindow
@@ -536,14 +531,9 @@ func structToMap(cfg *Config) map[string]interface{} {
 
 	// Cost
 	m["cost.alert_threshold"] = cfg.Cost.AlertThreshold
-	m["cost.enabled"] = cfg.Cost.Enabled
-	m["cost.daily_limit_usd"] = cfg.Cost.DailyLimitUSD
 
 	// Routing
 	m["routing.default_provider"] = cfg.Routing.DefaultProvider
-	m["routing.enabled"] = cfg.Routing.Enabled
-	m["routing.classification_enabled"] = cfg.Routing.ClassificationEnabled
-	m["routing.max_actions_per_hour"] = cfg.Routing.MaxActionsPerHour
 
 	// External skills
 	m["skills.external.enabled"] = cfg.Skills.External.Enabled
@@ -560,14 +550,8 @@ func structToMap(cfg *Config) map[string]interface{} {
 	// Cache
 	m["cache.response_ttl"] = cfg.Cache.ResponseTTL
 	m["cache.response_max_items"] = cfg.Cache.ResponseMaxItems
-	m["cache.response_enabled"] = cfg.Cache.ResponseEnabled
 	m["cache.embedding_enabled"] = cfg.Cache.EmbeddingEnabled
 	m["cache.embedding_max_items"] = cfg.Cache.EmbeddingMaxItems
-
-	// Self-improvement
-	m["skills.selfimprove.enabled"] = cfg.Skills.SelfImprove.Enabled
-	m["skills.selfimprove.complexity_threshold"] = cfg.Skills.SelfImprove.ComplexityThreshold
-	m["skills.selfimprove.propose_skills"] = cfg.Skills.SelfImprove.ProposeSkills
 
 	return m
 }

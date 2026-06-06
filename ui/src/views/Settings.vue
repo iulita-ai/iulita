@@ -1099,8 +1099,12 @@ async function saveConfig() {
   }
   saving.value = true
   try {
-    await api.setConfig(newKey.value, newValue.value, newEncrypt.value)
-    message.success(t('settings.configSaved', { key: newKey.value }))
+    const result = await api.setConfig(newKey.value, newValue.value, newEncrypt.value)
+    if (result.restart_required) {
+      message.warning(t('settings.savedRequiresRestart', { label: newKey.value }))
+    } else {
+      message.success(t('settings.configSaved', { key: newKey.value }))
+    }
     newKey.value = ''
     newValue.value = ''
     newEncrypt.value = false
