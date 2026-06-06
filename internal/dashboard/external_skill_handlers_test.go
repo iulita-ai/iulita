@@ -70,6 +70,14 @@ func (m *mockExtSkillMgr) Install(_ context.Context, source, ref string) (*domai
 	return m.installed, m.warnings, nil
 }
 
+func (m *mockExtSkillMgr) InstallAuthored(_ context.Context, slug, _, _, _ string, _ []string) (*domain.InstalledSkill, []string, error) {
+	m.installCalls = append(m.installCalls, extInstallCall{"authored", slug})
+	if m.installErr != nil {
+		return nil, nil, m.installErr
+	}
+	return m.installed, m.warnings, nil
+}
+
 func (m *mockExtSkillMgr) Uninstall(_ context.Context, slug string) error {
 	m.uninstallCalls = append(m.uninstallCalls, slug)
 	return m.uninstallErr

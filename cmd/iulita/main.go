@@ -1581,6 +1581,9 @@ func (a *extSkillMgrAdapter) GetInstalled(ctx context.Context, slug string) (*do
 func (a *extSkillMgrAdapter) Install(ctx context.Context, source, ref string) (*domain.InstalledSkill, []string, error) {
 	return a.mgr.Install(ctx, source, ref)
 }
+func (a *extSkillMgrAdapter) InstallAuthored(ctx context.Context, slug, name, description, body string, triggers []string) (*domain.InstalledSkill, []string, error) {
+	return a.mgr.InstallAuthored(ctx, slug, name, description, body, triggers)
+}
 func (a *extSkillMgrAdapter) Uninstall(ctx context.Context, slug string) error {
 	return a.mgr.Uninstall(ctx, slug)
 }

@@ -1038,6 +1038,8 @@ export const api = {
     return get<SkillProposalsResponse>(`/api/skills/proposals${qs}`)
   },
   discardSkillProposal: (id: number) => del<{ status: string }>(`/api/skills/proposals/${id}`),
+  installSkillProposal: (id: number) =>
+    post<{ status: string; warnings: string[] }>(`/api/skills/proposals/${id}/install`, {}),
 
   // Credentials (admin)
   listCredentials: (params?: { scope?: string; type?: string; owner_id?: string }) => {

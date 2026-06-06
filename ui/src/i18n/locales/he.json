@@ -668,6 +668,11 @@
     "discardFailed": "ביטול ההצעה נכשל",
     "from": "מתוך",
     "noData": "אין הצעות עדיין",
-    "loadFailed": "טעינת ההצעות נכשלה"
+    "loadFailed": "טעינת ההצעות נכשלה",
+    "install": "התקן",
+    "installConfirm": "להתקין טיוטה זו ככישור פעיל? ההוראות שלה יהפכו להנחיה קבועה עבור העוזר.",
+    "installed": "הכישור הותקן",
+    "installedWithWarnings": "הכישור הותקן עם {count} אזהרות",
+    "installFailed": "התקנת הכישור נכשלה"
   }
 }

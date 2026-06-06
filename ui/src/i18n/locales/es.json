@@ -668,6 +668,11 @@
     "discardFailed": "Error al descartar la propuesta",
     "from": "De",
     "noData": "Aún no hay propuestas",
-    "loadFailed": "Error al cargar las propuestas"
+    "loadFailed": "Error al cargar las propuestas",
+    "install": "Instalar",
+    "installConfirm": "¿Instalar este borrador como skill activa? Sus instrucciones se convertirán en guía permanente del asistente.",
+    "installed": "Skill instalada",
+    "installedWithWarnings": "Skill instalada con {count} advertencia(s)",
+    "installFailed": "Error al instalar la skill"
   }
 }

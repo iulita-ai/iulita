@@ -668,6 +668,11 @@
     "discardFailed": "Échec de labandon de la proposition",
     "from": "De",
     "noData": "Aucune proposition pour linstant",
-    "loadFailed": "Échec du chargement des propositions"
+    "loadFailed": "Échec du chargement des propositions",
+    "install": "Installer",
+    "installConfirm": "Installer ce brouillon comme compétence active ? Ses instructions deviendront des consignes permanentes pour lassistant.",
+    "installed": "Compétence installée",
+    "installedWithWarnings": "Compétence installée avec {count} avertissement(s)",
+    "installFailed": "Échec de linstallation de la compétence"
   }
 }

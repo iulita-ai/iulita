@@ -93,6 +93,7 @@ type ExternalSkillManager interface {
 	ListInstalled(ctx context.Context) ([]domain.InstalledSkill, error)
 	GetInstalled(ctx context.Context, slug string) (*domain.InstalledSkill, error)
 	Install(ctx context.Context, source, ref string) (*domain.InstalledSkill, []string, error)
+	InstallAuthored(ctx context.Context, slug, name, description, body string, triggers []string) (*domain.InstalledSkill, []string, error)
 	Uninstall(ctx context.Context, slug string) error
 	Enable(ctx context.Context, slug string) error
 	Disable(ctx context.Context, slug string) error
@@ -235,9 +236,11 @@ func New(cfg Config) *Server {
 	if s.authService != nil {
 		proposals := api.Group("/skills/proposals", auth.AdminOnly())
 		proposals.Get("/", s.handleListSkillProposals)
+		proposals.Post("/:id/install", s.handleInstallSkillProposal)
 		proposals.Delete("/:id", s.handleDiscardSkillProposal)
 	} else {
 		api.Get("/skills/proposals", s.handleListSkillProposals)
+		api.Post("/skills/proposals/:id/install", s.handleInstallSkillProposal)
 		api.Delete("/skills/proposals/:id", s.handleDiscardSkillProposal)
 	}
 

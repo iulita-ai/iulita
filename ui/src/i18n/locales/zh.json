@@ -668,6 +668,11 @@
     "discardFailed": "丢弃提案失败",
     "from": "来自",
     "noData": "暂无提案",
-    "loadFailed": "加载提案失败"
+    "loadFailed": "加载提案失败",
+    "install": "安装",
+    "installConfirm": "将此草稿安装为活动技能？其指令将成为助手的常驻指引。",
+    "installed": "技能已安装",
+    "installedWithWarnings": "技能已安装，带有 {count} 条警告",
+    "installFailed": "安装技能失败"
   }
 }

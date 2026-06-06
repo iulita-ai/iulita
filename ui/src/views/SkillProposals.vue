@@ -27,11 +27,20 @@
         <template #header-extra>
           <n-space align="center">
             <n-tag :type="statusType(p.status)" size="small" :bordered="false">{{ p.status }}</n-tag>
+            <n-popconfirm v-if="p.status === 'pending'" @positive-click="install(p)">
+              <template #trigger>
+                <n-button size="tiny" type="primary" :loading="busyId === p.id">
+                  {{ t('skillProposals.install') }}
+                </n-button>
+              </template>
+              {{ t('skillProposals.installConfirm') }}
+            </n-popconfirm>
             <n-button
               v-if="p.status === 'pending' || p.status === 'rejected'"
               size="tiny"
               type="error"
               tertiary
+              :disabled="busyId === p.id"
               @click="discard(p)"
             >
               {{ t('skillProposals.discard') }}
@@ -73,7 +82,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   useMessage, NSpace, NCard, NTag, NButton, NText, NAlert, NEmpty,
-  NPageHeader, NSpin, NSelect, NCollapse, NCollapseItem, NCode,
+  NPageHeader, NSpin, NSelect, NCollapse, NCollapseItem, NCode, NPopconfirm,
 } from 'naive-ui'
 import type { SelectOption } from 'naive-ui'
 import { api } from '../api'
@@ -84,6 +93,7 @@ const message = useMessage()
 const loading = ref(true)
 const rows = ref<SkillProposal[]>([])
 const statusFilter = ref<string | null>(null)
+const busyId = ref<number | null>(null)
 
 const statusOptions = computed<SelectOption[]>(() => [
   { label: t('skillProposals.statusPending'), value: 'pending' },
@@ -124,6 +134,23 @@ async function fetchData() {
     message.error(e.message || t('skillProposals.loadFailed'))
   } finally {
     loading.value = false
+  }
+}
+
+async function install(p: SkillProposal) {
+  busyId.value = p.id
+  try {
+    const res = await api.installSkillProposal(p.id)
+    if (res.warnings && res.warnings.length > 0) {
+      message.warning(t('skillProposals.installedWithWarnings', { count: res.warnings.length }))
+    } else {
+      message.success(t('skillProposals.installed'))
+    }
+    await fetchData()
+  } catch (e: any) {
+    message.error(e.message || t('skillProposals.installFailed'))
+  } finally {
+    busyId.value = null
   }
 }
 

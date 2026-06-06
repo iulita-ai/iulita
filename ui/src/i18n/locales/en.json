@@ -598,6 +598,11 @@
     "discard": "Discard",
     "discarded": "Proposal discarded",
     "discardFailed": "Failed to discard proposal",
+    "install": "Install",
+    "installConfirm": "Install this draft as a live skill? Its instructions will become standing guidance for the assistant.",
+    "installed": "Skill installed",
+    "installedWithWarnings": "Skill installed with {count} warning(s)",
+    "installFailed": "Failed to install skill",
     "from": "From",
     "noData": "No skill proposals yet",
     "loadFailed": "Failed to load skill proposals"
