@@ -1788,6 +1788,22 @@ func backfillEmbeddings(ctx context.Context, store *sqlite.Store, embedder llm.E
 // registerConfigReload subscribes to config.changed events and applies runtime updates.
 // Core keys have explicit handlers; skill keys are dispatched to the registry.
 func registerConfigReload(bus *eventbus.Bus, cfgStore *config.Store, asst *assistant.Assistant, skillReviewHandler *handlers.SkillReviewHandler, store *sqlite.Store, registry *skill.Registry, claudeProvider *claude.Provider, deepseekProvider *deepseekllm.Provider, routingProvider *llm.RoutingProvider, providerMap map[string]llm.Provider, extMgr *skillmgr.Manager, logger *zap.Logger) {
+	// Bridge credential changes to skills. Credential-backed skill secrets (e.g.
+	// skills.todoist.api_token) live only in the credentials table, so the
+	// config-overrides replay never reaches them. ReplayCredentials fires
+	// CredentialChanged for each at startup; without this bridge the owning skill
+	// never picks up its token and stays inactive until the next runtime change.
+	bus.Subscribe(eventbus.CredentialChanged, func(_ context.Context, evt eventbus.Event) error {
+		p, ok := evt.Payload.(eventbus.CredentialChangedPayload)
+		if !ok || !strings.HasPrefix(p.Name, "skills.") {
+			return nil
+		}
+		val, found := cfgStore.GetEffective(p.Name)
+		registry.DispatchConfigChanged(p.Name, val, !found || val == "")
+		logger.Info("dispatched credential to skill", zap.String("key", p.Name), zap.Bool("present", found && val != ""))
+		return nil
+	})
+
 	bus.Subscribe(eventbus.ConfigChanged, func(_ context.Context, evt eventbus.Event) error {
 		p, ok := evt.Payload.(eventbus.ConfigChangedPayload)
 		if !ok {

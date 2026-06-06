@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/iulita-ai/iulita/internal/domain"
 	"github.com/iulita-ai/iulita/internal/llm"
 	"github.com/iulita-ai/iulita/internal/skill"
 	"github.com/iulita-ai/iulita/internal/storage"
@@ -51,9 +52,10 @@ func (s *ListInsightsSkill) Execute(ctx context.Context, raw json.RawMessage) (s
 		return "", fmt.Errorf("invalid input: %w", err)
 	}
 
+	userID := skill.UserIDFrom(ctx)
 	chatID := skill.ChatIDFrom(ctx)
-	if chatID == "" {
-		return "", fmt.Errorf("chat ID not available in context")
+	if userID == "" && chatID == "" {
+		return "", fmt.Errorf("no user or chat ID available in context")
 	}
 
 	limit := in.Limit
@@ -61,7 +63,15 @@ func (s *ListInsightsSkill) Execute(ctx context.Context, raw json.RawMessage) (s
 		limit = 10
 	}
 
-	insights, err := s.store.GetRecentInsights(ctx, chatID, limit)
+	// Prefer user-scoped insights: generated insights are stored with
+	// user_id set and chat_id empty, so a chat-scoped query misses them.
+	var insights []domain.Insight
+	var err error
+	if userID != "" {
+		insights, err = s.store.GetRecentInsightsByUser(ctx, userID, limit)
+	} else {
+		insights, err = s.store.GetRecentInsights(ctx, chatID, limit)
+	}
 	if err != nil {
 		return "", fmt.Errorf("listing insights: %w", err)
 	}
