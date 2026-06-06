@@ -279,6 +279,7 @@ type SkillsConfig struct {
 type SelfImproveConfig struct {
 	Enabled             bool `koanf:"enabled"`
 	ComplexityThreshold int  `koanf:"complexity_threshold"` // min tool-executing iterations in a turn to trigger a review
+	ProposeSkills       bool `koanf:"propose_skills"`       // also draft skill proposals (inert, human-approved) from reviews
 }
 
 // ExternalSkillsConfig controls external skill downloading, installation, and isolation.

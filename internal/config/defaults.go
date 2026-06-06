@@ -65,6 +65,7 @@ func DefaultConfig(paths *Paths) *Config {
 			SelfImprove: SelfImproveConfig{
 				Enabled:             false,
 				ComplexityThreshold: 5,
+				ProposeSkills:       false,
 			},
 			External: ExternalSkillsConfig{
 				Enabled:      true,

@@ -12,6 +12,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/config"
 	"github.com/iulita-ai/iulita/internal/domain"
 	"github.com/iulita-ai/iulita/internal/llm"
+	"github.com/iulita-ai/iulita/internal/skillmgr"
 	"github.com/iulita-ai/iulita/internal/storage"
 )
 
@@ -112,7 +113,97 @@ func (h *SkillReviewHandler) Handle(ctx context.Context, payload string) (string
 		zap.String("chat_id", p.ChatID),
 		zap.Int64("insight_id", insight.ID))
 
-	return `{"reviewed":1,"lesson_saved":1}`, nil
+	proposed := 0
+	if h.cfg.ProposeSkills {
+		if h.maybeProposeSkill(ctx, p, transcript, lesson) {
+			proposed = 1
+		}
+	}
+
+	return fmt.Sprintf(`{"reviewed":1,"lesson_saved":1,"proposed":%d}`, proposed), nil
+}
+
+// proposedSkill is the JSON contract the reviewer LLM returns for a draft.
+type proposedSkill struct {
+	Slug        string   `json:"slug"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Triggers    []string `json:"triggers"`
+	Body        string   `json:"body"`
+}
+
+// maybeProposeSkill asks the LLM whether the turn generalizes into a reusable
+// text-only skill, scans the draft, and persists it as an INERT proposal (never
+// registered or injected). Returns true if a proposal row was written.
+func (h *SkillReviewHandler) maybeProposeSkill(ctx context.Context, p skillReviewPayload, transcript, lesson string) bool {
+	resp, err := h.provider.Complete(ctx, llm.Request{
+		SystemPrompt: "You decide whether a conversation reveals a reusable, well-scoped PROCEDURE worth saving as a " +
+			"lightweight text-only skill (instructions only, no code). Only propose one if it is genuinely reusable and " +
+			"specific. Respond with EXACTLY " + reviewNoLesson + " if not. Otherwise respond with ONLY a JSON object: " +
+			`{"slug":"kebab-case-id","name":"Short Name","description":"one line","triggers":["specific","keywords"],"body":"concise instructions"}. ` +
+			"Triggers must be specific keywords (not generic words like 'help' or 'do'); at most 4. Body under 1500 characters.",
+		Message:   "Lesson: " + lesson + "\n\nTranscript:\n" + transcript,
+		RouteHint: llm.RouteHintCheap,
+	})
+	if err != nil {
+		h.logger.Warn("skill proposal LLM call failed", zap.Error(err))
+		return false
+	}
+
+	raw := strings.TrimSpace(resp.Content)
+	if raw == "" || strings.EqualFold(raw, reviewNoLesson) {
+		return false
+	}
+	raw = stripJSONFence(raw)
+
+	var draft proposedSkill
+	if err := json.Unmarshal([]byte(raw), &draft); err != nil {
+		h.logger.Warn("skill proposal parse failed", zap.Error(err))
+		return false
+	}
+
+	warnings, blocked := skillmgr.ScanAuthoredSkill(draft.Slug, draft.Name, draft.Body, draft.Triggers)
+	status := domain.SkillProposalPending
+	if blocked {
+		status = domain.SkillProposalRejected
+	}
+	warnJSON, mErr := json.Marshal(warnings)
+	if mErr != nil {
+		warnJSON = []byte("[]")
+	}
+
+	proposal := &domain.SkillProposal{
+		ChatID:          p.ChatID,
+		UserID:          p.UserID,
+		Slug:            draft.Slug,
+		Name:            draft.Name,
+		Description:     draft.Description,
+		Body:            strings.TrimSpace(draft.Body),
+		Triggers:        strings.Join(draft.Triggers, ","),
+		Warnings:        string(warnJSON),
+		Status:          status,
+		SourceMessageID: p.LastMessageID,
+		CreatedAt:       time.Now(),
+	}
+	if err := h.store.SaveSkillProposal(ctx, proposal); err != nil {
+		h.logger.Warn("saving skill proposal failed", zap.Error(err))
+		return false
+	}
+
+	h.logger.Info("recorded skill proposal",
+		zap.String("slug", draft.Slug),
+		zap.String("status", status),
+		zap.Int("warnings", len(warnings)))
+	return true
+}
+
+// stripJSONFence removes a leading/trailing ```json ... ``` fence if present.
+func stripJSONFence(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.TrimPrefix(s, "```json")
+	s = strings.TrimPrefix(s, "```")
+	s = strings.TrimSuffix(s, "```")
+	return strings.TrimSpace(s)
 }
 
 // renderTranscript turns chat messages into a compact role-tagged transcript.
