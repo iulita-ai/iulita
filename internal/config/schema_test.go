@@ -220,7 +220,9 @@ func TestRoutingLightKeys_WiredEndToEnd(t *testing.T) {
 	}
 	// structToMap must carry them so GetBaseValue/dashboard show real defaults.
 	m := structToMap(DefaultConfig(testPaths(t)))
-	if _, ok := m["routing.light_enabled"]; !ok {
-		t.Error("structToMap missing routing.light_enabled")
+	for _, k := range []string{"routing.light_enabled", "routing.light_provider"} {
+		if _, ok := m[k]; !ok {
+			t.Errorf("structToMap missing %q", k)
+		}
 	}
 }

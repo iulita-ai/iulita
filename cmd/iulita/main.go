@@ -654,19 +654,16 @@ func main() {
 		// light-task provider. Defaults to "claude-haiku" to preserve prior
 		// behavior; when disabled or the provider is missing, light tasks fall
 		// through to the default provider.
-		lightProviderName := cfg.Routing.LightProvider
-		if lightProviderName == "" {
-			lightProviderName = "claude-haiku"
-		}
+		name, lightProv, set := resolveLightRoute(cfg.Routing.LightEnabled, cfg.Routing.LightProvider, providerMap)
 		switch {
 		case !cfg.Routing.LightEnabled:
 			logger.Info("light-task routing disabled; cheap tasks use the default provider")
-		case providerMap[lightProviderName] != nil:
-			routes[llm.RouteHintCheap] = providerMap[lightProviderName]
-			logger.Info("light-task provider configured", zap.String("provider", lightProviderName))
+		case set:
+			routes[llm.RouteHintCheap] = lightProv
+			logger.Info("light-task provider configured", zap.String("provider", name))
 		default:
 			logger.Warn("routing.light_provider not available; light tasks use the default provider",
-				zap.String("requested", lightProviderName))
+				zap.String("requested", name))
 		}
 		// Honor routing.default_provider so the dashboard/config can switch the
 		// default LLM (e.g. claude -> deepseek) without removing the other's key.
@@ -1806,6 +1803,26 @@ func backfillEmbeddings(ctx context.Context, store *sqlite.Store, embedder llm.E
 
 // registerConfigReload subscribes to config.changed events and applies runtime updates.
 // Core keys have explicit handlers; skill keys are dispatched to the registry.
+// resolveLightRoute decides the provider for the "light" (cheap-task) route.
+// Shared by the startup wiring and the hot-reload handler so the decision lives
+// in one tested place. Returns the resolved provider name (for logging), the
+// provider, and set=true only when the route should be installed; set=false
+// means "no light route" (disabled or provider not registered) so light tasks
+// fall through to the default provider. An empty name defaults to "claude-haiku".
+func resolveLightRoute(enabled bool, providerName string, providerMap map[string]llm.Provider) (name string, provider llm.Provider, set bool) {
+	name = providerName
+	if name == "" {
+		name = "claude-haiku"
+	}
+	if !enabled {
+		return name, nil, false
+	}
+	if p := providerMap[name]; p != nil {
+		return name, p, true
+	}
+	return name, nil, false
+}
+
 func registerConfigReload(bus *eventbus.Bus, cfgStore *config.Store, asst *assistant.Assistant, skillReviewHandler *handlers.SkillReviewHandler, store *sqlite.Store, registry *skill.Registry, claudeProvider *claude.Provider, deepseekProvider *deepseekllm.Provider, routingProvider *llm.RoutingProvider, providerMap map[string]llm.Provider, extMgr *skillmgr.Manager, logger *zap.Logger) {
 	// Bridge credential changes to skills. Credential-backed skill secrets (e.g.
 	// skills.todoist.api_token) live only in the credentials table, so the
@@ -1937,23 +1954,21 @@ func registerConfigReload(bus *eventbus.Bus, cfgStore *config.Store, asst *assis
 				lightEnabled = strings.EqualFold(v, "true")
 			}
 			lightName := base.LightProvider
-			if lightName == "" {
-				lightName = "claude-haiku"
-			}
 			if v, ok := cfgStore.Get("routing.light_provider"); ok && v != "" {
 				lightName = v
 			}
+			name, lightProv, set := resolveLightRoute(lightEnabled, lightName, providerMap)
 			switch {
 			case !lightEnabled:
 				routingProvider.SetRoute(llm.RouteHintCheap, nil)
 				logger.Info("light-task routing disabled; cheap tasks use the default provider")
-			case providerMap[lightName] != nil:
-				routingProvider.SetRoute(llm.RouteHintCheap, providerMap[lightName])
-				logger.Info("hot-reloaded light-task provider", zap.String("provider", lightName))
+			case set:
+				routingProvider.SetRoute(llm.RouteHintCheap, lightProv)
+				logger.Info("hot-reloaded light-task provider", zap.String("provider", name))
 			default:
 				routingProvider.SetRoute(llm.RouteHintCheap, nil)
 				logger.Warn("routing.light_provider not available; light tasks use the default provider",
-					zap.String("requested", lightName))
+					zap.String("requested", name))
 			}
 
 		case "skills.memory.half_life_days":
