@@ -191,14 +191,22 @@ func TestBuildMessages_NoReasoningOnPlainHistory(t *testing.T) {
 }
 
 func TestBuildToolChoice(t *testing.T) {
-	if buildToolChoice(llm.Request{}) != nil {
+	// Non-thinking model: no force -> nil; force -> named function.
+	if buildToolChoice(llm.Request{}, "deepseek-chat") != nil {
 		t.Error("expected nil tool choice by default")
 	}
-	tc := buildToolChoice(llm.Request{ForceTool: "weather"})
+	tc := buildToolChoice(llm.Request{ForceTool: "weather"}, "deepseek-chat")
 	b, _ := json.Marshal(tc)
 	want := `{"function":{"name":"weather"},"type":"function"}`
 	if string(b) != want {
 		t.Errorf("forced tool choice = %s, want %s", b, want)
+	}
+
+	// Thinking models reject a forced named tool_choice -> must fall back to auto (nil).
+	for _, m := range []string{"deepseek-v4-pro", "deepseek-v4-flash", "deepseek-reasoner"} {
+		if got := buildToolChoice(llm.Request{ForceTool: "weather"}, m); got != nil {
+			t.Errorf("thinking model %q: forced tool choice = %v, want nil (auto)", m, got)
+		}
 	}
 }
 

@@ -193,7 +193,7 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 		Messages:   buildMessages(req),
 		MaxTokens:  maxTok,
 		Tools:      buildToolDefs(req.Tools),
-		ToolChoice: buildToolChoice(req),
+		ToolChoice: buildToolChoice(req, model),
 		Stream:     false,
 	})
 	if err != nil {
@@ -260,7 +260,7 @@ func (p *Provider) CompleteStream(ctx context.Context, req llm.Request, callback
 		Messages:      buildMessages(req),
 		MaxTokens:     maxTok,
 		Tools:         buildToolDefs(req.Tools),
-		ToolChoice:    buildToolChoice(req),
+		ToolChoice:    buildToolChoice(req, model),
 		Stream:        true,
 		StreamOptions: &streamOptions{IncludeUsage: true}, // emit a final usage chunk
 	})
@@ -480,14 +480,27 @@ func ensureObjectType(schema json.RawMessage) json.RawMessage {
 	return patched
 }
 
-func buildToolChoice(req llm.Request) any {
-	if req.ForceTool != "" {
-		return map[string]any{
-			"type":     "function",
-			"function": map[string]any{"name": req.ForceTool},
-		}
+// isThinkingModel reports whether a DeepSeek model runs in "thinking" mode.
+// V4 models (deepseek-v4-flash/-pro) and the reasoner are thinking models.
+func isThinkingModel(model string) bool {
+	m := strings.ToLower(model)
+	return strings.Contains(m, "v4") || strings.Contains(m, "reasoner") || strings.Contains(m, "think")
+}
+
+func buildToolChoice(req llm.Request, model string) any {
+	if req.ForceTool == "" {
+		return nil // defaults to "auto" server-side
 	}
-	return nil // defaults to "auto" server-side
+	// Thinking models reject a forced named tool_choice ("Thinking mode does not
+	// support this tool_choice"). Fall back to auto — the tool is still offered,
+	// the model just isn't forced to call it.
+	if isThinkingModel(model) {
+		return nil
+	}
+	return map[string]any{
+		"type":     "function",
+		"function": map[string]any{"name": req.ForceTool},
+	}
 }
 
 // mapUsage maps DeepSeek usage to llm.Usage.
