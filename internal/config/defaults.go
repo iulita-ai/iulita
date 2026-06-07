@@ -109,6 +109,8 @@ func DefaultConfig(paths *Paths) *Config {
 		},
 		Routing: RoutingConfig{
 			DefaultProvider: "claude",
+			LightProvider:   "claude-haiku",
+			LightEnabled:    true,
 		},
 		Cache: CacheConfig{
 			ResponseTTL:       "60m",

@@ -193,3 +193,34 @@ func TestIsRestartOnlyKey(t *testing.T) {
 		}
 	}
 }
+
+// TestRoutingLightKeys_WiredEndToEnd guards the light-task routing config:
+// the keys must be saveable (coreKeys), present in the schema, and defaults
+// must preserve prior behavior (light routing on, claude-haiku).
+func TestRoutingLightKeys_WiredEndToEnd(t *testing.T) {
+	for _, k := range []string{"routing.light_provider", "routing.light_enabled"} {
+		if !coreKeys[k] {
+			t.Errorf("coreKeys missing %q (dashboard save would be rejected)", k)
+		}
+	}
+	have := map[string]bool{}
+	for _, sec := range CoreConfigSchema() {
+		for _, f := range sec.Fields {
+			have[f.Key] = true
+		}
+	}
+	for _, k := range []string{"routing.light_provider", "routing.light_enabled"} {
+		if !have[k] {
+			t.Errorf("schema missing %q (won't appear in System Configuration)", k)
+		}
+	}
+	d := DefaultConfig(testPaths(t)).Routing
+	if !d.LightEnabled || d.LightProvider != "claude-haiku" {
+		t.Errorf("defaults changed prior behavior: enabled=%v provider=%q", d.LightEnabled, d.LightProvider)
+	}
+	// structToMap must carry them so GetBaseValue/dashboard show real defaults.
+	m := structToMap(DefaultConfig(testPaths(t)))
+	if _, ok := m["routing.light_enabled"]; !ok {
+		t.Error("structToMap missing routing.light_enabled")
+	}
+}

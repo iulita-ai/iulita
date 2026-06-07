@@ -262,15 +262,15 @@ func TestRunnerProfileRouteHint(t *testing.T) {
 	runner := NewRunner(provider, newTestRegistry(), nil, nil, "chat1", zap.NewNop())
 	result := runner.Run(context.Background(), AgentSpec{
 		ID:   "test",
-		Type: AgentTypeSummarizer, // profile has RouteHint: "claude-haiku"
+		Type: AgentTypeSummarizer, // profile has RouteHint: llm.RouteHintCheap
 		Task: "summarize this",
 	}, Budget{}, nil)
 
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
-	if capturedHint != "claude-haiku" {
-		t.Errorf("RouteHint = %q, want %q", capturedHint, "claude-haiku")
+	if capturedHint != llm.RouteHintCheap {
+		t.Errorf("RouteHint = %q, want %q", capturedHint, llm.RouteHintCheap)
 	}
 }
 

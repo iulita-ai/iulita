@@ -36,10 +36,16 @@ func (p *RoutingProvider) SetDefault(provider Provider) {
 	p.mu.Unlock()
 }
 
-func (p *RoutingProvider) getDefault() Provider {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.defaultProvider
+// SetRoute adds, updates, or removes a named route at runtime (thread-safe).
+// A nil provider removes the route so the hint falls through to the default.
+func (p *RoutingProvider) SetRoute(hint string, provider Provider) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if provider == nil {
+		delete(p.providers, hint)
+		return
+	}
+	p.providers[hint] = provider
 }
 
 // Complete routes the request based on RouteHint or message prefix.
@@ -57,8 +63,13 @@ func (p *RoutingProvider) CompleteStream(ctx context.Context, req Request, callb
 	return provider.Complete(ctx, modReq)
 }
 
-// resolveProvider determines which provider to use and returns a potentially modified request.
+// resolveProvider determines which provider to use and returns a potentially
+// modified request. Holds the read lock for the whole lookup so a concurrent
+// SetRoute/SetDefault cannot race the providers map or default.
 func (p *RoutingProvider) resolveProvider(req Request) (Provider, Request) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
 	// Check RouteHint first.
 	if req.RouteHint != "" {
 		if provider, ok := p.providers[req.RouteHint]; ok {
@@ -83,5 +94,5 @@ func (p *RoutingProvider) resolveProvider(req Request) (Provider, Request) {
 		}
 	}
 
-	return p.getDefault(), req
+	return p.defaultProvider, req
 }

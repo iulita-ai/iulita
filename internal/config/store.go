@@ -230,6 +230,8 @@ var coreKeys = map[string]bool{
 	"routing.classification_enabled":  true,
 	"routing.classification_provider": true,
 	"routing.max_actions_per_hour":    true,
+	"routing.light_provider":          true,
+	"routing.light_enabled":           true,
 	"cache.response_enabled":          true,
 	"cache.response_ttl":              true,
 	"cache.response_max_items":        true,

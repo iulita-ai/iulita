@@ -151,6 +151,8 @@ func CoreConfigSchema() []ConfigSection {
 				{Key: "routing.classification_enabled", Label: "Auto-Classification", Description: "Automatically classify queries (requires Ollama)", Type: FieldBool, Default: "false", Section: "routing"},
 				{Key: "routing.classification_provider", Label: "Classification Provider", Description: "Provider for query classification", Type: FieldSelect, Options: []string{"claude", "ollama"}, Section: "routing"},
 				{Key: "routing.max_actions_per_hour", Label: "Max Actions/Hour", Description: "Global action rate limit (0 = unlimited)", Type: FieldInt, Default: "0", Section: "routing"},
+				{Key: "routing.light_enabled", Label: "Light-Task Routing", Description: "Route cheap/background tasks (heartbeat, compression, recall, summaries) to a separate provider. When off, they use the default provider.", Type: FieldBool, Default: "true", Section: "routing"},
+				{Key: "routing.light_provider", Label: "Light-Task Provider", Description: "Provider for cheap/background tasks. Uses that provider's configured model. Falls back to the default provider if unavailable.", Type: FieldSelect, Default: "claude-haiku", Options: []string{"claude-haiku", "claude", "openai", "deepseek", "ollama"}, Section: "routing"},
 			},
 		},
 		{

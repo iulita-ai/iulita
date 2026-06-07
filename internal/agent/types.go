@@ -3,6 +3,8 @@ package agent
 import (
 	"errors"
 	"time"
+
+	"github.com/iulita-ai/iulita/internal/llm"
 )
 
 // AgentType identifies a predefined sub-agent persona.
@@ -129,7 +131,7 @@ func Profiles() map[AgentType]AgentTypeProfile {
 		},
 		AgentTypeSummarizer: {
 			SystemPrompt: "You are a summarization sub-agent. Condense the provided input to its essential points. Use bullet points. Maximum 300 words unless instructed otherwise.",
-			RouteHint:    "claude-haiku",
+			RouteHint:    llm.RouteHintCheap,
 		},
 		AgentTypeGeneric: {
 			SystemPrompt: "You are a general-purpose sub-agent. Complete the given task efficiently and concisely.",

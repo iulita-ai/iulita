@@ -624,8 +624,9 @@ func main() {
 			providerMap["claude"] = llmProvider
 		}
 		if claudeHaikuProvider != nil {
+			// Selectable as a light-task provider; the "light" route is wired
+			// below from cfg.Routing.LightProvider, not hardcoded here.
 			providerMap["claude-haiku"] = claudeHaikuProvider
-			routes["claude-haiku"] = claudeHaikuProvider
 		}
 		if openaiProvider != nil {
 			providerMap["openai"] = openaiProvider
@@ -648,6 +649,24 @@ func main() {
 			if p, ok := providerMap[route.Provider]; ok {
 				routes[route.Hint] = p
 			}
+		}
+		// Wire the semantic "light" route (RouteHintCheap) to the configured
+		// light-task provider. Defaults to "claude-haiku" to preserve prior
+		// behavior; when disabled or the provider is missing, light tasks fall
+		// through to the default provider.
+		lightProviderName := cfg.Routing.LightProvider
+		if lightProviderName == "" {
+			lightProviderName = "claude-haiku"
+		}
+		switch {
+		case !cfg.Routing.LightEnabled:
+			logger.Info("light-task routing disabled; cheap tasks use the default provider")
+		case providerMap[lightProviderName] != nil:
+			routes[llm.RouteHintCheap] = providerMap[lightProviderName]
+			logger.Info("light-task provider configured", zap.String("provider", lightProviderName))
+		default:
+			logger.Warn("routing.light_provider not available; light tasks use the default provider",
+				zap.String("requested", lightProviderName))
 		}
 		// Honor routing.default_provider so the dashboard/config can switch the
 		// default LLM (e.g. claude -> deepseek) without removing the other's key.
@@ -1904,6 +1923,37 @@ func registerConfigReload(bus *eventbus.Bus, cfgStore *config.Store, asst *assis
 			} else {
 				logger.Warn("routing.default_provider not available; unchanged",
 					zap.String("requested", name))
+			}
+
+		case "routing.light_provider", "routing.light_enabled":
+			// Live-update which provider handles light/cheap tasks (or disable it).
+			if routingProvider == nil {
+				logger.Warn("routing.light_* changed but routing is inactive (single provider); restart after configuring a second provider")
+				break
+			}
+			base := cfgStore.Base().Routing
+			lightEnabled := base.LightEnabled
+			if v, ok := cfgStore.Get("routing.light_enabled"); ok {
+				lightEnabled = strings.EqualFold(v, "true")
+			}
+			lightName := base.LightProvider
+			if lightName == "" {
+				lightName = "claude-haiku"
+			}
+			if v, ok := cfgStore.Get("routing.light_provider"); ok && v != "" {
+				lightName = v
+			}
+			switch {
+			case !lightEnabled:
+				routingProvider.SetRoute(llm.RouteHintCheap, nil)
+				logger.Info("light-task routing disabled; cheap tasks use the default provider")
+			case providerMap[lightName] != nil:
+				routingProvider.SetRoute(llm.RouteHintCheap, providerMap[lightName])
+				logger.Info("hot-reloaded light-task provider", zap.String("provider", lightName))
+			default:
+				routingProvider.SetRoute(llm.RouteHintCheap, nil)
+				logger.Warn("routing.light_provider not available; light tasks use the default provider",
+					zap.String("requested", lightName))
 			}
 
 		case "skills.memory.half_life_days":

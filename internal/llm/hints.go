@@ -1,6 +1,8 @@
 package llm
 
-// RouteHintCheap routes to the cheapest available provider (claude-haiku when
-// Claude is the primary provider). Falls back to the default provider silently
-// if the hint is not registered in the RoutingProvider.
-const RouteHintCheap = "claude-haiku"
+// RouteHintCheap is the semantic route for light/cheap tasks (background jobs,
+// context compression, recall/summarizer synthesis). It maps to the provider
+// configured via routing.light_provider (default: "claude-haiku"). If the
+// "light" route is not registered (light routing disabled or provider missing),
+// requests fall through to the default provider silently.
+const RouteHintCheap = "light"

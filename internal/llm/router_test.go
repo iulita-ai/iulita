@@ -59,3 +59,37 @@ func TestRoutingProvider_SetDefaultRace(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestRoutingProvider_SetRoute(t *testing.T) {
+	def := stubProvider{name: "default"}
+	light := stubProvider{name: "light-provider"}
+	r := NewRoutingProvider(def, nil)
+
+	// Before SetRoute: the hint falls through to the default.
+	if got, _ := r.Complete(context.Background(), Request{RouteHint: "light"}); got.Provider != "default" {
+		t.Errorf("before SetRoute: routed to %q, want default", got.Provider)
+	}
+	// After SetRoute: routes to the registered provider.
+	r.SetRoute("light", light)
+	if got, _ := r.Complete(context.Background(), Request{RouteHint: "light"}); got.Provider != "light-provider" {
+		t.Errorf("after SetRoute: routed to %q, want light-provider", got.Provider)
+	}
+	// SetRoute(hint, nil) removes the route → back to default.
+	r.SetRoute("light", nil)
+	if got, _ := r.Complete(context.Background(), Request{RouteHint: "light"}); got.Provider != "default" {
+		t.Errorf("after SetRoute(nil): routed to %q, want default", got.Provider)
+	}
+}
+
+func TestRoutingProvider_SetRouteRace(t *testing.T) {
+	r := NewRoutingProvider(stubProvider{name: "default"}, nil)
+	p := stubProvider{name: "light-provider"}
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(3)
+		go func() { defer wg.Done(); r.SetRoute("light", p) }()
+		go func() { defer wg.Done(); r.SetRoute("light", nil) }()
+		go func() { defer wg.Done(); _, _ = r.Complete(context.Background(), Request{RouteHint: "light"}) }()
+	}
+	wg.Wait()
+}

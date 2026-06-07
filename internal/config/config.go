@@ -77,6 +77,13 @@ type RoutingConfig struct {
 	ClassificationEnabled  bool          `koanf:"classification_enabled"`
 	ClassificationProvider string        `koanf:"classification_provider"` // provider for query classification (e.g. "ollama")
 	MaxActionsPerHour      int           `koanf:"max_actions_per_hour"`    // global action rate limit (0 = unlimited)
+	// LightProvider is the provider name for cheap/background tasks (heartbeat,
+	// context compression, recall/summarizer synthesis). Default "claude-haiku".
+	// If the named provider isn't registered, light tasks fall through to the default.
+	LightProvider string `koanf:"light_provider"`
+	// LightEnabled toggles light-task routing. When false, all tasks use the
+	// default provider. Default true (preserves prior behavior).
+	LightEnabled bool `koanf:"light_enabled"`
 }
 
 // RouteConfig maps a hint to a specific provider.
@@ -534,6 +541,8 @@ func structToMap(cfg *Config) map[string]interface{} {
 
 	// Routing
 	m["routing.default_provider"] = cfg.Routing.DefaultProvider
+	m["routing.light_provider"] = cfg.Routing.LightProvider
+	m["routing.light_enabled"] = cfg.Routing.LightEnabled
 
 	// External skills
 	m["skills.external.enabled"] = cfg.Skills.External.Enabled
