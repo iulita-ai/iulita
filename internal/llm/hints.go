@@ -6,3 +6,9 @@ package llm
 // "light" route is not registered (light routing disabled or provider missing),
 // requests fall through to the default provider silently.
 const RouteHintCheap = "light"
+
+// RouteHintVision routes a request that carries image attachments to a
+// vision-capable provider (e.g. Claude). The default provider (e.g. DeepSeek)
+// may not support images and would silently drop them. Falls through to the
+// default provider if no "vision" route is registered.
+const RouteHintVision = "vision"

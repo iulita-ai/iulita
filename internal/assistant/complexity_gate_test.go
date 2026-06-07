@@ -8,6 +8,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/iulita-ai/iulita/internal/channel"
 	"github.com/iulita-ai/iulita/internal/llm"
 	"github.com/iulita-ai/iulita/internal/skill"
 	"github.com/iulita-ai/iulita/internal/storage"
@@ -177,5 +178,26 @@ func TestComplexityGate_DisabledNoTask(t *testing.T) {
 
 	if n := countReviewTasks(t, store); n != 0 {
 		t.Fatalf("expected no skill.review task when disabled, got %d", n)
+	}
+}
+
+// TestVisionRouting_ImageMessageRoutedToVision verifies an image-bearing turn
+// sets RouteHint=vision so it reaches a vision-capable provider instead of the
+// default (which may drop images).
+func TestVisionRouting_ImageMessageRoutedToVision(t *testing.T) {
+	var capturedHint string
+	provider := &funcProvider{fn: func(_ context.Context, req llm.Request) (llm.Response, error) {
+		capturedHint = req.RouteHint
+		return llm.Response{Content: "a tree", Usage: llm.Usage{InputTokens: 1, OutputTokens: 1}}, nil
+	}}
+	asst := New(provider, newSynthTestStore(t), skill.NewRegistry(), "test", "", 200000, zap.NewNop())
+
+	msg := newTestMsg("chat1", "what is this?")
+	msg.Images = []channel.ImageAttachment{{Data: []byte{0x1, 0x2, 0x3}, MediaType: "image/jpeg"}}
+	if _, err := asst.HandleMessage(context.Background(), msg); err != nil {
+		t.Fatalf("HandleMessage: %v", err)
+	}
+	if capturedHint != llm.RouteHintVision {
+		t.Errorf("RouteHint = %q, want %q", capturedHint, llm.RouteHintVision)
 	}
 }

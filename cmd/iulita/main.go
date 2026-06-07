@@ -665,6 +665,14 @@ func main() {
 			logger.Warn("routing.light_provider not available; light tasks use the default provider",
 				zap.String("requested", name))
 		}
+		// Route image-bearing turns to a vision-capable provider so attachments
+		// aren't dropped when the default provider (e.g. DeepSeek) lacks vision.
+		if vname, vprov := pickVisionProvider(providerMap); vprov != nil {
+			routes[llm.RouteHintVision] = vprov
+			logger.Info("vision provider configured", zap.String("provider", vname))
+		} else {
+			logger.Warn("no vision-capable provider registered; image messages will be dropped by the default provider")
+		}
 		// Honor routing.default_provider so the dashboard/config can switch the
 		// default LLM (e.g. claude -> deepseek) without removing the other's key.
 		// Falls back to the build-order primary when unset/unknown.
@@ -1821,6 +1829,22 @@ func resolveLightRoute(enabled bool, providerName string, providerMap map[string
 		return name, p, true
 	}
 	return name, nil, false
+}
+
+// visionProviderPreference lists registered provider names that can accept image
+// attachments, best first. Claude (full + haiku) sends image blocks; DeepSeek,
+// OpenAI (lightweight provider) and Ollama here do not.
+var visionProviderPreference = []string{"claude", "claude-haiku"}
+
+// pickVisionProvider returns the best available vision-capable provider for the
+// "vision" route, or ("", nil) if none is registered.
+func pickVisionProvider(providerMap map[string]llm.Provider) (string, llm.Provider) {
+	for _, name := range visionProviderPreference {
+		if p := providerMap[name]; p != nil {
+			return name, p
+		}
+	}
+	return "", nil
 }
 
 func registerConfigReload(bus *eventbus.Bus, cfgStore *config.Store, asst *assistant.Assistant, skillReviewHandler *handlers.SkillReviewHandler, store *sqlite.Store, registry *skill.Registry, claudeProvider *claude.Provider, deepseekProvider *deepseekllm.Provider, routingProvider *llm.RoutingProvider, providerMap map[string]llm.Provider, extMgr *skillmgr.Manager, logger *zap.Logger) {

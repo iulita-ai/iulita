@@ -498,6 +498,12 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 		if i > 0 {
 			req.ForceTool = ""
 		}
+		// Route image-bearing turns to a vision-capable provider — the default
+		// provider (e.g. DeepSeek) may silently drop images. Wins over any
+		// synthesis hint since the request still carries the images.
+		if len(req.Images) > 0 {
+			req.RouteHint = llm.RouteHintVision
+		}
 		// Inject ledger summary into dynamic system prompt for subsequent iterations.
 		if summary := ledger.Summary(); summary != "" {
 			req.SystemPrompt = dynamicPrompt + "\n\n## Exploration Ledger\n" + summary

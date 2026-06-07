@@ -68,3 +68,21 @@ func TestResolveLightRoute_RoundTrip(t *testing.T) {
 		t.Fatal("re-enable: expected set=true with provider")
 	}
 }
+
+func TestPickVisionProvider(t *testing.T) {
+	claude := stubLLM{name: "claude"}
+	haiku := stubLLM{name: "claude-haiku"}
+
+	// Prefers full Claude when present.
+	if n, p := pickVisionProvider(map[string]llm.Provider{"claude": claude, "claude-haiku": haiku, "deepseek": stubLLM{}}); n != "claude" || p == nil {
+		t.Errorf("got %q, want claude", n)
+	}
+	// Falls back to haiku.
+	if n, _ := pickVisionProvider(map[string]llm.Provider{"claude-haiku": haiku, "deepseek": stubLLM{}}); n != "claude-haiku" {
+		t.Errorf("got %q, want claude-haiku", n)
+	}
+	// No vision provider → none.
+	if n, p := pickVisionProvider(map[string]llm.Provider{"deepseek": stubLLM{}, "ollama": stubLLM{}}); n != "" || p != nil {
+		t.Errorf("got %q/%v, want empty", n, p)
+	}
+}
