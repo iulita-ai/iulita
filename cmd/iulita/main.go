@@ -59,6 +59,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/skill/orchestrate"
 	"github.com/iulita-ai/iulita/internal/skill/pdfreader"
 	"github.com/iulita-ai/iulita/internal/skill/reminders"
+	"github.com/iulita-ai/iulita/internal/skill/sessionsearch"
 	"github.com/iulita-ai/iulita/internal/skill/shellexec"
 	"github.com/iulita-ai/iulita/internal/skill/skillinfo"
 	tasksskill "github.com/iulita-ai/iulita/internal/skill/tasks"
@@ -779,6 +780,7 @@ func main() {
 	registry.RegisterWithManifest(memory.NewRemember(store), memManifest)
 	registry.RegisterInGroup(memory.NewRecall(store), "memory")
 	registry.RegisterInGroup(memory.NewForget(store), "memory")
+	registry.RegisterInGroup(sessionsearch.New(store), "memory")
 
 	// Insight skills — register with manifest.
 	insightManifest, err := insightskill.LoadManifest()

@@ -42,6 +42,9 @@ type Repository interface {
 	GetHistoryBefore(ctx context.Context, chatID string, beforeID int64, limit int) ([]domain.ChatMessage, error)
 	ClearHistory(ctx context.Context, chatID string) error
 	DeleteMessagesBefore(ctx context.Context, chatID string, beforeID int64) error
+	// Full-text search over chat history (messages_fts). Newest matches first.
+	SearchMessages(ctx context.Context, chatID, query string, limit int) ([]domain.ChatMessage, error)
+	SearchMessagesByUser(ctx context.Context, userID, query string, limit int) ([]domain.ChatMessage, error)
 
 	CreateReminder(ctx context.Context, r *domain.Reminder) error
 	ListReminders(ctx context.Context, chatID string) ([]domain.Reminder, error)

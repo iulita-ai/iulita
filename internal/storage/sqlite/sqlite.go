@@ -314,6 +314,37 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 		}
 	}
 
+	// chat_messages FTS for cross-session message search. Unlike facts/insights,
+	// chat_messages can be very large, so we do NOT drop+rebuild on every start
+	// (that would block startup). Create once, keep in sync via triggers, and
+	// backfill only when the FTS table is empty but messages exist (first run).
+	// Message content is immutable, so no AFTER UPDATE trigger is needed.
+	if _, err := s.db.ExecContext(ctx, `CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(content, content_rowid=id)`); err != nil {
+		return fmt.Errorf("creating messages_fts: %w", err)
+	}
+	for _, t := range []string{
+		`CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON chat_messages BEGIN
+			INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
+		END`,
+		`CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON chat_messages BEGIN
+			DELETE FROM messages_fts WHERE rowid = old.id;
+		END`,
+	} {
+		if _, err := s.db.ExecContext(ctx, t); err != nil {
+			return fmt.Errorf("creating messages_fts trigger: %w", err)
+		}
+	}
+	{
+		var ftsCount, msgCount int
+		ftsErr := s.db.QueryRowContext(ctx, `SELECT count(*) FROM messages_fts`).Scan(&ftsCount)
+		msgErr := s.db.QueryRowContext(ctx, `SELECT count(*) FROM chat_messages`).Scan(&msgCount)
+		if ftsErr == nil && msgErr == nil && ftsCount == 0 && msgCount > 0 {
+			if _, err := s.db.ExecContext(ctx, `INSERT INTO messages_fts(rowid, content) SELECT id, content FROM chat_messages`); err != nil {
+				return fmt.Errorf("backfilling messages_fts: %w", err)
+			}
+		}
+	}
+
 	// Indexes for user-scoped queries.
 	userIndexes := []string{
 		`CREATE INDEX IF NOT EXISTS idx_facts_user ON facts(user_id)`,
