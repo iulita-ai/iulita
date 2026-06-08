@@ -98,6 +98,14 @@ func main() {
 		return
 	}
 
+	// Handle 'download-model [dir] [model]' subcommand — pre-warms the ONNX
+	// embedding model into a directory. Used at image-build time to bake the
+	// model into the container so the first runtime start needs no network.
+	if len(os.Args) > 1 && os.Args[1] == "download-model" {
+		runDownloadModel(os.Args[2:])
+		return
+	}
+
 	// Default mode is console TUI. Use --server (-d) for headless server mode.
 	serverMode := false
 	initMode := false
@@ -2120,6 +2128,34 @@ func parseFloat(s string) (float64, error) {
 	var f float64
 	_, err := fmt.Sscanf(s, "%f", &f)
 	return f, err
+}
+
+// runDownloadModel pre-fetches the ONNX embedding model into a target directory.
+// Usage: iulita download-model [dir] [model]. dir defaults to the resolved
+// ModelsDir; model defaults to the compiled-in default embedding model.
+func runDownloadModel(args []string) {
+	paths := config.ResolvePaths()
+	modelDir := paths.ModelsDir()
+	model := ""
+	if len(args) > 0 && args[0] != "" {
+		modelDir = args[0]
+	}
+	if len(args) > 1 {
+		model = args[1]
+	}
+
+	logger, err := zap.NewDevelopment()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to init logger: %v\n", err)
+		os.Exit(1)
+	}
+
+	_, dlErr := onnx.Download(modelDir, model, logger)
+	logger.Sync() //nolint:errcheck,gosec // stderr/stdout sync error is not actionable here
+	if dlErr != nil {
+		fmt.Fprintf(os.Stderr, "failed to download model: %v\n", dlErr)
+		os.Exit(1)
+	}
 }
 
 func runDoctor() {

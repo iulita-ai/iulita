@@ -31,6 +31,11 @@ RUN CGO_ENABLED=1 go build \
       -X github.com/iulita-ai/iulita/internal/version.Date=${DATE}" \
     -o /iulita ./cmd/iulita/
 
+# Pre-fetch the ONNX embedding model into the image (requires network at build
+# time) so the first runtime start needs no download. Baked OUTSIDE the data
+# volume; consumed read-only via IULITA_MODEL_PRELOAD_DIR in the runtime stage.
+RUN /iulita download-model /opt/iulita/models
+
 # --- Stage 3: Runtime ---
 FROM alpine:3.21
 
@@ -41,6 +46,12 @@ WORKDIR /app
 
 COPY --from=go-builder /iulita /usr/local/bin/iulita
 
+# ONNX embedding model baked into the image (read-only), consumed via
+# IULITA_MODEL_PRELOAD_DIR so startup needs no network and survives an empty
+# data volume / PVC. Lives outside /app/data so the volume mount can't hide it.
+COPY --from=go-builder --chown=iulita:iulita /opt/iulita/models /opt/iulita/models
+ENV IULITA_MODEL_PRELOAD_DIR=/opt/iulita/models
+
 # Default skills directory and example config.
 COPY skills/ ./skills/
 COPY config.toml.example ./config.toml.example
@@ -50,7 +61,8 @@ RUN mkdir -p /app/data && chown iulita:iulita /app/data
 
 USER iulita
 
-# /app/data — SQLite database + ONNX embedding models (downloaded on first run, ~90MB)
+# /app/data — SQLite database (+ ONNX model copy if downloaded at runtime).
+# The embedding model itself is baked into the image at IULITA_MODEL_PRELOAD_DIR.
 VOLUME ["/app/data"]
 
 EXPOSE 8080
