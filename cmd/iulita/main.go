@@ -334,6 +334,16 @@ func main() {
 	if v, ok := cfgStore.GetEffective("cost.enabled"); ok {
 		cfg.Cost.Enabled = strings.EqualFold(v, "true")
 	}
+	// Embedding/hybrid-search config is read once at startup (provider + vector
+	// weight); re-apply dashboard overrides so toggling them takes effect on restart.
+	if v, ok := cfgStore.GetEffective("embedding.provider"); ok {
+		cfg.Embedding.Provider = v
+	}
+	if v, ok := cfgStore.GetEffective("skills.memory.vector_weight"); ok {
+		if f, convErr := strconv.ParseFloat(v, 64); convErr == nil {
+			cfg.Skills.Memory.VectorWeight = f
+		}
+	}
 
 	validateMode := config.ValidateConsole
 	if serverMode {

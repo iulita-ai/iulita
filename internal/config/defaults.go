@@ -44,6 +44,7 @@ func DefaultConfig(paths *Paths) *Config {
 			Memory: MemoryConfig{
 				HalfLifeDays: 30,
 				MMRLambda:    0.7,
+				VectorWeight: 0.5, // balanced hybrid search (0 = pure FTS, 1 = pure vector)
 				Triggers:     []string{"remember", "save this", "note this", "don't forget"},
 				SystemPrompt: defaultMemorySystemPrompt,
 			},

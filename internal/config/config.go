@@ -509,6 +509,7 @@ func structToMap(cfg *Config) map[string]interface{} {
 	m["skills.memory.mmr_lambda"] = cfg.Skills.Memory.MMRLambda
 	m["skills.memory.system_prompt"] = cfg.Skills.Memory.SystemPrompt
 	m["skills.memory.triggers"] = cfg.Skills.Memory.Triggers
+	m["skills.memory.vector_weight"] = cfg.Skills.Memory.VectorWeight
 	m["skills.insights.enabled"] = cfg.Skills.Insights.Enabled
 	m["skills.insights.interval"] = cfg.Skills.Insights.Interval
 	m["skills.insights.min_facts"] = cfg.Skills.Insights.MinFacts
@@ -533,6 +534,7 @@ func structToMap(cfg *Config) map[string]interface{} {
 	m["heartbeat.interval"] = cfg.Heartbeat.Interval
 
 	// Embedding
+	m["embedding.provider"] = cfg.Embedding.Provider
 	m["embedding.model_dir"] = cfg.Embedding.ModelDir
 
 	// Telegram

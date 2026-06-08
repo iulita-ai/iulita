@@ -12,9 +12,8 @@ import (
 // structToMap silently degrades to its Go zero value at runtime on db-managed
 // (no-TOML) installs — see TestStructToMapCoversNonZeroDefaults.
 var structToMapDenylist = map[string]string{
-	"cost.prices":        "map[string]ModelPrice — can't ride a flat koanf layer; cost.New() falls back to DefaultModelPrices()",
-	"deepseek.model":     "applied at startup via the overrideKeys reinject loop (credential/model), not structToMap",
-	"embedding.provider": `opt-in: seeding "onnx" would trigger a ~30MB model download on every startup; enable via dashboard`,
+	"cost.prices":    "map[string]ModelPrice — can't ride a flat koanf layer; cost.New() falls back to DefaultModelPrices()",
+	"deepseek.model": "applied at startup via the overrideKeys reinject loop (credential/model), not structToMap",
 }
 
 // walkNonZeroFields collects dotted koanf-key → value for every non-zero scalar
