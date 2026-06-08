@@ -53,6 +53,29 @@ func TestSessionSearch_Execute(t *testing.T) {
 	}
 }
 
+func TestSessionSearch_ChatFallbackAndNoContext(t *testing.T) {
+	st := newStore(t)
+	ctx := context.Background()
+	_ = st.SaveMessage(ctx, &domain.ChatMessage{ChatID: "c9", UserID: "u9", Role: domain.RoleUser, Content: "deployment notes for staging"})
+
+	sk := New(st)
+
+	// Chat-only context (no resolved user) must fall back to chat-scoped search.
+	chatOnly := skill.WithChatID(ctx, "c9")
+	out, err := sk.Execute(chatOnly, json.RawMessage(`{"query":"deployment"}`))
+	if err != nil {
+		t.Fatalf("chat fallback: %v", err)
+	}
+	if !strings.Contains(out, "deployment") {
+		t.Errorf("chat fallback did not find message: %q", out)
+	}
+
+	// Neither user nor chat in context → error.
+	if _, err := sk.Execute(ctx, json.RawMessage(`{"query":"deployment"}`)); err == nil {
+		t.Error("missing user+chat context should error")
+	}
+}
+
 func TestSessionSearch_SchemaHasObjectType(t *testing.T) {
 	// DeepSeek requires top-level type:object.
 	var m map[string]any

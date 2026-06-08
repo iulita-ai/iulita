@@ -45,6 +45,9 @@ func (s *Store) searchMessages(ctx context.Context, scopeClause, scopeVal, query
 	if limit <= 0 {
 		limit = 20
 	}
+	if limit > 200 {
+		limit = 200 // defensive cap for any direct caller
+	}
 	var msgs []domain.ChatMessage
 	err := s.db.NewSelect().
 		Model(&msgs).

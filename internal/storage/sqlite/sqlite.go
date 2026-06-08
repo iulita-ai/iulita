@@ -319,6 +319,9 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 	// (that would block startup). Create once, keep in sync via triggers, and
 	// backfill only when the FTS table is empty but messages exist (first run).
 	// Message content is immutable, so no AFTER UPDATE trigger is needed.
+	// NOTE: the one-time first-upgrade backfill below is synchronous on the
+	// startup path; acceptable for realistic table sizes. If chat_messages ever
+	// grows to millions of rows, move it to a chunked background job.
 	if _, err := s.db.ExecContext(ctx, `CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(content, content_rowid=id)`); err != nil {
 		return fmt.Errorf("creating messages_fts: %w", err)
 	}

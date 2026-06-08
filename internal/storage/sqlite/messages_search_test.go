@@ -99,3 +99,48 @@ func TestSanitizeFTS5Query(t *testing.T) {
 		}
 	}
 }
+
+// TestMessagesFTS_BackfillOnUpgrade simulates an existing deployment that has
+// messages but no FTS table yet (pre-feature). Re-running migrations must
+// recreate messages_fts and backfill the existing rows so they're searchable.
+func TestMessagesFTS_BackfillOnUpgrade(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	if err := store.SaveMessage(ctx, &domain.ChatMessage{
+		ChatID: "c1", UserID: "u1", Role: domain.RoleUser, Content: "backfill me please",
+	}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	// Drop FTS + triggers to mimic a DB created before this feature existed.
+	for _, stmt := range []string{
+		`DROP TRIGGER IF EXISTS messages_ai`,
+		`DROP TRIGGER IF EXISTS messages_ad`,
+		`DROP TABLE IF EXISTS messages_fts`,
+	} {
+		if _, err := store.db.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("drop: %v", err)
+		}
+	}
+	// Sanity: search is now impossible (no fts table) — re-migrate to recover.
+	if err := store.RunMigrations(ctx); err != nil {
+		t.Fatalf("re-migrate: %v", err)
+	}
+
+	got, err := store.SearchMessages(ctx, "c1", "backfill", 10)
+	if err != nil {
+		t.Fatalf("search after backfill: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 backfilled message, got %d", len(got))
+	}
+
+	// A new message after re-migration is still synced by the recreated trigger.
+	if err := store.SaveMessage(ctx, &domain.ChatMessage{ChatID: "c1", UserID: "u1", Role: domain.RoleUser, Content: "fresh after remigrate"}); err != nil {
+		t.Fatalf("save 2: %v", err)
+	}
+	if got, _ := store.SearchMessages(ctx, "c1", "fresh", 10); len(got) != 1 {
+		t.Fatalf("trigger not re-synced after remigrate, got %d", len(got))
+	}
+}

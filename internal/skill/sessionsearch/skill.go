@@ -14,8 +14,11 @@ import (
 	"github.com/iulita-ai/iulita/internal/storage"
 )
 
-// snippetMax bounds how much of each matched message is shown.
+// snippetMax bounds how much of each matched message is shown (in runes).
 const snippetMax = 240
+
+// maxLimit caps how many matches an LLM-supplied limit can request.
+const maxLimit = 50
 
 // Skill searches the user's chat history full-text.
 type Skill struct {
@@ -83,19 +86,27 @@ func (s *Skill) Execute(ctx context.Context, raw json.RawMessage) (string, error
 	if limit <= 0 {
 		limit = 10
 	}
+	if limit > maxLimit {
+		limit = maxLimit
+	}
 
 	// Prefer cross-session (user-scoped) search; fall back to the current chat
-	// when no user is resolved (single-user installs, older data).
+	// when no user is resolved (single-user installs, older data). A real backend
+	// error is surfaced immediately rather than masked by the fallback.
 	var msgs []domain.ChatMessage
-	var err error
 	if userID != "" {
-		msgs, err = s.store.SearchMessagesByUser(ctx, userID, in.Query, limit)
+		found, err := s.store.SearchMessagesByUser(ctx, userID, in.Query, limit)
+		if err != nil {
+			return "", fmt.Errorf("searching messages: %w", err)
+		}
+		msgs = found
 	}
 	if len(msgs) == 0 && chatID != "" {
-		msgs, err = s.store.SearchMessages(ctx, chatID, in.Query, limit)
-	}
-	if err != nil {
-		return "", fmt.Errorf("searching messages: %w", err)
+		found, err := s.store.SearchMessages(ctx, chatID, in.Query, limit)
+		if err != nil {
+			return "", fmt.Errorf("searching messages: %w", err)
+		}
+		msgs = found
 	}
 	if len(msgs) == 0 {
 		return "No matching messages found in past conversations.", nil
@@ -110,11 +121,12 @@ func (s *Skill) Execute(ctx context.Context, raw json.RawMessage) (string, error
 	return b.String(), nil
 }
 
-// snippet collapses whitespace and truncates a message for display.
+// snippet collapses whitespace and truncates a message for display, cutting on a
+// rune boundary so multibyte (Cyrillic/CJK) content isn't split into invalid UTF-8.
 func snippet(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
-	if len(s) > snippetMax {
-		return s[:snippetMax] + "…"
+	if r := []rune(s); len(r) > snippetMax {
+		return string(r[:snippetMax]) + "…"
 	}
 	return s
 }
