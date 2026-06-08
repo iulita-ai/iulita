@@ -25,8 +25,21 @@ Each sub-agent operates independently with fresh context (no conversation histor
 - `summarizer` — condenses text (uses cheaper model when available)
 - `generic` — general purpose
 
+**Customizing each agent (optional per-agent fields):**
+- `system_prompt` — task-specific instructions or a persona that *refine* the chosen
+  type (impose an output format, tone, constraints, or domain focus the base type
+  doesn't cover). It is appended to the type's prompt — it does NOT replace the type's
+  tools or base behavior. Keep it under ~4000 characters (longer is truncated). Use
+  `generic` + `system_prompt` when you need a blank-slate agent with bespoke instructions.
+- `route_hint` — pick the provider for this agent: `light` for a cheap/fast worker
+  (great for `summarizer` or simple extraction under an expensive orchestrator), or a
+  named provider like `ollama`. Omit to use the default.
+- `tools` — restrict this agent to an explicit allowlist of tool names.
+
 **Important constraints:**
 - Sub-agents cannot spawn further sub-agents (max depth = 1)
 - Maximum 5 agents per orchestration
 - Each agent has a 60-second timeout by default
 - Sub-agents have no access to conversation history
+- `system_prompt` refines the type; it cannot grant tools the type/allowlist excludes,
+  and approval-gated tools (e.g. shell_exec) are never available to sub-agents

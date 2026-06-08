@@ -15,6 +15,10 @@ import (
 	"github.com/iulita-ai/iulita/internal/skill"
 )
 
+// maxSpecSystemPrompt bounds the per-agent custom system prompt (in runes) to
+// keep a runaway parent-generated instruction from blowing up the context.
+const maxSpecSystemPrompt = 4000
+
 // Runner executes a single sub-agent task with a simplified agentic loop.
 // Unlike the main assistant, it has no storage, no history, no compression,
 // no approvals, and no streaming. It runs in a fresh context with only
@@ -81,10 +85,26 @@ func (r *Runner) Run(ctx context.Context, spec AgentSpec, budget Budget, sharedT
 	}
 
 	// Build dynamic system prompt with current time (if available from parent context).
+	// Kept dynamic (not in the cached StaticSystemPrompt) so per-agent custom
+	// instructions don't fragment the prompt cache shared by same-type agents.
 	var dynamicPrompt string
 	if currentTime := CurrentTimeFrom(ctx); currentTime != "" {
 		dynamicPrompt = "## Current Time (IMPORTANT)\n" + currentTime +
 			"\nYou MUST use this exact date and time as the ground truth. NEVER guess or infer the current date."
+	}
+	if custom := clampRunes(spec.SystemPrompt, maxSpecSystemPrompt); custom != "" {
+		if len(custom) < len(spec.SystemPrompt) {
+			r.logger.Warn("sub-agent custom system prompt truncated",
+				zap.String("agent_id", spec.ID),
+				zap.Int("limit_runes", maxSpecSystemPrompt))
+		}
+		r.logger.Debug("sub-agent using custom system prompt",
+			zap.String("agent_id", spec.ID),
+			zap.Int("prompt_runes", len([]rune(custom))))
+		if dynamicPrompt != "" {
+			dynamicPrompt += "\n\n"
+		}
+		dynamicPrompt += "## Task-specific instructions\n" + custom
 	}
 
 	req := llm.Request{
@@ -315,6 +335,19 @@ func (r *Runner) executeTool(ctx context.Context, tc llm.ToolCall) llm.ToolResul
 		ToolCallID: tc.ID,
 		Content:    output,
 	}
+}
+
+// clampRunes truncates s to at most max runes (rune-safe, never splits a
+// multi-byte character). Returns s unchanged when it already fits.
+func clampRunes(s string, limit int) string {
+	if len(s) <= limit { // fast path: byte len <= limit ⇒ rune count <= limit
+		return s
+	}
+	r := []rune(s)
+	if len(r) <= limit {
+		return s
+	}
+	return string(r[:limit])
 }
 
 // emitStatus sends a status event if a notifier is available.

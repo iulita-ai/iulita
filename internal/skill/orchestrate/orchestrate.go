@@ -33,11 +33,12 @@ type orchestrateInput struct {
 }
 
 type agentSpecInput struct {
-	ID        string   `json:"id"`
-	Type      string   `json:"type"`
-	Task      string   `json:"task"`
-	RouteHint string   `json:"route_hint,omitempty"`
-	Tools     []string `json:"tools,omitempty"`
+	ID           string   `json:"id"`
+	Type         string   `json:"type"`
+	Task         string   `json:"task"`
+	RouteHint    string   `json:"route_hint,omitempty"`
+	Tools        []string `json:"tools,omitempty"`
+	SystemPrompt string   `json:"system_prompt,omitempty"`
 }
 
 // Skill implements the orchestrate tool for multi-agent parallel execution.
@@ -147,8 +148,9 @@ func (s *Skill) InputSchema() json.RawMessage {
 						"id":         {"type": "string", "description": "Unique identifier for this agent"},
 						"type":       {"type": "string", "enum": ["researcher","analyst","planner","coder","summarizer","generic"], "description": "Agent type determining its system prompt and available tools"},
 						"task":       {"type": "string", "description": "The specific task for this agent to complete"},
-						"route_hint": {"type": "string", "description": "Optional LLM provider routing hint (e.g. 'ollama')"},
-						"tools":      {"type": "array", "items": {"type": "string"}, "description": "Optional explicit tool allowlist for this agent"}
+						"route_hint": {"type": "string", "description": "Optional LLM provider routing hint (e.g. 'light' for a cheap worker, 'ollama')"},
+						"tools":      {"type": "array", "items": {"type": "string"}, "description": "Optional explicit tool allowlist for this agent"},
+						"system_prompt": {"type": "string", "description": "Optional task-specific instructions/persona for this agent, appended to (not replacing) its type profile prompt. Keep under ~4000 characters; longer is truncated."}
 					},
 					"required": ["id", "type", "task"]
 				},
@@ -181,11 +183,12 @@ func (s *Skill) Execute(ctx context.Context, input json.RawMessage) (string, err
 	specs := make([]agent.AgentSpec, len(inp.Agents))
 	for i, a := range inp.Agents {
 		specs[i] = agent.AgentSpec{
-			ID:        a.ID,
-			Type:      agent.ParseAgentType(a.Type),
-			Task:      a.Task,
-			RouteHint: a.RouteHint,
-			Tools:     a.Tools,
+			ID:           a.ID,
+			Type:         agent.ParseAgentType(a.Type),
+			Task:         a.Task,
+			RouteHint:    a.RouteHint,
+			Tools:        a.Tools,
+			SystemPrompt: a.SystemPrompt,
 		}
 		// Auto-assign ID if empty.
 		if specs[i].ID == "" {

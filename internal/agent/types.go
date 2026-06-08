@@ -76,11 +76,12 @@ func (b Budget) EffectiveMaxAgents() int {
 
 // AgentSpec is a single agent task as provided by the orchestrate skill input.
 type AgentSpec struct { //nolint:revive // agent.AgentSpec is more readable than agent.Spec
-	ID        string    `json:"id"`
-	Type      AgentType `json:"type"`
-	Task      string    `json:"task"`
-	RouteHint string    `json:"route_hint,omitempty"` // optional: routing hint for provider selection
-	Tools     []string  `json:"tools,omitempty"`      // optional: explicit tool name allowlist
+	ID           string    `json:"id"`
+	Type         AgentType `json:"type"`
+	Task         string    `json:"task"`
+	RouteHint    string    `json:"route_hint,omitempty"`    // optional: routing hint for provider selection
+	Tools        []string  `json:"tools,omitempty"`         // optional: explicit tool name allowlist
+	SystemPrompt string    `json:"system_prompt,omitempty"` // optional: task-specific instructions appended to the type profile prompt
 }
 
 // AgentResult holds the outcome of a single sub-agent run.
