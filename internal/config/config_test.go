@@ -3,8 +3,71 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
+
+// structToMapDenylist lists non-zero DefaultConfig fields intentionally absent
+// from structToMap, with the reason. Anything non-zero NOT here AND NOT in
+// structToMap silently degrades to its Go zero value at runtime on db-managed
+// (no-TOML) installs — see TestStructToMapCoversNonZeroDefaults.
+var structToMapDenylist = map[string]string{
+	"cost.prices":        "map[string]ModelPrice — can't ride a flat koanf layer; cost.New() falls back to DefaultModelPrices()",
+	"deepseek.model":     "applied at startup via the overrideKeys reinject loop (credential/model), not structToMap",
+	"embedding.provider": `opt-in: seeding "onnx" would trigger a ~30MB model download on every startup; enable via dashboard`,
+}
+
+// walkNonZeroFields collects dotted koanf-key → value for every non-zero scalar
+// and non-empty slice/map field reachable from v.
+func walkNonZeroFields(v reflect.Value, prefix string, out map[string]struct{}) {
+	t := v.Type()
+	for i := 0; i < t.NumField(); i++ {
+		tag := t.Field(i).Tag.Get("koanf")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		key := tag
+		if prefix != "" {
+			key = prefix + "." + tag
+		}
+		fv := v.Field(i)
+		switch fv.Kind() {
+		case reflect.Struct:
+			walkNonZeroFields(fv, key, out)
+		case reflect.Slice, reflect.Map:
+			if fv.Len() > 0 {
+				out[key] = struct{}{}
+			}
+		default:
+			if !fv.IsZero() {
+				out[key] = struct{}{}
+			}
+		}
+	}
+}
+
+// TestStructToMapCoversNonZeroDefaults guards against the config default-loss
+// bug class: a non-zero DefaultConfig field missing from structToMap unmarshals
+// to its Go zero at runtime (db-managed/no-TOML), silently disabling features
+// (this is what zeroed cost.enabled → $0 cost). Add new non-zero defaults to
+// structToMap, or to structToMapDenylist with a reason.
+func TestStructToMapCoversNonZeroDefaults(t *testing.T) {
+	defaults := DefaultConfig(testPaths(t))
+	sm := structToMap(defaults)
+
+	nonZero := map[string]struct{}{}
+	walkNonZeroFields(reflect.ValueOf(*defaults), "", nonZero)
+
+	for key := range nonZero {
+		if _, ok := sm[key]; ok {
+			continue
+		}
+		if _, ok := structToMapDenylist[key]; ok {
+			continue
+		}
+		t.Errorf("non-zero default %q is missing from structToMap (and not denylisted) — it will silently become its zero value at runtime on db-managed installs", key)
+	}
+}
 
 // TestValidateSetupMode verifies that ValidateSetup mode always returns nil,
 // regardless of the config state (no LLM, no channels configured).

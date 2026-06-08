@@ -50,8 +50,36 @@ func TestCalculate_NoCacheHitRate_FallsBackToInput(t *testing.T) {
 }
 
 func TestCalculate_UnknownModelIsZero(t *testing.T) {
+	// A model that is in neither the configured map nor the compiled-in defaults.
 	tr := New(config.CostConfig{Enabled: true, Prices: map[string]config.ModelPrice{}})
-	if got := tr.Calculate("deepseek-v4-pro", llm.Usage{InputTokens: 1000}); got != 0 {
+	if got := tr.Calculate("fictional-model-not-in-defaults", llm.Usage{InputTokens: 1000}); got != 0 {
 		t.Errorf("unknown model cost = %v, want 0", got)
+	}
+}
+
+func TestNew_NilPricesFallsBackToDefaults(t *testing.T) {
+	// The db-managed bug: cost.prices is nil at runtime; the tracker must still
+	// price known models from the compiled-in defaults (else cost is always $0).
+	tr := New(config.CostConfig{Enabled: true}) // Prices nil
+	if got := tr.Calculate("claude-sonnet-4-6", llm.Usage{InputTokens: 1_000_000}); got <= 0 {
+		t.Errorf("nil-prices cost for claude-sonnet-4-6 = %v, want >0", got)
+	}
+	if got := tr.Calculate("deepseek-v4-pro", llm.Usage{OutputTokens: 1_000_000}); got <= 0 {
+		t.Errorf("nil-prices cost for deepseek-v4-pro = %v, want >0", got)
+	}
+}
+
+func TestNew_PartialPricesMergesDefaults(t *testing.T) {
+	// A configured partial map overlays the defaults per-model (augments, not wipes).
+	tr := New(config.CostConfig{
+		Enabled: true,
+		Prices:  map[string]config.ModelPrice{"claude-sonnet-4-6": {InputPerMillion: 99.0, OutputPerMillion: 99.0}},
+	})
+	if got := tr.Calculate("claude-sonnet-4-6", llm.Usage{InputTokens: 1_000_000}); !approx(got, 99.0) {
+		t.Errorf("custom override = %v, want 99.0", got)
+	}
+	// A model not overridden still uses the compiled-in default.
+	if got := tr.Calculate("deepseek-v4-pro", llm.Usage{InputTokens: 1_000_000}); !approx(got, 0.435) {
+		t.Errorf("default for deepseek-v4-pro = %v, want 0.435", got)
 	}
 }

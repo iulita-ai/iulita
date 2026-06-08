@@ -508,6 +508,7 @@ func structToMap(cfg *Config) map[string]interface{} {
 	m["skills.memory.half_life_days"] = cfg.Skills.Memory.HalfLifeDays
 	m["skills.memory.mmr_lambda"] = cfg.Skills.Memory.MMRLambda
 	m["skills.memory.system_prompt"] = cfg.Skills.Memory.SystemPrompt
+	m["skills.memory.triggers"] = cfg.Skills.Memory.Triggers
 	m["skills.insights.enabled"] = cfg.Skills.Insights.Enabled
 	m["skills.insights.interval"] = cfg.Skills.Insights.Interval
 	m["skills.insights.min_facts"] = cfg.Skills.Insights.MinFacts
@@ -515,7 +516,9 @@ func structToMap(cfg *Config) map[string]interface{} {
 	m["skills.insights.ttl"] = cfg.Skills.Insights.TTL
 	m["skills.insights.quality_threshold"] = cfg.Skills.Insights.QualityThreshold
 	m["skills.shell_exec.timeout"] = cfg.Skills.ShellExec.Timeout
+	m["skills.shell_exec.forbidden_paths"] = cfg.Skills.ShellExec.ForbiddenPaths
 	m["skills.google.redirect_url"] = cfg.Skills.Google.RedirectURL
+	m["skills.selfimprove.complexity_threshold"] = cfg.Skills.SelfImprove.ComplexityThreshold
 
 	// Scheduler
 	m["scheduler.enabled"] = cfg.Scheduler.Enabled
@@ -536,7 +539,8 @@ func structToMap(cfg *Config) map[string]interface{} {
 	m["telegram.debounce_window"] = cfg.Telegram.DebounceWindow
 	m["telegram.rate_window"] = cfg.Telegram.RateWindow
 
-	// Cost
+	// Cost (cost.prices is a map — seeded via cost.New() fallback, not here)
+	m["cost.enabled"] = cfg.Cost.Enabled
 	m["cost.alert_threshold"] = cfg.Cost.AlertThreshold
 
 	// Routing

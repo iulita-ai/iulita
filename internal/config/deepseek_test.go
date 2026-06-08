@@ -79,7 +79,7 @@ func TestSchemaSecretKeys_IncludesDeepSeekAPIKey(t *testing.T) {
 }
 
 func TestDefaultModelPrices_DeepSeek(t *testing.T) {
-	prices := defaultModelPrices()
+	prices := DefaultModelPrices()
 	for _, model := range []string{"deepseek-v4-flash", "deepseek-chat", "deepseek-reasoner"} {
 		p, ok := prices[model]
 		if !ok {

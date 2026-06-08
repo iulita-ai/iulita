@@ -105,7 +105,7 @@ func DefaultConfig(paths *Paths) *Config {
 		Cost: CostConfig{
 			Enabled:        true,
 			AlertThreshold: 0.8,
-			Prices:         defaultModelPrices(),
+			Prices:         DefaultModelPrices(),
 		},
 		Routing: RoutingConfig{
 			DefaultProvider: "claude",
@@ -126,7 +126,10 @@ const defaultMemorySystemPrompt = `MEMORY RULES:
 - If the user says "remember this" referring to a previous message, extract the relevant content from conversation history and save it via the ` + "`remember`" + ` tool.
 - When recalling information, use the ` + "`recall`" + ` tool to search memory before answering from general knowledge.`
 
-func defaultModelPrices() map[string]ModelPrice {
+// DefaultModelPrices returns the compiled-in per-model price table. Exported so
+// the cost tracker can fall back to it when no prices are configured (the price
+// map cannot be expressed in the flat structToMap koanf layer).
+func DefaultModelPrices() map[string]ModelPrice {
 	return map[string]ModelPrice{
 		// Current generation
 		"claude-opus-4-6":           {InputPerMillion: 5.0, OutputPerMillion: 25.0},

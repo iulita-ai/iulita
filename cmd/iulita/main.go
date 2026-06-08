@@ -329,6 +329,11 @@ func main() {
 	if v, ok := cfgStore.GetEffective("skills.selfimprove.propose_skills"); ok {
 		cfg.Skills.SelfImprove.ProposeSkills = strings.EqualFold(v, "true")
 	}
+	// cost.enabled is read once at startup (cost tracker is created below), so a
+	// dashboard override must be re-applied here to take effect on restart.
+	if v, ok := cfgStore.GetEffective("cost.enabled"); ok {
+		cfg.Cost.Enabled = strings.EqualFold(v, "true")
+	}
 
 	validateMode := config.ValidateConsole
 	if serverMode {
@@ -709,9 +714,13 @@ func main() {
 	if cfg.Cost.Enabled {
 		costTracker = cost.New(cfg.Cost)
 		logger.Info("cost tracking enabled", zap.Float64("daily_limit_usd", cfg.Cost.DailyLimitUSD))
-		// Surface silent $0 billing when a configured DeepSeek model has no price entry.
+		// Surface silent $0 billing when a configured DeepSeek model has no price
+		// entry. Check both the configured map AND the compiled-in defaults that
+		// cost.New() merges in (cfg.Cost.Prices is nil on db-managed installs).
 		if cfg.DeepSeek.Model != "" {
-			if _, ok := cfg.Cost.Prices[cfg.DeepSeek.Model]; !ok {
+			_, inCustom := cfg.Cost.Prices[cfg.DeepSeek.Model]
+			_, inDefault := config.DefaultModelPrices()[cfg.DeepSeek.Model]
+			if !inCustom && !inDefault {
 				logger.Warn("deepseek model has no cost price entry — its usage will be tracked as $0",
 					zap.String("model", cfg.DeepSeek.Model))
 			}

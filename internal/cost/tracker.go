@@ -25,9 +25,13 @@ func New(cfg config.CostConfig) *Tracker {
 	if alertThreshold <= 0 {
 		alertThreshold = 0.8
 	}
-	prices := cfg.Prices
-	if prices == nil {
-		prices = make(map[string]config.ModelPrice)
+	// Always start from the compiled-in price table so a fresh/db-managed install
+	// (where cfg.Prices is nil — the price map can't ride the flat structToMap
+	// koanf layer) still computes real costs. Any configured entries overlay the
+	// defaults per-model, so a partial custom price map augments rather than wipes.
+	prices := config.DefaultModelPrices()
+	for model, p := range cfg.Prices {
+		prices[model] = p
 	}
 	return &Tracker{
 		prices:         prices,
