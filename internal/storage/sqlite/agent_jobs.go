@@ -36,6 +36,25 @@ func (s *Store) ListAgentJobs(ctx context.Context) ([]domain.AgentJob, error) {
 	return jobs, nil
 }
 
+// ListAgentJobsByUser returns only the jobs owned by userID.
+func (s *Store) ListAgentJobsByUser(ctx context.Context, userID string) ([]domain.AgentJob, error) {
+	var jobs []domain.AgentJob
+	err := s.db.NewSelect().Model(&jobs).Where("user_id = ?", userID).Order("id ASC").Scan(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing agent jobs by user: %w", err)
+	}
+	return jobs, nil
+}
+
+// CountAgentJobsByUser returns how many jobs userID owns (for per-user caps).
+func (s *Store) CountAgentJobsByUser(ctx context.Context, userID string) (int, error) {
+	n, err := s.db.NewSelect().Model((*domain.AgentJob)(nil)).Where("user_id = ?", userID).Count(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("counting agent jobs by user: %w", err)
+	}
+	return n, nil
+}
+
 func (s *Store) UpdateAgentJob(ctx context.Context, j *domain.AgentJob) error {
 	j.UpdatedAt = time.Now()
 	_, err := s.db.NewUpdate().Model(j).WherePK().Exec(ctx)

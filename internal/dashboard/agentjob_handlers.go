@@ -37,6 +37,7 @@ func (s *Server) handleCreateAgentJob(c *fiber.Ctx) error {
 		CronExpr       string `json:"cron_expr"`
 		Interval       string `json:"interval"`
 		DeliveryChatID string `json:"delivery_chat_id"`
+		WakeGatePrompt string `json:"wake_gate_prompt"`
 		Enabled        *bool  `json:"enabled"`
 	}
 	if err := c.BodyParser(&body); err != nil {
@@ -63,6 +64,7 @@ func (s *Server) handleCreateAgentJob(c *fiber.Ctx) error {
 		CronExpr:       body.CronExpr,
 		Interval:       body.Interval,
 		DeliveryChatID: body.DeliveryChatID,
+		WakeGatePrompt: body.WakeGatePrompt,
 		Enabled:        enabled,
 	}
 
@@ -92,6 +94,7 @@ func (s *Server) handleUpdateAgentJob(c *fiber.Ctx) error {
 		CronExpr       *string `json:"cron_expr"`
 		Interval       *string `json:"interval"`
 		DeliveryChatID *string `json:"delivery_chat_id"`
+		WakeGatePrompt *string `json:"wake_gate_prompt"`
 		Enabled        *bool   `json:"enabled"`
 	}
 	if err := c.BodyParser(&body); err != nil {
@@ -100,6 +103,9 @@ func (s *Server) handleUpdateAgentJob(c *fiber.Ctx) error {
 
 	if body.Name != nil {
 		job.Name = *body.Name
+	}
+	if body.WakeGatePrompt != nil {
+		job.WakeGatePrompt = *body.WakeGatePrompt
 	}
 	if body.Prompt != nil {
 		job.Prompt = *body.Prompt

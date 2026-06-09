@@ -149,6 +149,16 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 	// Clear unique_key on completed/failed tasks so jobs can be re-created.
 	s.db.ExecContext(ctx, `UPDATE tasks SET unique_key = '' WHERE status IN ('done', 'failed') AND unique_key != ''`)
 
+	// Agent jobs: per-user scoping + optional wake-gate (tolerates "duplicate column").
+	agentJobNewCols := []string{
+		`ALTER TABLE agent_jobs ADD COLUMN user_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE agent_jobs ADD COLUMN wake_gate_prompt TEXT NOT NULL DEFAULT ''`,
+	}
+	for _, stmt := range agentJobNewCols {
+		s.db.ExecContext(ctx, stmt) //nolint:errcheck,gosec // ignore "duplicate column" errors
+	}
+	s.db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_agent_jobs_user ON agent_jobs(user_id)`) //nolint:errcheck,gosec // best-effort
+
 	// Usage stats: unique index for hourly upsert.
 	s.db.ExecContext(ctx, `CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_stats_chat_hour ON usage_stats(chat_id, hour)`)
 

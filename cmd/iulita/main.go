@@ -59,6 +59,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/skill/orchestrate"
 	"github.com/iulita-ai/iulita/internal/skill/pdfreader"
 	"github.com/iulita-ai/iulita/internal/skill/reminders"
+	scheduleskill "github.com/iulita-ai/iulita/internal/skill/schedule"
 	"github.com/iulita-ai/iulita/internal/skill/sessionsearch"
 	"github.com/iulita-ai/iulita/internal/skill/shellexec"
 	"github.com/iulita-ai/iulita/internal/skill/skillinfo"
@@ -788,6 +789,14 @@ func main() {
 	registry.Register(reminders.New(store))
 	registry.Register(directives.New(store))
 
+	// Self-scheduling: users create their own recurring agent jobs from chat.
+	if scheduleManifest, smErr := scheduleskill.LoadManifest(); smErr != nil {
+		logger.Warn("failed to load schedule manifest", zap.Error(smErr))
+		registry.Register(scheduleskill.New(store))
+	} else {
+		registry.RegisterWithManifest(scheduleskill.New(store), scheduleManifest)
+	}
+
 	// Locale switching skill (with force triggers for reliable tool invocation).
 	localeManifest, err := localeskill.LoadManifest()
 	if err != nil {
@@ -1511,11 +1520,25 @@ func main() {
 	}
 	worker.Register(techFactHandler)
 
-	// Agent job handler — user-defined scheduled LLM tasks.
-	{
-		agentJobProvider := resolveJobProvider("", llmProvider, cfg.Ollama, httpClient, logger, "agent_job")
-		worker.Register(handlers.NewAgentJobHandler(store, agentJobProvider, mgr, logger))
-	}
+	// Agent job handler — user-defined scheduled LLM tasks. Runs on a SEPARATE
+	// worker (capability "agent_job") so a long agentic job can't starve the
+	// lightweight scheduled tasks (reminders, heartbeat) on the main worker pool.
+	// Uses the routing provider directly so per-job RouteHints (model / cheap
+	// wake-gate) resolve.
+	agentJobWorker := scheduler.NewWorker(store, scheduler.WorkerConfig{
+		Capabilities: []string{"agent_job"},
+		Concurrency:  2,
+		PollInterval: 5 * time.Second,
+	}, logger)
+	agentJobWorker.SetEventBus(bus)
+	agentJobWorker.Register(handlers.NewAgentJobHandler(store, llmProvider, registry, bus, mgr, logger))
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := agentJobWorker.Start(ctx); err != nil && ctx.Err() == nil {
+			logger.Error("agent job worker error", zap.Error(err))
+		}
+	}()
 
 	if cfg.Heartbeat.Enabled {
 		heartbeatProvider := llm.Provider(llmProvider)

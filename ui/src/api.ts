@@ -418,12 +418,14 @@ export interface ImportTOMLResponse {
 
 export interface AgentJob {
   id: number
+  user_id?: string
   name: string
   prompt: string
   model: string
   cron_expr: string
   interval: string
   delivery_chat_id: string
+  wake_gate_prompt?: string
   enabled: boolean
   last_run?: string
   next_run?: string

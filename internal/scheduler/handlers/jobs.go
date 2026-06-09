@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -175,19 +176,30 @@ func AgentJobsJob(store storage.Repository, logger *zap.Logger) scheduler.JobDef
 			}
 
 			var tasks []domain.Task
-			for _, j := range jobs {
-				payload, _ := json.Marshal(agentJobTaskPayload{
+			for i := range jobs {
+				j := &jobs[i]
+				payload, mErr := json.Marshal(agentJobPayload{
 					JobID:          j.ID,
 					JobName:        j.Name,
 					Prompt:         j.Prompt,
 					DeliveryChatID: j.DeliveryChatID,
+					UserID:         j.UserID,
+					Model:          j.Model,
+					WakeGatePrompt: j.WakeGatePrompt,
+					Timezone:       cronTimezone(j.CronExpr),
 				})
+				if mErr != nil {
+					logger.Error("agent jobs: failed to marshal payload", zap.Int64("id", j.ID), zap.Error(mErr))
+					continue
+				}
 				tasks = append(tasks, domain.Task{
 					Type:         TaskTypeAgentJob,
 					Payload:      string(payload),
-					Capabilities: "llm",
-					MaxAttempts:  2,
-					UniqueKey:    fmt.Sprintf("agent.job:%d", j.ID),
+					Capabilities: "agent_job",
+					// Agentic jobs are NOT idempotent (a tool call may have side effects),
+					// so never auto-retry the whole loop.
+					MaxAttempts: 1,
+					UniqueKey:   fmt.Sprintf("agent.job:%d", j.ID),
 				})
 
 				// Calculate next run.
@@ -201,11 +213,18 @@ func AgentJobsJob(store storage.Repository, logger *zap.Logger) scheduler.JobDef
 	}
 }
 
-type agentJobTaskPayload struct {
-	JobID          int64  `json:"job_id"`
-	JobName        string `json:"job_name"`
-	Prompt         string `json:"prompt"`
-	DeliveryChatID string `json:"delivery_chat_id"`
+// cronTimezone extracts the IANA timezone from a "CRON_TZ=<tz> ..." expression,
+// or "" if the expression has no timezone descriptor.
+func cronTimezone(cronExpr string) string {
+	const prefix = "CRON_TZ="
+	if !strings.HasPrefix(cronExpr, prefix) {
+		return ""
+	}
+	rest := cronExpr[len(prefix):]
+	if i := strings.IndexByte(rest, ' '); i >= 0 {
+		return rest[:i]
+	}
+	return ""
 }
 
 func computeNextRun(cronExpr, interval string) time.Time {

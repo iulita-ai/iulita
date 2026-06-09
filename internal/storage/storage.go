@@ -173,6 +173,8 @@ type Repository interface {
 	CreateAgentJob(ctx context.Context, j *domain.AgentJob) error
 	GetAgentJob(ctx context.Context, id int64) (*domain.AgentJob, error)
 	ListAgentJobs(ctx context.Context) ([]domain.AgentJob, error)
+	ListAgentJobsByUser(ctx context.Context, userID string) ([]domain.AgentJob, error)
+	CountAgentJobsByUser(ctx context.Context, userID string) (int, error)
 	UpdateAgentJob(ctx context.Context, j *domain.AgentJob) error
 	DeleteAgentJob(ctx context.Context, id int64) error
 	GetDueAgentJobs(ctx context.Context, now time.Time) ([]domain.AgentJob, error)

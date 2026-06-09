@@ -44,6 +44,11 @@
           <n-input v-model:value="form.delivery_chat_id" placeholder="Telegram chat ID for results" />
           <template #feedback>Send results to this chat when done. Empty = no delivery.</template>
         </n-form-item>
+        <n-form-item label="Wake-gate (optional)">
+          <n-input v-model:value="form.wake_gate_prompt" type="textarea" :autosize="{ minRows: 1, maxRows: 3 }"
+            placeholder="Cheap yes/no pre-check; if it answers no the run is skipped" />
+          <template #feedback>Optional. Reasons only over recent memory, not live tools.</template>
+        </n-form-item>
         <n-form-item :label="t('agentJobs.enabled')">
           <n-switch v-model:value="form.enabled" />
         </n-form-item>
@@ -85,13 +90,14 @@ const form = ref({
   cron_expr: '',
   interval: '24h',
   delivery_chat_id: '',
+  wake_gate_prompt: '',
   enabled: true,
 })
 
 function openCreate() {
   editingJob.value = null
   scheduleMode.value = 'interval'
-  form.value = { name: '', prompt: '', model: '', cron_expr: '', interval: '24h', delivery_chat_id: '', enabled: true }
+  form.value = { name: '', prompt: '', model: '', cron_expr: '', interval: '24h', delivery_chat_id: '', wake_gate_prompt: '', enabled: true }
   showModal.value = true
 }
 
@@ -105,6 +111,7 @@ function openEdit(job: AgentJob) {
     cron_expr: job.cron_expr,
     interval: job.interval,
     delivery_chat_id: job.delivery_chat_id,
+    wake_gate_prompt: job.wake_gate_prompt || '',
     enabled: job.enabled,
   }
   showModal.value = true
@@ -124,6 +131,7 @@ async function handleSave() {
       cron_expr: scheduleMode.value === 'cron' ? form.value.cron_expr : '',
       interval: scheduleMode.value === 'interval' ? form.value.interval : '',
       delivery_chat_id: form.value.delivery_chat_id || undefined,
+      wake_gate_prompt: form.value.wake_gate_prompt || '',
       enabled: form.value.enabled,
     }
     if (editingJob.value) {
