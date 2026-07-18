@@ -32,6 +32,12 @@ const (
 	// Multi-agent orchestration events.
 	AgentOrchestrationStarted = "agent.orchestration.started"
 	AgentOrchestrationDone    = "agent.orchestration.done"
+
+	// Claude export import progress events (admin dashboard only).
+	ImportStarted  = "import.started"
+	ImportProgress = "import.progress"
+	ImportDone     = "import.done"
+	ImportFailed   = "import.failed"
 )
 
 // Handler processes an event. Returning an error logs a warning but does not

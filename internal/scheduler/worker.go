@@ -153,15 +153,27 @@ func (w *Worker) executeTask(ctx context.Context, task *domain.Task) {
 		zap.String("type", task.Type),
 		zap.Int("attempt", task.Attempts+1))
 
-	result, err := handler.Handle(ctx, task.Payload)
+	// Carry the task ID so long-running handlers can heartbeat via TouchTask and
+	// detect a stale-reclaim of their own task.
+	result, err := handler.Handle(WithTaskID(ctx, task.ID), task.Payload)
+
+	// Persist the terminal task transition with a detached context so a shutdown
+	// (ctx already canceled) still records failed/done instead of leaving the task
+	// stuck as running until the next stale-reclaim.
+	termCtx, cancelTerm := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancelTerm()
+
 	if err != nil {
 		w.logger.Error("task failed",
 			zap.Int64("task_id", task.ID),
 			zap.String("type", task.Type),
 			zap.Error(err))
-		_ = w.store.FailTask(ctx, task.ID, err.Error())
+		if ferr := w.store.FailTask(termCtx, task.ID, err.Error()); ferr != nil {
+			w.logger.Error("failed to mark task failed",
+				zap.Int64("task_id", task.ID), zap.Error(ferr))
+		}
 		if w.bus != nil {
-			w.bus.Publish(ctx, eventbus.Event{
+			w.bus.Publish(termCtx, eventbus.Event{
 				Type: eventbus.TaskFailed,
 				Payload: eventbus.TaskFailedPayload{
 					TaskID:   task.ID,
@@ -175,7 +187,7 @@ func (w *Worker) executeTask(ctx context.Context, task *domain.Task) {
 		return
 	}
 
-	if err := w.store.CompleteTask(ctx, task.ID, result); err != nil {
+	if err := w.store.CompleteTask(termCtx, task.ID, result); err != nil {
 		w.logger.Error("failed to complete task",
 			zap.Int64("task_id", task.ID), zap.Error(err))
 		return
@@ -186,7 +198,7 @@ func (w *Worker) executeTask(ctx context.Context, task *domain.Task) {
 		zap.String("type", task.Type))
 
 	if w.bus != nil {
-		w.bus.Publish(ctx, eventbus.Event{
+		w.bus.Publish(termCtx, eventbus.Event{
 			Type: eventbus.TaskCompleted,
 			Payload: eventbus.TaskCompletedPayload{
 				TaskID:   task.ID,

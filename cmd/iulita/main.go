@@ -1540,6 +1540,28 @@ func main() {
 		}
 	}()
 
+	// Claude export import — runs on its own worker (capability "import",
+	// concurrency 1) so a long import cannot starve other background tasks and two
+	// imports never run at once. Triggered admin-only from the dashboard, never a
+	// channel. embedder may be nil (FTS-only archive).
+	if err := os.MkdirAll(paths.ImportsDir(), 0o700); err != nil {
+		logger.Warn("failed to create imports dir", zap.String("dir", paths.ImportsDir()), zap.Error(err))
+	}
+	importWorker := scheduler.NewWorker(store, scheduler.WorkerConfig{
+		Capabilities: []string{"import"},
+		Concurrency:  1,
+		PollInterval: 5 * time.Second,
+	}, logger)
+	importWorker.SetEventBus(bus)
+	importWorker.Register(handlers.NewImportClaudeExportHandler(store, embedder, bus, logger))
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := importWorker.Start(ctx); err != nil && ctx.Err() == nil {
+			logger.Error("import worker error", zap.Error(err))
+		}
+	}()
+
 	if cfg.Heartbeat.Enabled {
 		heartbeatProvider := llm.Provider(llmProvider)
 		if cfg.Ollama.URL != "" && cfg.Ollama.Model != "" {

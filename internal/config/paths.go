@@ -59,6 +59,13 @@ func (p *Paths) SkillsDir() string {
 	return filepath.Join(p.DataDir, "skills")
 }
 
+// ImportsDir returns the directory where uploaded Claude export zips are staged
+// during import. It lives under DataDir (the persistent volume on k8s), NOT CacheDir,
+// so a durable import task's staged zip survives a container restart.
+func (p *Paths) ImportsDir() string {
+	return filepath.Join(p.DataDir, "imports")
+}
+
 // ExternalSkillsDir returns the directory for downloaded/installed external skills.
 func (p *Paths) ExternalSkillsDir() string {
 	return filepath.Join(p.DataDir, "external-skills")

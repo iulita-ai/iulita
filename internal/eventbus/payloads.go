@@ -86,6 +86,40 @@ type ConfigChangedPayload struct {
 	Key string
 }
 
+// ImportProgressPayload streams progress of a Claude export import to the dashboard.
+type ImportProgressPayload struct {
+	JobID   string `json:"job_id"`
+	UserID  string `json:"user_id"`
+	Phase   string `json:"phase"` // "memories" | "conversations" | "embedding"
+	Done    int    `json:"done"`
+	Total   int    `json:"total"`
+	Stored  int    `json:"stored,omitempty"`
+	Skipped int    `json:"skipped,omitempty"`
+}
+
+// ImportDonePayload summarizes a completed Claude export import.
+type ImportDonePayload struct {
+	JobID           string `json:"job_id"`
+	UserID          string `json:"user_id"`
+	Conversations   int    `json:"conversations"`
+	MessagesStored  int    `json:"messages_stored"`
+	MessagesSkipped int    `json:"messages_skipped"`
+	Facts           int    `json:"facts"`
+	SkippedBinaries int    `json:"skipped_binaries"`
+	ChunksEmbedded  int    `json:"chunks_embedded"`
+	ParseErrors     int    `json:"parse_errors"`
+}
+
+// ImportFailedPayload reports a failed import with partial progress (resumable).
+type ImportFailedPayload struct {
+	JobID             string `json:"job_id"`
+	UserID            string `json:"user_id"`
+	Error             string `json:"error"`
+	ConversationsDone int    `json:"conversations_done"`
+	MessagesStored    int    `json:"messages_stored"`
+	Facts             int    `json:"facts"`
+}
+
 // CredentialChangedPayload is published when a credential is created, updated, deleted, or rotated.
 type CredentialChangedPayload struct {
 	Name string // credential name (dotted key)

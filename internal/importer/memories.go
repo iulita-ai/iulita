@@ -28,12 +28,12 @@ var headingRe = regexp.MustCompile(`(?m)^\*\*([^*\n]{1,80})\*\*[ \t]*$`)
 // in document order, so the fact set and its size are reproducible across runs.
 //
 // Dedup keys are content/heading-derived and position-independent, so re-importing an
-// unchanged memory is a no-op under Phase-2 ON CONFLICT. Two limitations are owned by
-// the Phase-2 apply step, not here: (1) a memory whose BODY changed but heading did
-// not keeps the same key, so the handler must UPDATE-on-change rather than insert-only
-// to avoid stale bodies; (2) sections removed from a later export orphan their facts,
-// so the handler may prune keys no longer present. This mapper is pure and only
-// produces the (key, fact) pairs.
+// unchanged memory is a no-op under the handler's insert-only idempotency. Two known
+// limitations are owned by the apply step, not here (the handler is currently
+// insert-only): (1) a memory whose BODY changed but heading did not keeps the same
+// key, so a body update would require UPDATE-on-change to avoid a stale fact;
+// (2) sections removed from a later export orphan their facts. This mapper is pure and
+// only produces the (key, fact) pairs.
 func MapMemories(data []byte, userID string) ([]MappedFact, error) {
 	var arr []dumpMemories
 	if err := json.Unmarshal(data, &arr); err != nil {
