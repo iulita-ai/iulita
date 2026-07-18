@@ -4,12 +4,16 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sync/atomic"
 
 	"github.com/iulita-ai/iulita/internal/domain"
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/sqlitedialect"
 	"github.com/uptrace/bun/driver/sqliteshim"
 )
+
+// memDBCounter gives each in-memory store a unique shared-cache name.
+var memDBCounter atomic.Int64
 
 // EmbedFunc generates embeddings for texts. Used as a callback to avoid import cycles.
 type EmbedFunc func(ctx context.Context, texts []string) ([][]float32, error)
@@ -45,6 +49,14 @@ func New(path string) (*Store, error) {
 	// the WAL write lock and retry, instead of failing immediately with SQLITE_BUSY,
 	// so the live assistant tolerates a long-running import holding the writer.
 	dsn := fmt.Sprintf("file:%s?cache=shared&mode=rwc&_pragma=busy_timeout(5000)", path)
+	if path == ":memory:" {
+		// A plain `:memory:` shared cache is PROCESS-WIDE — every store shares one DB,
+		// so test stores leak state into each other whenever a connection lingers
+		// (async saves, coverage timing) → flaky cross-test pollution. Give each
+		// in-memory store a uniquely-named shared-cache DB so it is isolated while
+		// still allowing connection-pool sharing within itself. Prod uses a file path.
+		dsn = fmt.Sprintf("file:iulita_mem_%d?mode=memory&cache=shared&_pragma=busy_timeout(5000)", memDBCounter.Add(1))
+	}
 	sqldb, err := sql.Open(sqliteshim.ShimName, dsn)
 	if err != nil {
 		return nil, fmt.Errorf("opening sqlite: %w", err)
