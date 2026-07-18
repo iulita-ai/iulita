@@ -106,10 +106,14 @@ func (s *Store) SearchInsights(ctx context.Context, chatID, query string, limit 
 	if fetchLimit < 20 {
 		fetchLimit = 20
 	}
+	match := sanitizeFTS5Query(query)
+	if match == "" {
+		return nil, nil
+	}
 	err := s.db.NewSelect().
 		Model(&insights).
 		Where("chat_id = ?", chatID).
-		Where("id IN (SELECT rowid FROM insights_fts WHERE insights_fts MATCH ?)", query).
+		Where("id IN (SELECT rowid FROM insights_fts WHERE insights_fts MATCH ?)", match).
 		Where("expires_at IS NULL OR expires_at > ?", time.Now()).
 		OrderExpr("quality DESC, access_count DESC, created_at DESC").
 		Limit(fetchLimit).

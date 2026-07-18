@@ -43,10 +43,14 @@ func (s *Store) SearchFactsByUser(ctx context.Context, userID, query string, lim
 	if fetchLimit < 20 {
 		fetchLimit = 20
 	}
+	match := sanitizeFTS5Query(query)
+	if match == "" {
+		return nil, nil
+	}
 	err := s.db.NewSelect().
 		Model(&facts).
 		Where("user_id = ?", userID).
-		Where("id IN (SELECT rowid FROM facts_fts WHERE facts_fts MATCH ?)", query).
+		Where("id IN (SELECT rowid FROM facts_fts WHERE facts_fts MATCH ?)", match).
 		OrderExpr("access_count DESC, last_accessed_at DESC").
 		Limit(fetchLimit).
 		Scan(ctx)
@@ -155,10 +159,14 @@ func (s *Store) SearchInsightsByUser(ctx context.Context, userID, query string, 
 	if fetchLimit < 20 {
 		fetchLimit = 20
 	}
+	match := sanitizeFTS5Query(query)
+	if match == "" {
+		return nil, nil
+	}
 	err := s.db.NewSelect().
 		Model(&insights).
 		Where("user_id = ?", userID).
-		Where("id IN (SELECT rowid FROM insights_fts WHERE insights_fts MATCH ?)", query).
+		Where("id IN (SELECT rowid FROM insights_fts WHERE insights_fts MATCH ?)", match).
 		Where("expires_at IS NULL OR expires_at > ?", time.Now()).
 		OrderExpr("quality DESC, access_count DESC, created_at DESC").
 		Limit(fetchLimit).

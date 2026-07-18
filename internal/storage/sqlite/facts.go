@@ -40,10 +40,14 @@ func (s *Store) SearchFacts(ctx context.Context, chatID, query string, limit int
 	if fetchLimit < 20 {
 		fetchLimit = 20
 	}
+	match := sanitizeFTS5Query(query)
+	if match == "" {
+		return nil, nil
+	}
 	err := s.db.NewSelect().
 		Model(&facts).
 		Where("chat_id = ?", chatID).
-		Where("id IN (SELECT rowid FROM facts_fts WHERE facts_fts MATCH ?)", query).
+		Where("id IN (SELECT rowid FROM facts_fts WHERE facts_fts MATCH ?)", match).
 		OrderExpr("access_count DESC, last_accessed_at DESC").
 		Limit(fetchLimit).
 		Scan(ctx)
@@ -123,10 +127,14 @@ func (s *Store) UpdateFactContent(ctx context.Context, id int64, content string)
 }
 
 func (s *Store) DeleteFactsByQuery(ctx context.Context, chatID, query string) (int, error) {
+	match := sanitizeFTS5Query(query)
+	if match == "" {
+		return 0, nil // no usable tokens — never delete everything
+	}
 	res, err := s.db.NewDelete().
 		Model((*domain.Fact)(nil)).
 		Where("chat_id = ?", chatID).
-		Where("id IN (SELECT rowid FROM facts_fts WHERE facts_fts MATCH ?)", query).
+		Where("id IN (SELECT rowid FROM facts_fts WHERE facts_fts MATCH ?)", match).
 		Exec(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("deleting facts by query: %w", err)
