@@ -796,6 +796,63 @@ export interface CredentialAudit {
   created_at: string
 }
 
+// --- Claude export import ---
+
+export interface ImportRun {
+  job_id: string
+  user_id: string
+  status: string // running | done | failed | canceled
+  source_sha: string
+  conversations: number
+  messages_stored: number
+  messages_skipped: number
+  facts: number
+  skipped_binaries: number
+  chunks_embedded: number
+  parse_errors: number
+  last_phase: string
+  last_done: number
+  last_total: number
+  error: string
+  started_at: string
+  finished_at: string
+}
+
+export interface ImportSearchResult {
+  message_id: number
+  conversation_uuid: string
+  sender: string
+  snippet: string
+  created_at: string
+}
+
+export interface ImportedConversation {
+  ID: number
+  SourceUUID: string
+  Title: string
+  Summary: string
+  MessageCount: number
+  CreatedAt: string
+  UpdatedAt: string
+}
+
+export interface ImportedMessage {
+  ID: number
+  SourceUUID: string
+  ConversationUUID: string
+  Sender: string
+  Seq: number
+  Content: string
+  CreatedAt: string
+}
+
+export interface ImportUploadResult {
+  status: string // queued | already_queued | already_imported
+  job_id: string
+  existing?: ImportRun
+  finished_at?: string
+}
+
 export const api = {
   // Auth
   login: (username: string, password: string) =>
@@ -1071,4 +1128,47 @@ export const api = {
     del<void>(`/api/credentials/${id}/bindings/${consumerType}/${consumerId}`),
   listCredentialsByConsumer: (consumerType: string, consumerId: string) =>
     get<CredentialBinding[]>(`/api/credentials/by-consumer/${consumerType}/${consumerId}`),
+
+  // Claude export import (admin only)
+  importClaudeExport: (
+    file: File,
+    importMemories: boolean,
+    onProgress?: (pct: number) => void,
+  ): Promise<ImportUploadResult> =>
+    new Promise((resolve, reject) => {
+      const form = new FormData()
+      form.append('export', file)
+      form.append('import_memories', importMemories ? 'true' : 'false')
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', '/api/import/claude-export')
+      xhr.timeout = 30 * 60 * 1000 // 30min: large uploads over slow links
+      const token = getAccessToken()
+      if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100))
+      }
+      xhr.onload = () => {
+        let body: any = {}
+        try {
+          body = JSON.parse(xhr.responseText)
+        } catch {
+          /* non-JSON error body */
+        }
+        if (xhr.status >= 200 && xhr.status < 300) resolve(body as ImportUploadResult)
+        else reject(new Error(body?.error || `upload failed (${xhr.status})`))
+      }
+      xhr.onerror = () => reject(new Error('upload failed'))
+      xhr.ontimeout = () => reject(new Error('upload timed out'))
+      xhr.send(form)
+    }),
+  getImportStatus: () => get<ImportRun[]>('/api/import/status'),
+  cancelImport: (jobID: string) => del<{ status: string }>(`/api/import/${encodeURIComponent(jobID)}`),
+  searchImported: (q: string, limit = 30) =>
+    get<{ results: ImportSearchResult[]; vector_search: boolean }>(
+      `/api/import/search?q=${encodeURIComponent(q)}&limit=${limit}`,
+    ),
+  listImportedConversations: (limit = 50, offset = 0) =>
+    get<ImportedConversation[]>(`/api/import/conversations?limit=${limit}&offset=${offset}`),
+  getImportedConversationMessages: (uuid: string) =>
+    get<ImportedMessage[]>(`/api/import/conversations/${encodeURIComponent(uuid)}`),
 }

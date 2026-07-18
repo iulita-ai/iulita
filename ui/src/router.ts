@@ -110,6 +110,12 @@ const router = createRouter({
       component: () => import('./views/ConfigDebug.vue'),
       meta: { admin: true },
     },
+    {
+      path: '/import',
+      name: 'import',
+      component: () => import('./views/Import.vue'),
+      meta: { admin: true },
+    },
   ],
 })
 

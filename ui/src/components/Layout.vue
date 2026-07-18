@@ -72,6 +72,7 @@ import {
   PulseOutline,
   ConstructOutline,
   KeyOutline,
+  CloudUploadOutline,
 } from '@vicons/ionicons5'
 import { currentUser, clearTokens, isAdmin } from '../api'
 import { useSkillStatus } from '../composables/useSkillStatus'
@@ -117,6 +118,7 @@ const menuOptions = computed<MenuOption[]>(() => {
     items.push({ label: t('nav.channels'), key: 'channels', icon: renderIcon(GitNetworkOutline) })
     items.push({ label: t('nav.credentials'), key: 'credentials', icon: renderIcon(KeyOutline) })
     items.push({ label: t('nav.users'), key: 'users', icon: renderIcon(PeopleOutline) })
+    items.push({ label: t('nav.import'), key: 'import', icon: renderIcon(CloudUploadOutline) })
   }
   return items
 })
