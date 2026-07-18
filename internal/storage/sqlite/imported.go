@@ -371,6 +371,31 @@ func (s *Store) ListImportRuns(ctx context.Context, userID string, limit int) ([
 	return runs, nil
 }
 
+// CancelPendingImportTask cancels a not-yet-started import task by its unique key,
+// marking it failed so it is never claimed. Only pending tasks are cancelable this
+// way; a claimed/running import must run to completion (its own heartbeat aborts it
+// if the run is otherwise stopped). Returns canceled=false when no pending task
+// matched (already running, done, or absent).
+func (s *Store) CancelPendingImportTask(ctx context.Context, uniqueKey string) (bool, error) {
+	res, err := s.db.NewUpdate().
+		Model((*domain.Task)(nil)).
+		Set("status = ?", domain.TaskStatusFailed).
+		Set("error = ?", "canceled by user").
+		Set("finished_at = ?", time.Now()).
+		Set("unique_key = ''"). // free the key so the same export can be re-imported
+		Where("unique_key = ?", uniqueKey).
+		Where("status = ?", domain.TaskStatusPending).
+		Exec(ctx)
+	if err != nil {
+		return false, fmt.Errorf("canceling pending import task: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("cancel rows affected: %w", err)
+	}
+	return rows > 0, nil
+}
+
 // TouchTask bumps claimed_at for a claimed/running task, acting as a worker heartbeat
 // so CleanupStaleTasks does not reclaim a long-running job out from under its worker.
 // Returns stillOwned=false when no claimed/running row matched — i.e. the task was

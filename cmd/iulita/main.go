@@ -1626,6 +1626,7 @@ func main() {
 			SkillManager:      dashSkillMgr,
 			TodoProviders:     todoProviders,
 			CredentialManager: credStore,
+			Embedder:          embedder,
 		})
 		wg.Add(1)
 		go func() {

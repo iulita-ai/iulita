@@ -14,6 +14,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/config"
 	"github.com/iulita-ai/iulita/internal/credential"
 	"github.com/iulita-ai/iulita/internal/domain"
+	"github.com/iulita-ai/iulita/internal/llm"
 	"github.com/iulita-ai/iulita/internal/scheduler"
 	"github.com/iulita-ai/iulita/internal/skill"
 	"github.com/iulita-ai/iulita/internal/storage"
@@ -127,15 +128,16 @@ type Config struct {
 	TaskScheduler     *scheduler.Scheduler
 	WorkerToken       string // auth token for remote worker API
 	ConfigStore       *config.Store
-	AuthService       *auth.Service        // nil = auth disabled (backward compat)
-	ChannelManager    ChannelLifecycle     // nil = no runtime channel management
-	WSHub             *WSHub               // nil = WebSocket disabled
-	WebChat           WebChatProvider      // nil = web chat disabled
-	GoogleClient      GoogleOAuthClient    // nil = Google OAuth disabled
-	SkillManager      ExternalSkillManager // nil = external skills disabled
-	TodoProviders     []TodoProvider       // external task providers (Todoist, etc.)
-	CredentialManager CredentialManager    // nil = credential API disabled
-	SetupMode         bool                 // true = web wizard only, no full app
+	AuthService       *auth.Service         // nil = auth disabled (backward compat)
+	ChannelManager    ChannelLifecycle      // nil = no runtime channel management
+	WSHub             *WSHub                // nil = WebSocket disabled
+	WebChat           WebChatProvider       // nil = web chat disabled
+	GoogleClient      GoogleOAuthClient     // nil = Google OAuth disabled
+	SkillManager      ExternalSkillManager  // nil = external skills disabled
+	TodoProviders     []TodoProvider        // external task providers (Todoist, etc.)
+	CredentialManager CredentialManager     // nil = credential API disabled
+	Embedder          llm.EmbeddingProvider // nil = FTS-only import-archive search
+	SetupMode         bool                  // true = web wizard only, no full app
 }
 
 // Server serves the dashboard API and embedded SPA.
@@ -155,6 +157,7 @@ type Server struct {
 	skillManager      ExternalSkillManager
 	todoProviders     []TodoProvider
 	credentialManager CredentialManager
+	embedder          llm.EmbeddingProvider
 	setupMode         bool
 }
 
@@ -175,11 +178,20 @@ func New(cfg Config) *Server {
 		skillManager:      cfg.SkillManager,
 		todoProviders:     cfg.TodoProviders,
 		credentialManager: cfg.CredentialManager,
+		embedder:          cfg.Embedder,
 		setupMode:         cfg.SetupMode,
 	}
 
 	app := fiber.New(fiber.Config{
 		DisableStartupMessage: true,
+		// The admin Claude-export upload needs a large body cap. BodyLimit is global in
+		// Fiber, so we raise it AND enable StreamRequestBody so fasthttp streams/spools
+		// the body instead of buffering it in RAM — the raw body is never fully held in
+		// memory. Because the body is read lazily, the guard middleware below runs
+		// BEFORE any body is consumed and rejects oversized/unknown-length bodies on
+		// every non-upload route, restoring the default small-body protection.
+		BodyLimit:         maxImportBodyBytes,
+		StreamRequestBody: true,
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
 			code := fiber.StatusInternalServerError
 			if e, ok := err.(*fiber.Error); ok {
@@ -196,6 +208,28 @@ func New(cfg Config) *Server {
 	})
 
 	api := app.Group("/api")
+
+	// Restore the default small-body protection that the raised global BodyLimit
+	// removes: reject oversized request bodies on every API route EXCEPT the import
+	// upload. With StreamRequestBody the body is not yet read here, so this runs before
+	// any buffering. A negative Content-Length means chunked/unknown length — treated
+	// as "not small", so it cannot bypass the cap the way a declared size would.
+	api.Use(func(c *fiber.Ctx) error {
+		if c.Path() == importUploadPath {
+			return c.Next()
+		}
+		// Only body-bearing methods are checked; GET/DELETE carry no Content-Length
+		// (fasthttp reports -1) and must not be rejected. A negative length on a
+		// body-bearing method means chunked/unknown — treated as "not small".
+		switch c.Method() {
+		case fiber.MethodPost, fiber.MethodPut, fiber.MethodPatch:
+			cl := c.Request().Header.ContentLength()
+			if cl < 0 || cl > defaultMaxBodyBytes {
+				return c.Status(fiber.StatusRequestEntityTooLarge).JSON(fiber.Map{"error": "request body too large"})
+			}
+		}
+		return c.Next()
+	})
 
 	// Public auth endpoints (no JWT required).
 	if s.authService != nil {
@@ -290,6 +324,19 @@ func New(cfg Config) *Server {
 		configGroup.Get("/decrypted", s.handleListConfigDecrypted)
 		configGroup.Put("/:key", s.handleSetConfig)
 		configGroup.Delete("/:key", s.handleDeleteConfig)
+	}
+
+	// Claude data-export import API — admin-only, and ABSENT entirely when auth is
+	// disabled (fail-closed): import must never be reachable without admin auth, and
+	// never from any channel/skill.
+	if s.authService != nil {
+		imp := api.Group("/import", auth.AdminOnly())
+		imp.Post("/claude-export", s.handleImportClaudeExport)
+		imp.Get("/status", s.handleImportStatus)
+		imp.Delete("/:job_id", s.handleImportCancel)
+		imp.Get("/search", s.handleImportSearch)
+		imp.Get("/conversations", s.handleImportListConversations)
+		imp.Get("/conversations/:uuid", s.handleImportConversationMessages)
 	}
 
 	// User management API (admin only)

@@ -117,6 +117,12 @@ func (h *WSHub) RegisterEventSubscribers(bus *eventbus.Bus) {
 	bus.SubscribeAsync(eventbus.FactSaved, forward(eventbus.FactSaved))
 	bus.SubscribeAsync(eventbus.InsightCreated, forward(eventbus.InsightCreated))
 	bus.SubscribeAsync(eventbus.ConfigChanged, forward(eventbus.ConfigChanged))
+	// Claude export import progress. Payloads carry only counts/phase (no message or
+	// memory content), and the /ws endpoint serves authenticated dashboard users.
+	bus.SubscribeAsync(eventbus.ImportStarted, forward(eventbus.ImportStarted))
+	bus.SubscribeAsync(eventbus.ImportProgress, forward(eventbus.ImportProgress))
+	bus.SubscribeAsync(eventbus.ImportDone, forward(eventbus.ImportDone))
+	bus.SubscribeAsync(eventbus.ImportFailed, forward(eventbus.ImportFailed))
 }
 
 // SetupWebSocket adds the WebSocket upgrade middleware and handler to the Fiber app.
