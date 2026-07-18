@@ -201,6 +201,32 @@ func startImportHeartbeat(parent, hctx context.Context, cancel context.CancelFun
 	}()
 }
 
+// embedChunks embeds a message's chunks in bounded sub-batches, throttling between
+// them so the shared embedding pipeline stays responsive to the live assistant.
+func embedChunks(ctx context.Context, embed llm.EmbeddingProvider, chunks []string) ([][]float32, error) {
+	vecs := make([][]float32, 0, len(chunks))
+	for start := 0; start < len(chunks); start += embedChunkSubBatch {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		end := start + embedChunkSubBatch
+		if end > len(chunks) {
+			end = len(chunks)
+		}
+		sub, err := embed.Embed(ctx, chunks[start:end])
+		if err != nil {
+			return nil, err
+		}
+		vecs = append(vecs, sub...)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(embedThrottle):
+		}
+	}
+	return vecs, nil
+}
+
 // embedPendingMessages embeds all archived messages lacking vectors, in bounded
 // sub-batches with throttling so the shared embedding pipeline stays responsive to
 // the live assistant. onBatch (optional) is called after each fetched batch with the
@@ -228,25 +254,23 @@ func embedPendingMessages(ctx context.Context, store storage.Repository, embed l
 			if len(chunks) == 0 {
 				continue
 			}
-			vecs := make([][]float32, 0, len(chunks))
-			for start := 0; start < len(chunks); start += embedChunkSubBatch {
-				if err := ctx.Err(); err != nil {
-					return total, err
+			vecs, embedErr := embedChunks(ctx, embed, chunks)
+			if embedErr != nil {
+				if ctx.Err() != nil {
+					return total, ctx.Err() // cancellation → abort the whole pass
 				}
-				end := start + embedChunkSubBatch
-				if end > len(chunks) {
-					end = len(chunks)
+				// A pathological message (e.g. a recovered tokenizer panic on bad
+				// content) — skip it: store one placeholder vector so it is not
+				// re-fetched (avoids an infinite loop) and never matches search (zero
+				// vector → cosine 0). Then continue with the rest.
+				if logger != nil {
+					logger.Warn("skipping message that failed to embed", zap.Int64("message_id", m.ID), zap.Error(embedErr))
 				}
-				sub, eErr := embed.Embed(ctx, chunks[start:end])
-				if eErr != nil {
-					return total, fmt.Errorf("embedding message %d: %w", m.ID, eErr)
+				if sErr := store.SaveImportedMessageVector(ctx, m.ID, 0, make([]float32, embed.Dimensions())); sErr != nil {
+					return total, fmt.Errorf("saving placeholder vector: %w", sErr)
 				}
-				vecs = append(vecs, sub...)
-				select {
-				case <-ctx.Done():
-					return total, ctx.Err()
-				case <-time.After(embedThrottle):
-				}
+				progressed++
+				continue
 			}
 			for ci, v := range vecs {
 				if sErr := store.SaveImportedMessageVector(ctx, m.ID, ci, v); sErr != nil {

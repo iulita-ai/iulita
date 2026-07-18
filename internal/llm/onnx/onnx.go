@@ -169,7 +169,7 @@ func Download(modelDir, model string, logger *zap.Logger) (string, error) {
 }
 
 // Embed generates embeddings for the given texts.
-func (p *Provider) Embed(_ context.Context, texts []string) ([][]float32, error) {
+func (p *Provider) Embed(_ context.Context, texts []string) (embeddings [][]float32, err error) {
 	if len(texts) == 0 {
 		return nil, nil
 	}
@@ -178,9 +178,22 @@ func (p *Provider) Embed(_ context.Context, texts []string) ([][]float32, error)
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	result, err := p.pipeline.RunPipeline(texts)
-	if err != nil {
-		return nil, fmt.Errorf("running embedding pipeline: %w", err)
+	// The underlying tokenizer (sugarme/tokenizer) can panic (e.g. index out of range
+	// in NormalizedString.TransformRange) on certain pathological input. Recover so a
+	// single bad text returns an error instead of crashing the whole process — this
+	// protects EVERY caller: live fact auto-embed, search-query embedding, and the
+	// archive import/reindex. Per-call tokenization state is fresh, so the pipeline is
+	// safe to reuse afterwards.
+	defer func() {
+		if r := recover(); r != nil {
+			embeddings = nil
+			err = fmt.Errorf("embedding pipeline panicked: %v", r)
+		}
+	}()
+
+	result, rerr := p.pipeline.RunPipeline(texts)
+	if rerr != nil {
+		return nil, fmt.Errorf("running embedding pipeline: %w", rerr)
 	}
 
 	return result.Embeddings, nil

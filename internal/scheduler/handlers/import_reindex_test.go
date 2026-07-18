@@ -3,8 +3,10 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"go.uber.org/zap"
@@ -26,6 +28,60 @@ func (fakeEmbedder) Embed(_ context.Context, texts []string) ([][]float32, error
 }
 
 func (fakeEmbedder) Dimensions() int { return 3 }
+
+// poisonEmbedder fails on any text containing "POISON" (simulating a recovered
+// tokenizer panic surfaced as an error by the ONNX provider), succeeds otherwise.
+type poisonEmbedder struct{}
+
+func (poisonEmbedder) Embed(_ context.Context, texts []string) ([][]float32, error) {
+	for _, t := range texts {
+		if strings.Contains(t, "POISON") {
+			return nil, errors.New("embedding pipeline panicked: index out of range")
+		}
+	}
+	out := make([][]float32, len(texts))
+	for i := range texts {
+		out[i] = []float32{0.1, 0.2, 0.3}
+	}
+	return out, nil
+}
+func (poisonEmbedder) Dimensions() int { return 3 }
+
+func TestImportReindexSkipsPoisonMessage(t *testing.T) {
+	store := reindexTestStore(t)
+	ctx := context.Background()
+
+	// One pathological message plus healthy ones. The pathological one must NOT abort
+	// the pass or loop forever — it is skipped with a placeholder so it is not re-fetched.
+	msgs := []struct{ uuid, content string }{
+		{"good1", "healthy content one"},
+		{"bad", "this message triggers a POISON tokenizer crash"},
+		{"good2", "healthy content two"},
+	}
+	for _, m := range msgs {
+		if _, err := store.SaveImportedMessage(ctx, &domain.ImportedMessage{
+			SourceUUID: m.uuid, ConversationUUID: "c", UserID: "admin", Sender: "human", Content: m.content,
+		}); err != nil {
+			t.Fatalf("save %s: %v", m.uuid, err)
+		}
+	}
+
+	h := NewImportReindexHandler(store, poisonEmbedder{}, nil, zap.NewNop())
+	payload, _ := json.Marshal(reindexPayload{UserID: "admin", JobID: "reindex:admin"})
+	if _, err := h.Handle(scheduler.WithTaskID(ctx, 1), string(payload)); err != nil {
+		t.Fatalf("reindex must not fail on a poison message: %v", err)
+	}
+
+	// All messages resolved (healthy embedded, poison placeholdered) → none pending.
+	pending, _ := store.ImportedMessagesWithoutEmbeddings(ctx, 100)
+	if len(pending) != 0 {
+		t.Fatalf("expected 0 pending after skip, got %d", len(pending))
+	}
+	run, _ := store.GetImportRun(ctx, "admin", "reindex:admin")
+	if run == nil || run.Status != "done" {
+		t.Errorf("expected done run, got %+v", run)
+	}
+}
 
 func reindexTestStore(t *testing.T) *sqlite.Store {
 	t.Helper()
