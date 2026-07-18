@@ -242,6 +242,21 @@ type Repository interface {
 	// Data migration
 	BackfillUserIDs(ctx context.Context) (int64, error)
 
+	// Claude export import: isolated read-only archive, dedup ledger, run summary.
+	SaveImportedConversation(ctx context.Context, c *domain.ImportedConversation) (inserted bool, err error)
+	SaveImportedMessage(ctx context.Context, m *domain.ImportedMessage) (inserted bool, err error)
+	ImportedMessagesWithoutEmbeddings(ctx context.Context, limit int) ([]domain.ImportedMessage, error)
+	SaveImportedMessageVector(ctx context.Context, messageID int64, chunkIndex int, embedding []float32) error
+	SearchImportedMessagesHybrid(ctx context.Context, userID, query string, queryVec []float32, limit int, vectorWeight float64) ([]domain.ImportedMessage, error)
+	ListImportedConversations(ctx context.Context, userID string, limit, offset int) ([]domain.ImportedConversation, error)
+	GetImportedConversationMessages(ctx context.Context, userID, conversationUUID string) ([]domain.ImportedMessage, error)
+	ImportedFactKeyExists(ctx context.Context, sourceUUID string) (bool, error)
+	SaveImportedFactKey(ctx context.Context, k *domain.ImportedFactKey) error
+	UpsertImportRun(ctx context.Context, r *domain.ImportRun) error
+	GetImportRun(ctx context.Context, userID, jobID string) (*domain.ImportRun, error)
+	ListImportRuns(ctx context.Context, userID string, limit int) ([]domain.ImportRun, error)
+	TouchTask(ctx context.Context, taskID int64) (stillOwned bool, err error)
+
 	RunMigrations(ctx context.Context) error
 	Close() error
 }

@@ -40,7 +40,11 @@ func (s *Store) SetEmbedFunc(fn EmbedFunc) {
 
 // New creates a new SQLite store at the given file path.
 func New(path string) (*Store, error) {
-	dsn := fmt.Sprintf("file:%s?cache=shared&mode=rwc", path)
+	// busy_timeout is set via DSN so it applies to every pooled connection (a
+	// PRAGMA on a single connection would not). It makes a writer wait up to 5s for
+	// the WAL write lock and retry, instead of failing immediately with SQLITE_BUSY,
+	// so the live assistant tolerates a long-running import holding the writer.
+	dsn := fmt.Sprintf("file:%s?cache=shared&mode=rwc&_pragma=busy_timeout(5000)", path)
 	sqldb, err := sql.Open(sqliteshim.ShimName, dsn)
 	if err != nil {
 		return nil, fmt.Errorf("opening sqlite: %w", err)
@@ -99,6 +103,11 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 		{(*domain.Credential)(nil), "credentials"},
 		{(*domain.CredentialBinding)(nil), "credential_bindings"},
 		{(*domain.CredentialAudit)(nil), "credential_audit"},
+		// Claude export import: isolated read-only archive + dedup ledger + run summary.
+		{(*domain.ImportedConversation)(nil), "imported_conversations"},
+		{(*domain.ImportedMessage)(nil), "imported_messages"},
+		{(*domain.ImportedFactKey)(nil), "imported_fact_keys"},
+		{(*domain.ImportRun)(nil), "import_runs"},
 	}
 
 	// Rename legacy "dreams" table to "insights" (preserves existing data).
@@ -356,6 +365,46 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 				return fmt.Errorf("backfilling messages_fts: %w", err)
 			}
 		}
+	}
+
+	// imported_messages FTS (Claude export archive). Archived content is immutable,
+	// so we mirror only INSERT/DELETE — there is deliberately NO AFTER UPDATE trigger
+	// (a bare `AFTER UPDATE` would raise SQL logic error (1) on modernc; not needed here).
+	if _, err := s.db.ExecContext(ctx, `CREATE VIRTUAL TABLE IF NOT EXISTS imported_messages_fts USING fts5(content, content_rowid=id)`); err != nil {
+		return fmt.Errorf("creating imported_messages_fts: %w", err)
+	}
+	for _, t := range []string{
+		`CREATE TRIGGER IF NOT EXISTS imported_messages_ai AFTER INSERT ON imported_messages BEGIN
+			INSERT INTO imported_messages_fts(rowid, content) VALUES (new.id, new.content);
+		END`,
+		`CREATE TRIGGER IF NOT EXISTS imported_messages_ad AFTER DELETE ON imported_messages BEGIN
+			DELETE FROM imported_messages_fts WHERE rowid = old.id;
+		END`,
+	} {
+		if _, err := s.db.ExecContext(ctx, t); err != nil {
+			return fmt.Errorf("creating imported_messages_fts trigger: %w", err)
+		}
+	}
+	{
+		var ftsCount, msgCount int
+		ftsErr := s.db.QueryRowContext(ctx, `SELECT count(*) FROM imported_messages_fts`).Scan(&ftsCount)
+		msgErr := s.db.QueryRowContext(ctx, `SELECT count(*) FROM imported_messages`).Scan(&msgCount)
+		if ftsErr == nil && msgErr == nil && ftsCount == 0 && msgCount > 0 {
+			if _, err := s.db.ExecContext(ctx, `INSERT INTO imported_messages_fts(rowid, content) SELECT id, content FROM imported_messages`); err != nil {
+				return fmt.Errorf("backfilling imported_messages_fts: %w", err)
+			}
+		}
+	}
+
+	// Indexes for the import archive.
+	importIndexes := []string{
+		`CREATE INDEX IF NOT EXISTS idx_imported_conv_user ON imported_conversations(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_imported_msgs_user ON imported_messages(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_imported_msgs_conv ON imported_messages(conversation_uuid)`,
+		`CREATE INDEX IF NOT EXISTS idx_import_runs_user ON import_runs(user_id)`,
+	}
+	for _, stmt := range importIndexes {
+		s.db.ExecContext(ctx, stmt) //nolint:errcheck,gosec // best-effort index creation (IF NOT EXISTS)
 	}
 
 	// Indexes for user-scoped queries.

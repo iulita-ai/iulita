@@ -54,6 +54,19 @@ func (s *Store) CreateVectorTables(ctx context.Context) error {
 			embedding TEXT NOT NULL,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
+		// Claude archive: one row per chunk (imported messages can be very large and
+		// span multiple embedding chunks). No FK CASCADE — modernc has foreign_keys
+		// OFF by default, so CASCADE would be inert; the archive is append-only and
+		// any future deletion removes vectors explicitly in code.
+		`CREATE TABLE IF NOT EXISTS imported_message_vectors (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			message_id INTEGER NOT NULL,
+			chunk_index INTEGER NOT NULL DEFAULT 0,
+			embedding TEXT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_imported_vec_msg_chunk ON imported_message_vectors(message_id, chunk_index)`,
+		`CREATE INDEX IF NOT EXISTS idx_imported_vec_msg ON imported_message_vectors(message_id)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
