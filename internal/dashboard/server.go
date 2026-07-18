@@ -332,6 +332,7 @@ func New(cfg Config) *Server {
 	if s.authService != nil {
 		imp := api.Group("/import", auth.AdminOnly())
 		imp.Post("/claude-export", s.handleImportClaudeExport)
+		imp.Post("/reindex", s.handleImportReindex)
 		imp.Get("/status", s.handleImportStatus)
 		imp.Delete("/:job_id", s.handleImportCancel)
 		imp.Get("/search", s.handleImportSearch)

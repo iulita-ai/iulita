@@ -730,6 +730,10 @@
     "piiBodyConversations": "Only conversations will be imported into an isolated, read-only archive the assistant does not use automatically. Live memory (Facts) will not be touched.",
     "searchHint": "Type to search your imported conversations.",
     "dismiss": "Dismiss",
-    "cancelTooLate": "Import already started — it can no longer be canceled."
+    "cancelTooLate": "Import already started — it can no longer be canceled.",
+    "reindex": "Reindex archive",
+    "reindexStarted": "Reindexing the archive — progress shows on the Import tab.",
+    "reindexQueued": "Reindex already running.",
+    "chunks": "chunks"
   }
 }

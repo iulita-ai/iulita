@@ -18,6 +18,13 @@ type Metrics struct {
 	CacheHits       *prometheus.CounterVec // labels: cache_type (response/embedding)
 	CacheMisses     *prometheus.CounterVec // labels: cache_type
 	ActiveSessions  prometheus.Gauge
+
+	// Claude export import.
+	ImportDuration     prometheus.Histogram
+	ImportRowsInserted prometheus.Counter // archived messages + memory facts
+	ImportChunks       prometheus.Counter // embedded chunks
+	ImportFailures     prometheus.Counter
+	ImportsInFlight    prometheus.Gauge
 }
 
 // New registers all Prometheus metrics and returns a Metrics instance.
@@ -98,6 +105,38 @@ func New() *Metrics {
 			Namespace: "iulita",
 			Name:      "active_sessions",
 			Help:      "Number of currently active chat sessions.",
+		}),
+
+		ImportDuration: promauto.NewHistogram(prometheus.HistogramOpts{
+			Namespace: "iulita",
+			Subsystem: "import",
+			Name:      "duration_seconds",
+			Help:      "Duration of a completed Claude export import.",
+			Buckets:   prometheus.ExponentialBuckets(1, 2, 15), // 1s to ~4.5h
+		}),
+		ImportRowsInserted: promauto.NewCounter(prometheus.CounterOpts{
+			Namespace: "iulita",
+			Subsystem: "import",
+			Name:      "rows_inserted_total",
+			Help:      "Total rows inserted by imports (archived messages + memory facts).",
+		}),
+		ImportChunks: promauto.NewCounter(prometheus.CounterOpts{
+			Namespace: "iulita",
+			Subsystem: "import",
+			Name:      "embed_chunks_total",
+			Help:      "Total archive chunks embedded by imports.",
+		}),
+		ImportFailures: promauto.NewCounter(prometheus.CounterOpts{
+			Namespace: "iulita",
+			Subsystem: "import",
+			Name:      "failures_total",
+			Help:      "Total failed imports.",
+		}),
+		ImportsInFlight: promauto.NewGauge(prometheus.GaugeOpts{
+			Namespace: "iulita",
+			Subsystem: "import",
+			Name:      "in_flight",
+			Help:      "Number of imports currently running.",
 		}),
 	}
 }

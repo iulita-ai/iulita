@@ -1162,6 +1162,7 @@ export const api = {
       xhr.send(form)
     }),
   getImportStatus: () => get<ImportRun[]>('/api/import/status'),
+  reindexImport: () => post<{ status: string; job_id: string }>('/api/import/reindex'),
   cancelImport: (jobID: string) => del<{ status: string }>(`/api/import/${encodeURIComponent(jobID)}`),
   searchImported: (q: string, limit = 30) =>
     get<{ results: ImportSearchResult[]; vector_search: boolean }>(

@@ -19,6 +19,9 @@
 
       <n-tab-pane name="archive" :tab="t('import.tabArchive')">
         <n-space vertical :size="16">
+          <n-space justify="end">
+            <n-button size="small" :loading="reindexing" @click="onReindex">{{ t('import.reindex') }}</n-button>
+          </n-space>
           <import-search @open="openFromSearch" />
           <import-archive ref="archiveRef" />
         </n-space>
@@ -30,7 +33,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NSpace, NH2, NTabs, NTabPane, useMessage } from 'naive-ui'
+import { NSpace, NH2, NTabs, NTabPane, NButton, useMessage } from 'naive-ui'
 import ImportUploader from '../components/ImportUploader.vue'
 import ImportProgress from '../components/ImportProgress.vue'
 import ImportHistory from '../components/ImportHistory.vue'
@@ -54,8 +57,23 @@ const activeFailed = ref(false)
 const activeJobs = ref<string[]>([])
 
 const archiveRef = ref<InstanceType<typeof ImportArchive> | null>(null)
+const reindexing = ref(false)
 
 const ws = useWebSocket('/ws')
+
+async function onReindex() {
+  reindexing.value = true
+  try {
+    const res = await api.reindexImport()
+    message.info(res.status === 'already_queued' ? t('import.reindexQueued') : t('import.reindexStarted'))
+    tab.value = 'import'
+    loadStatus()
+  } catch (e: any) {
+    message.error(e.message)
+  } finally {
+    reindexing.value = false
+  }
+}
 
 async function loadStatus() {
   loadingRuns.value = true

@@ -99,15 +99,16 @@ type ImportProgressPayload struct {
 
 // ImportDonePayload summarizes a completed Claude export import.
 type ImportDonePayload struct {
-	JobID           string `json:"job_id"`
-	UserID          string `json:"user_id"`
-	Conversations   int    `json:"conversations"`
-	MessagesStored  int    `json:"messages_stored"`
-	MessagesSkipped int    `json:"messages_skipped"`
-	Facts           int    `json:"facts"`
-	SkippedBinaries int    `json:"skipped_binaries"`
-	ChunksEmbedded  int    `json:"chunks_embedded"`
-	ParseErrors     int    `json:"parse_errors"`
+	JobID           string  `json:"job_id"`
+	UserID          string  `json:"user_id"`
+	Conversations   int     `json:"conversations"`
+	MessagesStored  int     `json:"messages_stored"`
+	MessagesSkipped int     `json:"messages_skipped"`
+	Facts           int     `json:"facts"`
+	SkippedBinaries int     `json:"skipped_binaries"`
+	ChunksEmbedded  int     `json:"chunks_embedded"`
+	ParseErrors     int     `json:"parse_errors"`
+	DurationSeconds float64 `json:"duration_seconds"`
 }
 
 // ImportFailedPayload reports a failed import with partial progress (resumable).

@@ -312,6 +312,10 @@ func (s *Store) UpsertImportRun(ctx context.Context, r *domain.ImportRun) error 
 		Model(r).
 		On("CONFLICT (job_id) DO UPDATE").
 		Set("status = EXCLUDED.status").
+		// started_at is intentionally NOT updated on conflict (modernc cannot reference
+		// the old row in DO UPDATE, and progress writes carry a zero start). Trade-off:
+		// a repeated reindex under the same job_id keeps its first start time — a minor
+		// cosmetic staleness accepted for the hot upsert to stay correct.
 		Set("source_sha = EXCLUDED.source_sha").
 		Set("conversations = EXCLUDED.conversations").
 		Set("messages_stored = EXCLUDED.messages_stored").
@@ -369,6 +373,26 @@ func (s *Store) ListImportRuns(ctx context.Context, userID string, limit int) ([
 		return nil, fmt.Errorf("listing import runs: %w", err)
 	}
 	return runs, nil
+}
+
+// PruneImportRuns keeps only the newest `keep` import runs (by id) and deletes the
+// rest. import_runs is not GC-ed by the scheduler, so this bounds its growth.
+func (s *Store) PruneImportRuns(ctx context.Context, keep int) (int, error) {
+	if keep <= 0 {
+		keep = 50
+	}
+	// Never delete a still-running row (would break status/rehydrate of a live import).
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM import_runs WHERE status != 'running' AND id NOT IN (SELECT id FROM import_runs ORDER BY id DESC LIMIT ?)`,
+		keep)
+	if err != nil {
+		return 0, fmt.Errorf("pruning import runs: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("prune rows affected: %w", err)
+	}
+	return int(n), nil
 }
 
 // CancelPendingImportTask cancels a not-yet-started import task by its unique key,

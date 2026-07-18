@@ -1547,6 +1547,11 @@ func main() {
 	if err := os.MkdirAll(paths.ImportsDir(), 0o700); err != nil {
 		logger.Warn("failed to create imports dir", zap.String("dir", paths.ImportsDir()), zap.Error(err))
 	}
+	// Reap staged export zips orphaned by a terminal-failed or crashed import, before
+	// the worker claims anything (so it never races a live task).
+	if _, err := handlers.SweepStagedImports(ctx, store, paths.ImportsDir(), logger); err != nil {
+		logger.Warn("failed to sweep staged imports", zap.Error(err))
+	}
 	importWorker := scheduler.NewWorker(store, scheduler.WorkerConfig{
 		Capabilities: []string{"import"},
 		Concurrency:  1,
@@ -1554,6 +1559,7 @@ func main() {
 	}, logger)
 	importWorker.SetEventBus(bus)
 	importWorker.Register(handlers.NewImportClaudeExportHandler(store, embedder, bus, logger))
+	importWorker.Register(handlers.NewImportReindexHandler(store, embedder, bus, logger))
 	wg.Add(1)
 	go func() {
 		defer wg.Done()

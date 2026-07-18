@@ -255,6 +255,7 @@ type Repository interface {
 	UpsertImportRun(ctx context.Context, r *domain.ImportRun) error
 	GetImportRun(ctx context.Context, userID, jobID string) (*domain.ImportRun, error)
 	ListImportRuns(ctx context.Context, userID string, limit int) ([]domain.ImportRun, error)
+	PruneImportRuns(ctx context.Context, keep int) (int, error)
 	CancelPendingImportTask(ctx context.Context, uniqueKey string) (canceled bool, err error)
 	TouchTask(ctx context.Context, taskID int64) (stillOwned bool, err error)
 

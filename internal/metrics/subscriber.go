@@ -68,4 +68,31 @@ func (m *Metrics) RegisterSubscribers(bus *eventbus.Bus) {
 		m.MessagesTotal.WithLabelValues("outbound").Inc()
 		return nil
 	})
+
+	// Claude export import lifecycle.
+	bus.Subscribe(eventbus.ImportStarted, func(_ context.Context, _ eventbus.Event) error {
+		m.ImportsInFlight.Inc()
+		return nil
+	})
+	bus.Subscribe(eventbus.ImportDone, func(_ context.Context, evt eventbus.Event) error {
+		m.ImportsInFlight.Dec()
+		p, ok := evt.Payload.(eventbus.ImportDonePayload)
+		if !ok {
+			return nil
+		}
+		m.ImportDuration.Observe(p.DurationSeconds)
+		m.ImportRowsInserted.Add(float64(p.MessagesStored + p.Facts))
+		m.ImportChunks.Add(float64(p.ChunksEmbedded))
+		return nil
+	})
+	bus.Subscribe(eventbus.ImportFailed, func(_ context.Context, _ eventbus.Event) error {
+		m.ImportsInFlight.Dec()
+		m.ImportFailures.Inc()
+		return nil
+	})
+	// Reclaim/abort: balance the gauge without counting a failure.
+	bus.Subscribe(eventbus.ImportAborted, func(_ context.Context, _ eventbus.Event) error {
+		m.ImportsInFlight.Dec()
+		return nil
+	})
 }

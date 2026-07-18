@@ -228,6 +228,46 @@ func validateExportZip(path string) error {
 	return nil
 }
 
+// handleImportReindex enqueues a background pass that embeds any archived messages
+// missing vectors — used after enabling embeddings on an FTS-only archive.
+func (s *Server) handleImportReindex(c *fiber.Ctx) error {
+	claims := auth.GetClaims(c)
+	if claims == nil || claims.Role != domain.RoleAdmin {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "admin access required"})
+	}
+	// Without an embedder the reindex task would error immediately and strand the run
+	// row in 'running' — reject up front instead.
+	if s.embedder == nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "embeddings are not configured"})
+	}
+	ctx := c.Context()
+	jobID := "reindex:" + claims.UserID
+
+	payload, mErr := json.Marshal(map[string]any{"user_id": claims.UserID, "job_id": jobID})
+	if mErr != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to queue reindex"})
+	}
+	created, err := s.store.CreateTaskIfNotExists(ctx, &domain.Task{
+		Type:         handlers.TaskTypeImportReindex,
+		Payload:      string(payload),
+		Capabilities: "import",
+		MaxAttempts:  1,
+		UniqueKey:    jobID,
+	})
+	if err != nil {
+		return s.errorResponse(c, err)
+	}
+	if !created {
+		return c.JSON(fiber.Map{"status": "already_queued", "job_id": jobID})
+	}
+	if err := s.store.UpsertImportRun(ctx, &domain.ImportRun{
+		JobID: jobID, UserID: claims.UserID, Status: "running", StartedAt: time.Now(),
+	}); err != nil {
+		s.logger.Warn("failed to record reindex run", zap.String("job_id", jobID), zap.Error(err))
+	}
+	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"status": "queued", "job_id": jobID})
+}
+
 // handleImportStatus returns the caller's import runs, newest first.
 func (s *Server) handleImportStatus(c *fiber.Ctx) error {
 	claims := auth.GetClaims(c)

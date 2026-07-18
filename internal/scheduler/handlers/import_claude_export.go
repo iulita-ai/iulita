@@ -37,6 +37,8 @@ const (
 	embedThrottle      = 100 * time.Millisecond // keeps added latency on live Embed well under 500ms
 	heartbeatInterval  = 60 * time.Second
 	progressEveryConvs = 20
+
+	importRunsRetention = 50 // owner-set: keep the newest N import runs
 )
 
 // importPayload is the task payload for an import job.
@@ -102,7 +104,7 @@ func (h *ImportClaudeExportHandler) Handle(ctx context.Context, payload string) 
 	// If the heartbeat finds we no longer own the task, cancel so we abort promptly.
 	hctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	h.startHeartbeat(ctx, hctx, cancel, &reclaimed)
+	startImportHeartbeat(ctx, hctx, cancel, &reclaimed, h.store, h.logger)
 
 	zr, err := zip.OpenReader(p.ZipPath)
 	if err != nil {
@@ -140,12 +142,13 @@ func (h *ImportClaudeExportHandler) Handle(ctx context.Context, payload string) 
 	}
 
 	h.writeRun(ctx, &p, "done", "done", stats.Conversations, stats.Conversations, &stats, started, "", true)
+	h.pruneRuns(ctx) // bound import_runs growth (owner-set retention)
 	h.publish(ctx, eventbus.ImportDone, eventbus.ImportDonePayload{
 		JobID: p.JobID, UserID: p.UserID,
 		Conversations: stats.Conversations, MessagesStored: stats.MessagesStored,
 		MessagesSkipped: stats.MessagesSkipped, Facts: stats.Facts,
 		SkippedBinaries: stats.SkippedBinaries, ChunksEmbedded: stats.ChunksEmbedded,
-		ParseErrors: stats.ParseErrors,
+		ParseErrors: stats.ParseErrors, DurationSeconds: time.Since(started).Seconds(),
 	})
 	h.logger.Info("claude import complete",
 		zap.String("job_id", p.JobID),
@@ -166,7 +169,10 @@ func (h *ImportClaudeExportHandler) Handle(ctx context.Context, payload string) 
 	return string(result), nil
 }
 
-func (h *ImportClaudeExportHandler) startHeartbeat(parent, hctx context.Context, cancel context.CancelFunc, reclaimed *atomic.Bool) {
+// startImportHeartbeat bumps the task's claimed_at periodically so CleanupStaleTasks
+// does not reclaim a long-running import/reindex job. On losing ownership it sets
+// reclaimed and cancels so the handler aborts promptly. Shared by import and reindex.
+func startImportHeartbeat(parent, hctx context.Context, cancel context.CancelFunc, reclaimed *atomic.Bool, store storage.Repository, logger *zap.Logger) {
 	taskID := scheduler.TaskIDFrom(parent)
 	if taskID <= 0 {
 		return
@@ -179,13 +185,13 @@ func (h *ImportClaudeExportHandler) startHeartbeat(parent, hctx context.Context,
 			case <-hctx.Done():
 				return
 			case <-t.C:
-				owned, err := h.store.TouchTask(hctx, taskID)
+				owned, err := store.TouchTask(hctx, taskID)
 				if err != nil {
-					h.logger.Warn("import heartbeat failed", zap.Int64("task_id", taskID), zap.Error(err))
+					logger.Warn("import heartbeat failed", zap.Int64("task_id", taskID), zap.Error(err))
 					continue
 				}
 				if !owned {
-					h.logger.Warn("import task no longer owned; aborting", zap.Int64("task_id", taskID))
+					logger.Warn("import task no longer owned; aborting", zap.Int64("task_id", taskID))
 					reclaimed.Store(true)
 					cancel()
 					return
@@ -193,6 +199,75 @@ func (h *ImportClaudeExportHandler) startHeartbeat(parent, hctx context.Context,
 			}
 		}
 	}()
+}
+
+// embedPendingMessages embeds all archived messages lacking vectors, in bounded
+// sub-batches with throttling so the shared embedding pipeline stays responsive to
+// the live assistant. onBatch (optional) is called after each fetched batch with the
+// running chunk total. Shared by the import embed phase and the reindex handler.
+func embedPendingMessages(ctx context.Context, store storage.Repository, embed llm.EmbeddingProvider, logger *zap.Logger, onBatch func(chunks int)) (int, error) {
+	total := 0
+	for {
+		if err := ctx.Err(); err != nil {
+			return total, err
+		}
+		batch, err := store.ImportedMessagesWithoutEmbeddings(ctx, embedBatchMessages)
+		if err != nil {
+			return total, fmt.Errorf("loading messages to embed: %w", err)
+		}
+		if len(batch) == 0 {
+			return total, nil
+		}
+		progressed := 0
+		for i := range batch {
+			if err := ctx.Err(); err != nil {
+				return total, err
+			}
+			m := &batch[i]
+			chunks := importer.Chunk(m.Content, importer.DefaultChunkChars)
+			if len(chunks) == 0 {
+				continue
+			}
+			vecs := make([][]float32, 0, len(chunks))
+			for start := 0; start < len(chunks); start += embedChunkSubBatch {
+				if err := ctx.Err(); err != nil {
+					return total, err
+				}
+				end := start + embedChunkSubBatch
+				if end > len(chunks) {
+					end = len(chunks)
+				}
+				sub, eErr := embed.Embed(ctx, chunks[start:end])
+				if eErr != nil {
+					return total, fmt.Errorf("embedding message %d: %w", m.ID, eErr)
+				}
+				vecs = append(vecs, sub...)
+				select {
+				case <-ctx.Done():
+					return total, ctx.Err()
+				case <-time.After(embedThrottle):
+				}
+			}
+			for ci, v := range vecs {
+				if sErr := store.SaveImportedMessageVector(ctx, m.ID, ci, v); sErr != nil {
+					return total, fmt.Errorf("saving vector: %w", sErr)
+				}
+				total++
+			}
+			progressed++
+		}
+		if onBatch != nil {
+			onBatch(total)
+		}
+		if progressed == 0 {
+			// Defensive: a non-empty batch where nothing embedded would otherwise
+			// re-fetch forever. Cannot happen while stored content is non-empty.
+			if logger != nil {
+				logger.Warn("embedding made no progress; stopping")
+			}
+			return total, nil
+		}
+	}
 }
 
 func (h *ImportClaudeExportHandler) importMemories(ctx context.Context, p *importPayload, f *zip.File, stats *importStats) error {
@@ -292,73 +367,25 @@ func (h *ImportClaudeExportHandler) importConversations(ctx context.Context, p *
 }
 
 func (h *ImportClaudeExportHandler) embedArchive(ctx context.Context, p *importPayload, stats *importStats) error {
-	for {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		batch, err := h.store.ImportedMessagesWithoutEmbeddings(ctx, embedBatchMessages)
-		if err != nil {
-			return fmt.Errorf("loading messages to embed: %w", err)
-		}
-		if len(batch) == 0 {
-			return nil
-		}
-		embeddedThisRound := 0
-		for i := range batch {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-			m := &batch[i]
-			chunks := importer.Chunk(m.Content, importer.DefaultChunkChars)
-			if len(chunks) == 0 {
-				continue
-			}
-			// Embed in bounded sub-batches so the shared embedding mutex is never held
-			// for a single huge Embed call — this keeps added latency on the live
-			// assistant's embeds well under the target, even for very large messages.
-			vecs := make([][]float32, 0, len(chunks))
-			for start := 0; start < len(chunks); start += embedChunkSubBatch {
-				if err := ctx.Err(); err != nil {
-					return err
-				}
-				end := start + embedChunkSubBatch
-				if end > len(chunks) {
-					end = len(chunks)
-				}
-				sub, err := h.embed.Embed(ctx, chunks[start:end])
-				if err != nil {
-					return fmt.Errorf("embedding message %d: %w", m.ID, err)
-				}
-				vecs = append(vecs, sub...)
-				// Yield the shared pipeline back to the live assistant between sub-batches.
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				case <-time.After(embedThrottle):
-				}
-			}
-			// Save all of a message's vectors only after embedding fully succeeds. This
-			// shrinks the partial-embedding window; full per-message atomicity would need
-			// a storage transaction (future enhancement).
-			for ci, v := range vecs {
-				if err := h.store.SaveImportedMessageVector(ctx, m.ID, ci, v); err != nil {
-					return fmt.Errorf("saving vector: %w", err)
-				}
-				stats.ChunksEmbedded++
-			}
-			embeddedThisRound++
-		}
-		h.writeRun(ctx, p, "running", "embedding", stats.ChunksEmbedded, 0, stats, time.Time{}, "", false)
+	chunks, err := embedPendingMessages(ctx, h.store, h.embed, h.logger, func(total int) {
+		stats.ChunksEmbedded = total
+		h.writeRun(ctx, p, "running", "embedding", total, 0, stats, time.Time{}, "", false)
 		h.publish(ctx, eventbus.ImportProgress, eventbus.ImportProgressPayload{
-			JobID: p.JobID, UserID: p.UserID, Phase: "embedding", Done: stats.ChunksEmbedded,
+			JobID: p.JobID, UserID: p.UserID, Phase: "embedding", Done: total,
 		})
-		if embeddedThisRound == 0 {
-			// Defensive: a non-empty batch where nothing could be embedded would
-			// otherwise re-fetch the same rows forever. Cannot happen while stored
-			// content is always non-empty (Chunk yields ≥1 chunk), but guard anyway.
-			h.logger.Warn("embedding made no progress; stopping", zap.String("job_id", p.JobID))
-			return nil
-		}
+	})
+	stats.ChunksEmbedded = chunks
+	return err
+}
+
+// pruneRuns trims import_runs to the retention limit under a detached, bounded context.
+func (h *ImportClaudeExportHandler) pruneRuns(ctx context.Context) {
+	pruneCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	if n, err := h.store.PruneImportRuns(pruneCtx, importRunsRetention); err != nil {
+		h.logger.Warn("failed to prune import runs", zap.Error(err))
+	} else if n > 0 {
+		h.logger.Info("pruned old import runs", zap.Int("removed", n))
 	}
 }
 
@@ -368,9 +395,12 @@ func (h *ImportClaudeExportHandler) embedArchive(ctx context.Context, p *importP
 // the ImportRun row, so the terminal status is NOT persisted (avoids a backward flip).
 func (h *ImportClaudeExportHandler) fail(ctx context.Context, p *importPayload, stats *importStats, cause error, reclaimed *atomic.Bool) error {
 	if reclaimed != nil && reclaimed.Load() {
+		// The reclaiming worker owns the run row; only balance the in-flight gauge.
+		h.publish(ctx, eventbus.ImportAborted, eventbus.ImportProgressPayload{JobID: p.JobID, UserID: p.UserID})
 		return cause
 	}
 	h.writeRun(ctx, p, "failed", "failed", stats.Conversations, stats.Conversations, stats, time.Time{}, cause.Error(), true)
+	h.pruneRuns(ctx) // bound import_runs even when imports fail
 	h.publish(ctx, eventbus.ImportFailed, eventbus.ImportFailedPayload{
 		JobID: p.JobID, UserID: p.UserID, Error: cause.Error(),
 		ConversationsDone: stats.Conversations, MessagesStored: stats.MessagesStored, Facts: stats.Facts,

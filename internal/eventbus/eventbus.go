@@ -38,6 +38,10 @@ const (
 	ImportProgress = "import.progress"
 	ImportDone     = "import.done"
 	ImportFailed   = "import.failed"
+	// ImportAborted is a metric-only signal published when a worker loses ownership
+	// (reclaim) mid-run: it balances the in-flight gauge WITHOUT counting a failure or
+	// clobbering the reclaiming worker's run row. Not forwarded to the dashboard WS.
+	ImportAborted = "import.aborted"
 )
 
 // Handler processes an event. Returning an error logs a warning but does not

@@ -46,9 +46,21 @@ func buildImportServer(t *testing.T) (*Server, *sqlite.Store) {
 		Logger:      zap.NewNop(),
 		StaticFS:    fstest.MapFS{"index.html": {Data: []byte("ok")}},
 		AuthService: authSvc,
+		Embedder:    fakeDashEmbedder{},
 	})
 	return srv, store
 }
+
+type fakeDashEmbedder struct{}
+
+func (fakeDashEmbedder) Embed(_ context.Context, texts []string) ([][]float32, error) {
+	out := make([][]float32, len(texts))
+	for i := range texts {
+		out[i] = []float32{0.1, 0.2, 0.3}
+	}
+	return out, nil
+}
+func (fakeDashEmbedder) Dimensions() int { return 3 }
 
 func makeExportZipBytes(t *testing.T, withMemories, withConversations bool) []byte {
 	t.Helper()
@@ -275,6 +287,38 @@ func TestImportCancelThenReupload(t *testing.T) {
 	}
 	if active != 1 {
 		t.Errorf("expected exactly 1 active task with the key after re-upload, got %d", active)
+	}
+}
+
+func TestImportReindexEnqueues(t *testing.T) {
+	srv, store := buildImportServer(t)
+	ctx := context.Background()
+
+	req := httptest.NewRequest("POST", "/api/import/reindex", http.NoBody)
+	req.Header.Set("Authorization", "Bearer "+testAdminToken(t))
+	resp, err := srv.app.Test(req, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 202 {
+		t.Fatalf("expected 202, got %d", resp.StatusCode)
+	}
+	tasks, _ := store.ListTasks(ctx, storage.TaskFilter{})
+	found := false
+	for _, tk := range tasks {
+		if tk.Type == "import.reindex" && tk.UniqueKey == "reindex:admin-1" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("reindex task not enqueued")
+	}
+	// A second reindex while one is queued is deduped.
+	req2 := httptest.NewRequest("POST", "/api/import/reindex", http.NoBody)
+	req2.Header.Set("Authorization", "Bearer "+testAdminToken(t))
+	resp2, _ := srv.app.Test(req2, -1)
+	if resp2.StatusCode != 200 {
+		t.Errorf("expected 200 already_queued on second reindex, got %d", resp2.StatusCode)
 	}
 }
 

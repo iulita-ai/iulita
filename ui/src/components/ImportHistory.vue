@@ -57,12 +57,14 @@ const columns = computed<DataTableColumns<ImportRun>>(() => [
   {
     title: t('import.summary'),
     key: 'summary',
-    render: (row) =>
-      h(NText, { depth: 3, style: 'font-size:12px' }, {
-        default: () =>
-          `${t('import.convs')}: ${row.conversations} · ${t('import.msgs')}: ${row.messages_stored} · ${t('import.facts')}: ${row.facts}` +
-          (row.parse_errors ? ` · ${t('import.parseErrors')}: ${row.parse_errors}` : ''),
-      }),
+    render: (row) => {
+      const isReindex = row.job_id.startsWith('reindex:')
+      const text = isReindex
+        ? `${t('import.reindex')} · ${t('import.chunks')}: ${row.chunks_embedded}`
+        : `${t('import.convs')}: ${row.conversations} · ${t('import.msgs')}: ${row.messages_stored} · ${t('import.facts')}: ${row.facts}` +
+          (row.parse_errors ? ` · ${t('import.parseErrors')}: ${row.parse_errors}` : '')
+      return h(NText, { depth: 3, style: 'font-size:12px' }, { default: () => text })
+    },
   },
   { title: t('import.started'), key: 'started_at', width: 170, render: (row) => fmt(row.started_at) },
   {

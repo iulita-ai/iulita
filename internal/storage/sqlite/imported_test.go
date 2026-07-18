@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"time"
 
@@ -356,6 +357,39 @@ func TestImportRunUpsert(t *testing.T) {
 	}
 	if len(runs) != 1 {
 		t.Fatalf("expected 1 run, got %d", len(runs))
+	}
+}
+
+func TestPruneImportRuns(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	for i := 0; i < 10; i++ {
+		if err := store.UpsertImportRun(ctx, &domain.ImportRun{
+			JobID: "job-" + strconv.Itoa(i), UserID: "admin", Status: "done",
+		}); err != nil {
+			t.Fatalf("UpsertImportRun: %v", err)
+		}
+	}
+	removed, err := store.PruneImportRuns(ctx, 3)
+	if err != nil {
+		t.Fatalf("PruneImportRuns: %v", err)
+	}
+	if removed != 7 {
+		t.Fatalf("expected 7 removed, got %d", removed)
+	}
+	runs, _ := store.ListImportRuns(ctx, "admin", 100)
+	if len(runs) != 3 {
+		t.Fatalf("expected 3 runs kept, got %d", len(runs))
+	}
+	// The newest (highest id) are kept: job-9, job-8, job-7.
+	if runs[0].JobID != "job-9" {
+		t.Errorf("expected newest job-9 first, got %s", runs[0].JobID)
+	}
+	// Pruning below the limit is a no-op.
+	again, _ := store.PruneImportRuns(ctx, 3)
+	if again != 0 {
+		t.Errorf("expected 0 removed on second prune, got %d", again)
 	}
 }
 

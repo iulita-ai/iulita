@@ -737,6 +737,10 @@
     "piiBodyConversations": "仅导入对话到助手不会自动使用的独立只读存档。不会改动实时记忆（Facts）。",
     "searchHint": "输入以搜索已导入的对话。",
     "dismiss": "关闭",
-    "cancelTooLate": "导入已开始——无法再取消。"
+    "cancelTooLate": "导入已开始——无法再取消。",
+    "reindex": "重建存档索引",
+    "reindexStarted": "正在重建存档索引——进度见「导入」标签。",
+    "reindexQueued": "重建索引已在进行中。",
+    "chunks": "片段"
   }
 }
