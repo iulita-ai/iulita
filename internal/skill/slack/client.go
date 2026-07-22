@@ -199,6 +199,20 @@ func (c *Client) ExchangeCode(ctx context.Context, code string) (*ExchangeResult
 	}, nil
 }
 
+// GetUserClient returns a slack-go client authenticated as the owner's user
+// token (xoxp-), decrypting and refreshing via GetUserToken. The token carries
+// only read scopes (see RequiredUserScopes / HasWriteScope), so this client is
+// read-only in practice; callers must still never wire it to a write path.
+// The ErrNoSlackAccount sentinel is preserved (via errors.Is) for a fail-closed
+// "not connected" branch.
+func (c *Client) GetUserClient(ctx context.Context, ownerUserID string) (*slackapi.Client, error) {
+	token, err := c.GetUserToken(ctx, ownerUserID)
+	if err != nil {
+		return nil, err
+	}
+	return slackapi.New(token, slackapi.OptionHTTPClient(c.http)), nil
+}
+
 // EncryptToken encrypts a token for storage; returns the value unchanged when no
 // encryptor is configured. The dashboard start-guard refuses to begin the flow
 // unless encryption is enabled, so plaintext storage never happens in practice.

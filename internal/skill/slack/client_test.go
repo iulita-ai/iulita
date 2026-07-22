@@ -237,6 +237,25 @@ func TestVerifyState_RejectsForgery(t *testing.T) {
 	}
 }
 
+func TestGetUserClient(t *testing.T) {
+	// No account → ErrNoSlackAccount (fail-closed sentinel preserved).
+	c := newClient(&fakeStore{account: nil}, reversingCrypto{enabled: true})
+	if _, err := c.GetUserClient(context.Background(), "owner"); !errors.Is(err, ErrNoSlackAccount) {
+		t.Fatalf("no account: expected ErrNoSlackAccount, got %v", err)
+	}
+
+	// Connected, non-expiring token → a usable client.
+	store := &fakeStore{account: &domain.SlackAccount{ID: 1, EncryptedAccessToken: "enc:utok-live"}} // gitleaks:allow (fake test fixture)
+	c = newClient(store, reversingCrypto{enabled: true})
+	cli, err := c.GetUserClient(context.Background(), "owner")
+	if err != nil {
+		t.Fatalf("GetUserClient: %v", err)
+	}
+	if cli == nil {
+		t.Fatal("expected a non-nil slack client")
+	}
+}
+
 func TestEncryptDecryptRoundTrip(t *testing.T) {
 	c := newClient(nil, reversingCrypto{enabled: true})
 	enc, _ := c.EncryptToken("utok-secret")

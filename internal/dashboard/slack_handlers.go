@@ -165,6 +165,11 @@ func (s *Server) handleSlackCallback(c *fiber.Ctx) error {
 		s.logger.Error("saving slack account failed", zap.Error(err))
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
 	}
+	// Enable the slack_search skill immediately (no restart) now that an account
+	// is connected.
+	if s.registry != nil {
+		s.registry.AddCapability("slack_user")
+	}
 	return c.Redirect("/settings?slack=connected")
 }
 
@@ -174,7 +179,9 @@ func (s *Server) handleSlackStatus(c *fiber.Ctx) error {
 	if userID == "" {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "not authenticated"})
 	}
-	account, err := s.store.GetSlackAccountByUserID(c.Context(), userID)
+	// Slack is single-owner: resolve THE connected account, not the caller's, so
+	// any admin sees the true connection status.
+	account, err := s.store.GetAnySlackAccount(c.Context())
 	if err != nil {
 		s.logger.Error("slack status lookup failed", zap.Error(err))
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
@@ -196,15 +203,28 @@ func (s *Server) handleSlackStatus(c *fiber.Ctx) error {
 	})
 }
 
-// handleDeleteSlackAccount disconnects the owner's Slack account. Admin-only.
+// handleDeleteSlackAccount disconnects the (single-owner) Slack account. Admin-only.
 func (s *Server) handleDeleteSlackAccount(c *fiber.Ctx) error {
-	userID := getUserID(c)
-	if userID == "" {
+	if getUserID(c) == "" {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "not authenticated"})
 	}
-	if err := s.store.DeleteSlackAccount(c.Context(), userID); err != nil {
+	// Resolve the single connected account so any admin can disconnect it (and so
+	// we only disable the skill when something was actually removed).
+	account, err := s.store.GetAnySlackAccount(c.Context())
+	if err != nil {
+		s.logger.Error("slack disconnect lookup failed", zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
+	}
+	if account == nil {
+		return c.JSON(fiber.Map{"status": "disconnected"})
+	}
+	if err := s.store.DeleteSlackAccount(c.Context(), account.UserID); err != nil {
 		s.logger.Error("slack disconnect failed", zap.Error(err))
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
+	}
+	// Disable the slack_search skill immediately so a revoked account can't be used.
+	if s.registry != nil {
+		s.registry.RemoveCapability("slack_user")
 	}
 	return c.JSON(fiber.Map{"status": "disconnected"})
 }

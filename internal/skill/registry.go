@@ -170,14 +170,18 @@ func (r *Registry) AddManifest(m *Manifest) {
 
 // Get returns a skill by name if it exists, is enabled, and has required capabilities.
 func (r *Registry) Get(name string) (Skill, bool) {
+	// Hold the RLock across the skills/disabled/capabilities reads: capabilities
+	// are mutated at runtime (AddCapability/RemoveCapability from the OAuth
+	// connect/disconnect handlers), and hasCapabilities reads r.capabilities
+	// without taking its own lock — reading it lock-free here would be a fatal
+	// concurrent map read/write with those writers.
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	s, ok := r.skills[name]
 	if !ok {
 		return nil, false
 	}
-	r.mu.RLock()
-	dis := r.disabled[name]
-	r.mu.RUnlock()
-	if dis || !r.hasCapabilities(s) {
+	if r.disabled[name] || !r.hasCapabilities(s) {
 		return nil, false
 	}
 	return s, true

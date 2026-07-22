@@ -971,6 +971,26 @@ func main() {
 		logger.Info("slack personal oauth client created (inactive, no credentials)")
 	}
 
+	// slack_search skill — on-demand read/search of the owner's Slack. Registered
+	// unconditionally; the "slack_user" capability (which gates it) is enabled only
+	// when an account is connected — at startup here, and at runtime by the OAuth
+	// connect/disconnect handlers (no restart needed).
+	slackManifest, err := slackskill.LoadManifest()
+	if err != nil {
+		logger.Warn("failed to load slack manifest", zap.Error(err))
+	}
+	slackSearchSkill := slackskill.NewSearchSkill(slackOAuthClient, store, logger)
+	registry.RegisterWithManifest(slackSearchSkill, slackManifest)
+	if acct, acctErr := store.GetAnySlackAccount(ctx); acctErr != nil {
+		logger.Warn("checking slack account at startup", zap.Error(acctErr))
+	} else if acct != nil {
+		caps = append(caps, "slack_user")
+		registry.SetCapabilities(caps)
+		logger.Info("slack search skill active (account connected)")
+	} else {
+		logger.Info("slack search skill registered (inactive, no account connected)")
+	}
+
 	// Todoist skill — API token-based task management.
 	todoistClient := todoist.NewClient(cfg.Skills.Todoist.APIToken, httpClient, logger)
 	todoistManifest, err := todoist.LoadManifest()
