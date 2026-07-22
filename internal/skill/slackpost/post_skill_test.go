@@ -10,6 +10,7 @@ import (
 
 	slackch "github.com/iulita-ai/iulita/internal/channel/slack"
 	"github.com/iulita-ai/iulita/internal/domain"
+	"github.com/iulita-ai/iulita/internal/eventbus"
 	"github.com/iulita-ai/iulita/internal/skill"
 	"github.com/iulita-ai/iulita/internal/skill/interact"
 )
@@ -202,6 +203,38 @@ func TestPost_NoPoster(t *testing.T) {
 	out, err := s.Execute(context.Background(), raw)
 	if err != nil || !strings.Contains(out, "not available") {
 		t.Errorf("out=%q err=%v", out, err)
+	}
+}
+
+func TestPost_PublishesEvent(t *testing.T) {
+	p := &fakePoster{mode: "auto"}
+	s, _ := newSkill(p)
+	bus := eventbus.New(zap.NewNop())
+	var got eventbus.SlackPostPayload
+	n := 0
+	bus.Subscribe(eventbus.SlackPost, func(_ context.Context, evt eventbus.Event) error {
+		if pl, ok := evt.Payload.(eventbus.SlackPostPayload); ok {
+			got = pl
+			n++
+		}
+		return nil
+	})
+	s.SetBus(bus)
+
+	run(t, s, context.Background(), map[string]any{"channel": "C1", "text": "auto post"})
+	if n != 1 || got.Mode != "auto" || got.Decision != "auto" || !got.Success {
+		t.Errorf("published %+v (n=%d), want {auto auto true}", got, n)
+	}
+
+	// A denial publishes a non-success event with the decision as the kind.
+	deny := &fakePoster{mode: "off"}
+	s2, _ := newSkill(deny)
+	got = eventbus.SlackPostPayload{}
+	n = 0
+	s2.SetBus(bus)
+	run(t, s2, context.Background(), map[string]any{"channel": "C9", "text": "x"})
+	if n != 1 || got.Success || got.Decision != "denied" {
+		t.Errorf("denial published %+v (n=%d), want denied/false", got, n)
 	}
 }
 

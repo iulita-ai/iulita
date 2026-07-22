@@ -128,6 +128,7 @@ type Repository interface {
 
 	// Audit log
 	SaveAuditEntry(ctx context.Context, e *domain.AuditEntry) error
+	ListAuditEntriesByPrefix(ctx context.Context, actionPrefix string, limit int) ([]domain.AuditEntry, error)
 
 	// Skill execution telemetry
 	SaveSkillExecution(ctx context.Context, e *domain.SkillExecution) error

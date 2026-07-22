@@ -251,6 +251,7 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 
 	// Audit log: index for querying by chat.
 	s.db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_audit_log_chat ON audit_log(chat_id, created_at)`)
+	s.db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action, created_at)`) //nolint:errcheck,gosec
 
 	// Skill execution telemetry: indexes for per-skill and per-user aggregation.
 	for _, stmt := range []string{

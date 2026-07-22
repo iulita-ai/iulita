@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -24,6 +25,7 @@ type fakeSlackStore struct {
 	users   map[string]*domain.User
 	account *domain.SlackAccount
 	saved   *domain.SlackAccount
+	audit   []domain.AuditEntry
 	updated bool
 	deleted bool
 }
@@ -48,6 +50,9 @@ func (f *fakeSlackStore) UpdateSlackTokens(_ context.Context, _ int64, _, _ stri
 func (f *fakeSlackStore) DeleteSlackAccount(_ context.Context, _ string) error {
 	f.deleted = true
 	return nil
+}
+func (f *fakeSlackStore) ListAuditEntriesByPrefix(_ context.Context, _ string, _ int) ([]domain.AuditEntry, error) {
+	return f.audit, nil
 }
 
 type fakeSlackOAuth struct {
@@ -248,6 +253,33 @@ func injectAdmin(userID string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		c.Locals(auth.ContextKeyUser, &auth.Claims{UserID: userID, Role: domain.RoleAdmin})
 		return c.Next()
+	}
+}
+
+func TestSlackActivity(t *testing.T) {
+	store := &fakeSlackStore{audit: []domain.AuditEntry{
+		{ID: 2, Action: "slack.post.sent", Detail: `{"channel":"C1","decision":"auto"}`, Success: true},
+		{ID: 1, Action: "slack.search.ok", Detail: "not-json", Success: true}, // malformed detail
+	}}
+	s := newTestServer(store, &fakeSlackOAuth{})
+	app := fiber.New()
+	app.Get("/api/slack/activity", s.handleSlackActivity)
+
+	resp, _ := app.Test(httptest.NewRequest(http.MethodGet, "/api/slack/activity", http.NoBody))
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var out []map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	if len(out) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(out))
+	}
+	// Parsed detail is an object; malformed detail falls back to {} without erroring.
+	if d, ok := out[0]["detail"].(map[string]any); !ok || d["channel"] != "C1" {
+		t.Errorf("detail not parsed: %v", out[0]["detail"])
+	}
+	if d, ok := out[1]["detail"].(map[string]any); !ok || len(d) != 0 {
+		t.Errorf("malformed detail should be empty object, got %v", out[1]["detail"])
 	}
 }
 

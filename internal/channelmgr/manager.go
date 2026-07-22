@@ -24,6 +24,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/channel/telegram"
 	"github.com/iulita-ai/iulita/internal/channel/webchat"
 	"github.com/iulita-ai/iulita/internal/domain"
+	"github.com/iulita-ai/iulita/internal/eventbus"
 	"github.com/iulita-ai/iulita/internal/ratelimit"
 	"github.com/iulita-ai/iulita/internal/skill/interact"
 	"github.com/iulita-ai/iulita/internal/storage"
@@ -117,6 +118,9 @@ type Config struct {
 	// Transcriber for voice messages (nil = disabled).
 	Transcriber telegram.TranscriptionProvider
 
+	// Bus for observability events (nil = metrics disabled).
+	Bus *eventbus.Bus
+
 	Logger *zap.Logger
 }
 
@@ -133,6 +137,7 @@ type Manager struct {
 	httpClient         *http.Client
 	userResolver       channel.UserResolver
 	clearFn            func(ctx context.Context, chatID string) error
+	bus                *eventbus.Bus      // observability (nil-safe)
 	slackWriteCapFn    func(enabled bool) // toggles the slack_write capability
 	slackWriteMu       sync.Mutex         // serializes recomputeSlackWrite (snapshot+notify atomic)
 
@@ -175,6 +180,7 @@ func New(cfg Config) *Manager {
 		configRateLimit:    cfg.ConfigRateLimit,
 		configRateWindow:   cfg.ConfigRateWindow,
 		transcriber:        cfg.Transcriber,
+		bus:                cfg.Bus,
 		logger:             cfg.Logger,
 	}
 }
@@ -991,6 +997,7 @@ func (m *Manager) createSlackChannel(instance domain.ChannelInstance) (*slackch.
 
 	// Draft-posting policy (fail-closed inside the channel if mode is unset/off).
 	sl.SetWriteConfig(slCfg.WriteChannels, slCfg.WriteMode, slCfg.Guardrails.MaxPostsPerHour, slCfg.Guardrails.QuietHours)
+	sl.SetBus(m.bus)
 
 	return sl, nil
 }

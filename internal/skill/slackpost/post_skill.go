@@ -19,6 +19,7 @@ import (
 
 	slackch "github.com/iulita-ai/iulita/internal/channel/slack"
 	"github.com/iulita-ai/iulita/internal/domain"
+	"github.com/iulita-ai/iulita/internal/eventbus"
 	"github.com/iulita-ai/iulita/internal/security"
 	"github.com/iulita-ai/iulita/internal/skill"
 	"github.com/iulita-ai/iulita/internal/skill/interact"
@@ -33,6 +34,7 @@ type auditSink interface {
 type PostSkill struct {
 	poster ChannelPoster // nil until SetChannelPoster (deferred wiring after channelmgr exists)
 	audit  auditSink
+	bus    *eventbus.Bus // nil-safe; observability
 	logger *zap.Logger
 }
 
@@ -46,6 +48,9 @@ func NewPostSkill(audit auditSink, logger *zap.Logger) *PostSkill {
 
 // SetChannelPoster wires the bot-posting seam (built after skill registration).
 func (s *PostSkill) SetChannelPoster(p ChannelPoster) { s.poster = p }
+
+// SetBus wires the observability event bus (deferred wiring).
+func (s *PostSkill) SetBus(bus *eventbus.Bus) { s.bus = bus }
 
 // Name is the tool name exposed to the LLM.
 func (s *PostSkill) Name() string { return "slack_post" }
@@ -209,5 +214,14 @@ func (s *PostSkill) writeAudit(ctx context.Context, action string, in postInput,
 	}
 	if err := s.audit.SaveAuditEntry(ctx, entry); err != nil {
 		s.logger.Warn("slack_post: audit write failed", zap.Error(err))
+	}
+	if s.bus != nil {
+		mode := "auto"
+		if decision == "draft_approved" {
+			mode = "draft"
+		}
+		s.bus.Publish(ctx, eventbus.Event{Type: eventbus.SlackPost, Payload: eventbus.SlackPostPayload{
+			Mode: mode, Decision: decision, Success: success,
+		}})
 	}
 }

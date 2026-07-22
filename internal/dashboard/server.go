@@ -450,6 +450,7 @@ func New(cfg Config) *Server {
 	if s.authService != nil {
 		slackGroup := api.Group("/slack", auth.AdminOnly())
 		slackGroup.Get("/status", s.handleSlackStatus)
+		slackGroup.Get("/activity", s.handleSlackActivity)
 		if s.slackClient != nil {
 			slackGroup.Get("/auth", s.handleSlackAuth)
 			slackGroup.Delete("/account", s.handleDeleteSlackAccount)

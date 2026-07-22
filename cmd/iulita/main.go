@@ -1187,6 +1187,11 @@ func main() {
 	bus := eventbus.New(logger)
 	asst.SetEventBus(bus)
 
+	// Deferred bus wiring for Slack components constructed before the bus existed.
+	slackOAuthClient.SetBus(bus)
+	slackSearchSkill.SetBus(bus)
+	slackPostSkill.SetBus(bus)
+
 	// Wire config store to event bus for hot-reload.
 	cfgStore.SetPublisher(&eventbus.ConfigChangeAdapter{Bus: bus})
 	registerConfigReload(bus, cfgStore, asst, skillReviewHandler, store, registry, rawProvider, rawDeepSeek, routingProvider, providerMap, extMgr, logger)
@@ -1312,6 +1317,7 @@ func main() {
 		ConfigRateLimit:    configRateLimit,
 		ConfigRateWindow:   configRateWindow,
 		Transcriber:        transcriber,
+		Bus:                bus,
 		Logger:             logger,
 	})
 

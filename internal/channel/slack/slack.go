@@ -16,6 +16,7 @@ import (
 
 	"github.com/iulita-ai/iulita/internal/bookmark"
 	"github.com/iulita-ai/iulita/internal/channel"
+	"github.com/iulita-ai/iulita/internal/eventbus"
 	"github.com/iulita-ai/iulita/internal/i18n"
 	"github.com/iulita-ai/iulita/internal/ratelimit"
 	"github.com/iulita-ai/iulita/internal/storage"
@@ -73,7 +74,14 @@ type Channel struct {
 	writeCfg    writeConfig
 	postLimiter *ratelimit.Limiter // per-channel hourly post budget (nil = no cap)
 	postAPI     writeAPI           // nil → use c.client; injected in tests
+
+	// Observability (Phase 4).
+	bus          *eventbus.Bus // nil-safe
+	connectCount atomic.Int32  // Socket Mode connect count (for reconnect metric)
 }
+
+// SetBus wires the observability event bus (deferred wiring by channelmgr).
+func (c *Channel) SetBus(bus *eventbus.Bus) { c.bus = bus }
 
 // New creates a new Slack channel with the given bot and app-level tokens.
 func New(botToken, appToken string, allowedUserIDs []string, debounceWindow time.Duration, clearFn ClearFunc, logger *zap.Logger) (*Channel, error) {
@@ -198,6 +206,14 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 // handleSocketEvent dispatches a Socket Mode event to the appropriate handler.
 func (c *Channel) handleSocketEvent(ctx context.Context, evt socketmode.Event, debounce *debouncer) {
 	switch evt.Type {
+	case socketmode.EventTypeConnected:
+		// Count reconnects (every Connected after the first) for observability.
+		if c.connectCount.Add(1) > 1 && c.bus != nil {
+			c.bus.Publish(ctx, eventbus.Event{Type: eventbus.SlackReconnect, Payload: eventbus.SlackReconnectPayload{
+				InstanceID: c.instanceID,
+			}})
+		}
+
 	case socketmode.EventTypeEventsAPI:
 		eventsAPIEvent, ok := evt.Data.(slackevents.EventsAPIEvent)
 		if !ok {

@@ -229,6 +229,33 @@ func (s *Server) handleDeleteSlackAccount(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"status": "disconnected"})
 }
 
+// handleSlackActivity returns recent Slack audit entries (search + post), newest
+// first, with Detail parsed from JSON for the UI. Admin-only.
+func (s *Server) handleSlackActivity(c *fiber.Ctx) error {
+	limit := c.QueryInt("limit", 50)
+	if limit <= 0 {
+		limit = 50
+	}
+	entries, err := s.store.ListAuditEntriesByPrefix(c.Context(), "slack.", limit)
+	if err != nil {
+		s.logger.Error("slack activity lookup failed", zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
+	}
+	out := make([]fiber.Map, 0, len(entries))
+	for i := range entries {
+		e := &entries[i]
+		var detail map[string]any
+		if err := json.Unmarshal([]byte(e.Detail), &detail); err != nil {
+			detail = map[string]any{}
+		}
+		out = append(out, fiber.Map{
+			"id": e.ID, "action": e.Action, "success": e.Success,
+			"detail": detail, "created_at": e.CreatedAt,
+		})
+	}
+	return c.JSON(out)
+}
+
 func (s *Server) clearSlackState(c *fiber.Ctx) {
 	c.Cookie(&fiber.Cookie{
 		Name:     slackStateCookie,

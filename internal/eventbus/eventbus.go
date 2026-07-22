@@ -26,6 +26,12 @@ const (
 	FactDeleted     = "fact.deleted"
 	ConfigChanged   = "config.changed"
 
+	// Slack observability events (Phase 4 metrics).
+	SlackSearch       = "slack.search"        // slack_search executed
+	SlackPost         = "slack.post"          // slack_post resolved a post attempt
+	SlackReconnect    = "slack.reconnect"     // Socket Mode reconnected
+	SlackTokenRefresh = "slack.token_refresh" //nolint:gosec // G101 false positive: event name, not a credential
+
 	// Credential management events.
 	CredentialChanged = "credential.changed" //nolint:gosec // G101 false positive: event type constant, not a credential
 

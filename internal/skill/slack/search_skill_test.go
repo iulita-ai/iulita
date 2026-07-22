@@ -12,6 +12,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/iulita-ai/iulita/internal/domain"
+	"github.com/iulita-ai/iulita/internal/eventbus"
 	"github.com/iulita-ai/iulita/internal/ratelimit"
 	"github.com/iulita-ai/iulita/internal/skill"
 )
@@ -286,6 +287,32 @@ func TestSearchSkill_NotInChannel(t *testing.T) {
 	}
 	if !strings.Contains(out, "can't read that channel") || strings.Contains(out, "not_in_channel") {
 		t.Errorf("expected friendly channel message without raw code, got %q", out)
+	}
+}
+
+func TestSearchSkill_PublishesEvent(t *testing.T) {
+	api := &fakeSearchAPI{search: &slackapi.SearchMessages{Total: 2, Matches: []slackapi.SearchMessage{
+		{Channel: slackapi.CtxChannel{ID: "C1"}, Username: "a", Timestamp: "1700000000.0001", Text: "x"},
+		{Channel: slackapi.CtxChannel{ID: "C1"}, Username: "b", Timestamp: "1700000000.0002", Text: "y"},
+	}}}
+	s := newTestSkill(api, fakeOwnerStore{})
+	bus := eventbus.New(zap.NewNop())
+	var got eventbus.SlackSearchPayload
+	n := 0
+	bus.Subscribe(eventbus.SlackSearch, func(_ context.Context, evt eventbus.Event) error {
+		if p, ok := evt.Payload.(eventbus.SlackSearchPayload); ok {
+			got = p
+			n++
+		}
+		return nil
+	})
+	s.SetBus(bus)
+
+	if _, err := exec(t, s, map[string]any{"mode": "search", "query": "x"}); err != nil {
+		t.Fatalf("exec: %v", err)
+	}
+	if n != 1 || got.Mode != "search" || got.Outcome != "ok" || got.ResultCount != 2 {
+		t.Errorf("published %+v (n=%d), want {search ok 2}", got, n)
 	}
 }
 

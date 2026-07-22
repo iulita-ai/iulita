@@ -22,6 +22,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/iulita-ai/iulita/internal/domain"
+	"github.com/iulita-ai/iulita/internal/eventbus"
 )
 
 // ErrNoSlackAccount is returned when the owner has not connected a Slack account.
@@ -72,7 +73,8 @@ type Client struct {
 	crypto       CryptoProvider
 	http         *http.Client
 	logger       *zap.Logger
-	stateKey     []byte // HMAC key for signing OAuth state (per-process; single replica)
+	bus          *eventbus.Bus // nil-safe; observability
+	stateKey     []byte        // HMAC key for signing OAuth state (per-process; single replica)
 	mu           sync.Mutex
 
 	// exchangeFn/refreshFn wrap the slack-go OAuth calls so tests can inject
@@ -275,7 +277,23 @@ func (c *Client) GetUserToken(ctx context.Context, ownerUserID string) (string, 
 	if time.Now().Before(account.TokenExpiry.Add(-1 * time.Minute)) {
 		return accessToken, nil
 	}
-	// Expiring/expired and rotation is on — refresh.
+	// Expiring/expired and rotation is on — refresh, publishing the outcome once.
+	token, err := c.refreshUserToken(ctx, account)
+	if c.bus != nil {
+		outcome := "ok"
+		if err != nil {
+			outcome = "error"
+		}
+		c.bus.Publish(ctx, eventbus.Event{Type: eventbus.SlackTokenRefresh, Payload: eventbus.SlackTokenRefreshPayload{Outcome: outcome}})
+	}
+	return token, err
+}
+
+// SetBus wires the observability event bus (deferred wiring).
+func (c *Client) SetBus(bus *eventbus.Bus) { c.bus = bus }
+
+// refreshUserToken performs the rotation refresh + persist for an expiring token.
+func (c *Client) refreshUserToken(ctx context.Context, account *domain.SlackAccount) (string, error) {
 	if account.EncryptedRefreshToken == "" {
 		return "", fmt.Errorf("slack token expired and no refresh token stored (reconnect required)")
 	}
