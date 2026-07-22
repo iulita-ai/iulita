@@ -45,6 +45,17 @@ type SlackInstanceConfig struct {
 	DebounceWindow string   `json:"debounce_window"`
 	RateLimit      int      `json:"rate_limit"`
 	RateWindow     string   `json:"rate_window"`
+
+	// Draft-posting (Phase 3). Fail-closed: absent WriteMode means "off".
+	WriteChannels []string        `json:"write_channels"` // channel IDs the bot may post to
+	WriteMode     string          `json:"write_mode"`     // "off" | "draft" | "auto" (default off)
+	Guardrails    SlackGuardrails `json:"guardrails"`
+}
+
+// SlackGuardrails bounds autonomous posting.
+type SlackGuardrails struct {
+	MaxPostsPerHour int    `json:"max_posts_per_hour"` // 0 = no cap
+	QuietHours      [2]int `json:"quiet_hours"`        // [start,end] hours; [0,0] = not configured
 }
 
 // TelegramInstanceConfig is the JSON stored in channel_instances.config for Telegram channels
@@ -122,6 +133,8 @@ type Manager struct {
 	httpClient         *http.Client
 	userResolver       channel.UserResolver
 	clearFn            func(ctx context.Context, chatID string) error
+	slackWriteCapFn    func(enabled bool) // toggles the slack_write capability
+	slackWriteMu       sync.Mutex         // serializes recomputeSlackWrite (snapshot+notify atomic)
 
 	// Config-sourced Telegram settings.
 	configTokenMu    sync.RWMutex // protects configToken independently from mu
@@ -431,6 +444,7 @@ func (m *Manager) StopInstance(instanceID string) {
 	if !ok {
 		return
 	}
+	m.recomputeSlackWrite() // a stopped instance may disable posting
 
 	m.logger.Info("stopping channel instance", zap.String("id", instanceID))
 	mc.cancel()
@@ -758,6 +772,7 @@ func (m *Manager) startInstance(parentCtx context.Context, instance domain.Chann
 	m.mu.Lock()
 	m.running[instance.ID] = mc
 	m.mu.Unlock()
+	m.recomputeSlackWrite() // a newly-started Slack instance may enable posting
 
 	m.wg.Add(1)
 	go func() {
@@ -772,6 +787,7 @@ func (m *Manager) startInstance(parentCtx context.Context, instance domain.Chann
 		m.mu.Lock()
 		delete(m.running, instance.ID)
 		m.mu.Unlock()
+		m.recomputeSlackWrite() // an exited instance may disable posting
 		m.logger.Info("channel instance goroutine exited", zap.String("id", instance.ID))
 	}()
 
@@ -972,6 +988,9 @@ func (m *Manager) createSlackChannel(instance domain.ChannelInstance) (*slackch.
 		}
 		sl.SetRateLimiter(ratelimit.New(slCfg.RateLimit, rateWindow))
 	}
+
+	// Draft-posting policy (fail-closed inside the channel if mode is unset/off).
+	sl.SetWriteConfig(slCfg.WriteChannels, slCfg.WriteMode, slCfg.Guardrails.MaxPostsPerHour, slCfg.Guardrails.QuietHours)
 
 	return sl, nil
 }

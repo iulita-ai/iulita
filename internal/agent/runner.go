@@ -63,6 +63,13 @@ func (r *Runner) SetUserID(userID string) {
 // A nil sharedTokens pointer means no shared budget is tracked.
 func (r *Runner) Run(ctx context.Context, spec AgentSpec, budget Budget, sharedTokens *atomic.Int64) AgentResult {
 	start := time.Now()
+
+	// Ensure a per-turn taint holder exists so the search→post interlock works on
+	// entry points that bypass the conversation loop (e.g. agent jobs). Idempotent:
+	// orchestrate sub-agents inherit the parent's holder and keep sharing it.
+	if !skill.HasTurnTaint(ctx) {
+		ctx = skill.WithTurnTaint(ctx)
+	}
 	result := AgentResult{
 		ID:   spec.ID,
 		Type: spec.Type,

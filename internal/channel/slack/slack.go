@@ -67,6 +67,12 @@ type Channel struct {
 	// under a detached context) so shutdown does not hang on a pending approval.
 	shutdownCh   chan struct{}
 	shutdownOnce sync.Once
+
+	// Channel write-permission state (Phase 3 draft-posting). See write.go.
+	writeMu     sync.RWMutex
+	writeCfg    writeConfig
+	postLimiter *ratelimit.Limiter // per-channel hourly post budget (nil = no cap)
+	postAPI     writeAPI           // nil → use c.client; injected in tests
 }
 
 // New creates a new Slack channel with the given bot and app-level tokens.

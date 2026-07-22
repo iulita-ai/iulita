@@ -64,6 +64,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/skill/shellexec"
 	"github.com/iulita-ai/iulita/internal/skill/skillinfo"
 	slackskill "github.com/iulita-ai/iulita/internal/skill/slack"
+	"github.com/iulita-ai/iulita/internal/skill/slackpost"
 	tasksskill "github.com/iulita-ai/iulita/internal/skill/tasks"
 	"github.com/iulita-ai/iulita/internal/skill/todoist"
 	"github.com/iulita-ai/iulita/internal/skill/tokenusage"
@@ -991,6 +992,16 @@ func main() {
 		logger.Info("slack search skill registered (inactive, no account connected)")
 	}
 
+	// slack_post skill — bot draft-posting. Registered unconditionally; the
+	// slack_write capability is toggled by the manager once a write-enabled Slack
+	// bot instance is running (SetSlackWriteCapability, wired after mgr is built).
+	slackPostManifest, err := slackpost.LoadManifest()
+	if err != nil {
+		logger.Warn("failed to load slack_post manifest", zap.Error(err))
+	}
+	slackPostSkill := slackpost.NewPostSkill(store, logger)
+	registry.RegisterWithManifest(slackPostSkill, slackPostManifest)
+
 	// Todoist skill — API token-based task management.
 	todoistClient := todoist.NewClient(cfg.Skills.Todoist.APIToken, httpClient, logger)
 	todoistManifest, err := todoist.LoadManifest()
@@ -1404,6 +1415,16 @@ func main() {
 
 	// Wire deferred dependencies for orchestrate skill.
 	orchestrateSkill.SetNotifier(mgr)
+
+	// Wire the bot-posting seam + capability toggle (mgr exists now).
+	slackPostSkill.SetChannelPoster(mgr)
+	mgr.SetSlackWriteCapability(func(enabled bool) {
+		if enabled {
+			registry.AddCapability("slack_write")
+		} else {
+			registry.RemoveCapability("slack_write")
+		}
+	})
 	orchestrateSkill.SetEventBus(bus)
 
 	// Attach sender for approval confirmation prompts.

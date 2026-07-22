@@ -113,6 +113,11 @@ func (s *SearchSkill) Execute(ctx context.Context, raw json.RawMessage) (string,
 		return "", fmt.Errorf("invalid input: %w", err)
 	}
 
+	// Taint the turn: any Slack content read here is untrusted, so a later
+	// slack_post in the same turn must go through draft approval (server-enforced,
+	// not dependent on the model self-reporting provenance).
+	skill.MarkSlackSearchUsed(ctx)
+
 	api, err := s.resolveAPI(ctx)
 	if err != nil {
 		switch {
