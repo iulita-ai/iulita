@@ -36,6 +36,25 @@ other = "消息过多，请稍候。"
 [TelegramErrorResponse]
 other = "抱歉，出了点问题。"
 
+# Channel-neutral variants (used by Slack and future channels; Telegram* kept for Telegram).
+[ChatHistoryCleared]
+other = "历史记录已清除。"
+
+[ChatHistoryClearFailed]
+other = "清除历史记录失败。"
+
+[ChatRegistrationNotAllowed]
+other = "不允许注册。请联系管理员。"
+
+[ChatRateLimited]
+other = "消息过多，请稍候。"
+
+[CommonErrorResponse]
+other = "抱歉，出了点问题。"
+
+[ChatClearInThreadHint]
+other = "要清除频道对话，请在其话题串内回复 /clear。"
+
 [TelegramVoicePrefix]
 other = "[语音消息]: "
 

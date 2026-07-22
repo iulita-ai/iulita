@@ -36,6 +36,25 @@ other = "Trop de messages. Veuillez patienter."
 [TelegramErrorResponse]
 other = "Désolé, une erreur s'est produite."
 
+# Channel-neutral variants (used by Slack and future channels; Telegram* kept for Telegram).
+[ChatHistoryCleared]
+other = "Historique effacé."
+
+[ChatHistoryClearFailed]
+other = "Échec de l'effacement de l'historique."
+
+[ChatRegistrationNotAllowed]
+other = "L'inscription n'est pas autorisée. Contactez l'administrateur."
+
+[ChatRateLimited]
+other = "Trop de messages. Veuillez patienter."
+
+[CommonErrorResponse]
+other = "Désolé, une erreur s'est produite."
+
+[ChatClearInThreadHint]
+other = "Pour effacer une conversation de canal, tapez /clear en réponse dans son fil."
+
 [TelegramVoicePrefix]
 other = "[Message vocal] : "
 

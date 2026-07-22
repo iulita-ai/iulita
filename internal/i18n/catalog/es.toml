@@ -36,6 +36,25 @@ other = "Demasiados mensajes. Por favor espera un momento."
 [TelegramErrorResponse]
 other = "Lo siento, algo salió mal."
 
+# Channel-neutral variants (used by Slack and future channels; Telegram* kept for Telegram).
+[ChatHistoryCleared]
+other = "Historial borrado."
+
+[ChatHistoryClearFailed]
+other = "Error al borrar el historial."
+
+[ChatRegistrationNotAllowed]
+other = "No se permite el registro. Contacta al administrador."
+
+[ChatRateLimited]
+other = "Demasiados mensajes. Por favor espera un momento."
+
+[CommonErrorResponse]
+other = "Lo siento, algo salió mal."
+
+[ChatClearInThreadHint]
+other = "Para borrar una conversación de canal, escribe /clear como respuesta dentro de su hilo."
+
 [TelegramVoicePrefix]
 other = "[Mensaje de voz]: "
 

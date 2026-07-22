@@ -120,6 +120,8 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 		{(*domain.ImportedMessage)(nil), "imported_messages"},
 		{(*domain.ImportedFactKey)(nil), "imported_fact_keys"},
 		{(*domain.ImportRun)(nil), "import_runs"},
+		// Slack proactive-delivery routing (survives cache eviction + restarts).
+		{(*domain.SlackChatRoute)(nil), "slack_chat_routes"},
 	}
 
 	// Rename legacy "dreams" table to "insights" (preserves existing data).

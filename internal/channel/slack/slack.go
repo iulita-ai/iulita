@@ -61,6 +61,12 @@ type Channel struct {
 
 	logger *zap.Logger
 	wg     sync.WaitGroup
+
+	// shutdownCh is closed once when Start observes context cancellation, before
+	// wg.Wait(). It unblocks any in-flight interactive prompt (whose handler runs
+	// under a detached context) so shutdown does not hang on a pending approval.
+	shutdownCh   chan struct{}
+	shutdownOnce sync.Once
 }
 
 // New creates a new Slack channel with the given bot and app-level tokens.
@@ -97,6 +103,7 @@ func New(botToken, appToken string, allowedUserIDs []string, debounceWindow time
 		prompts:        newPromptState(),
 		chatMetaM:      make(map[string]*chatMeta),
 		userCache:      make(map[string]userInfo),
+		shutdownCh:     make(chan struct{}),
 		logger:         logger.With(zap.String("channel", "slack")),
 	}, nil
 }
@@ -148,17 +155,34 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 		zap.String("instance_id", c.instanceID),
 		zap.String("bot_user_id", c.botUserID))
 
+	// drain unblocks in-flight prompts (detached ctx) BEFORE waiting on goroutines,
+	// then flushes debounced messages and waits for all workers. Must run on every
+	// exit path, including the socketmode Events channel closing on its own.
+	drain := func() {
+		c.shutdownOnce.Do(func() { close(c.shutdownCh) })
+		debounce.flushAll()
+		c.wg.Wait()
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			c.logger.Info("slack: shutting down, flushing debouncer")
-			debounce.flushAll()
-			c.wg.Wait()
+			drain()
 			return ctx.Err()
 
 		case evt, ok := <-c.socketClient.Events:
 			if !ok {
-				return nil
+				// socketmode closes Events on ctx-cancel AND on unrecoverable
+				// socket error. Run the same shutdown as ctx.Done so prompts don't
+				// hang and workers don't leak; return a non-nil error when the
+				// socket died while ctx was still alive so the manager can restart.
+				c.logger.Info("slack: socket mode events channel closed")
+				drain()
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				return fmt.Errorf("slack: socket mode events channel closed unexpectedly")
 			}
 			c.handleSocketEvent(ctx, evt, debounce)
 		}
@@ -260,33 +284,35 @@ func (c *Channel) buildIncomingMessage(ctx context.Context, slackChannel, slackU
 		return nil
 	}
 
+	// Determine threading: in public channels reply in-thread (starting one under
+	// the user's message if none exists); DMs have no thread. The thread is part
+	// of the conversation identity (see composeChatID), so it must be resolved
+	// before the chatID is built.
+	effectiveThreadTS := threadTS
+	if !strings.HasPrefix(slackChannel, "D") && effectiveThreadTS == "" {
+		effectiveThreadTS = messageTS
+	}
+
 	// Handle /clear typed as message text.
 	tag := i18n.ResolveLocale(c.lookupLocale(ctx, slackUser), "")
 	if strings.TrimSpace(text) == "/clear" {
 		if c.clearFn != nil {
-			chatID := c.composeChatID(slackChannel, slackUser)
+			chatID := c.composeChatID(slackChannel, slackUser, effectiveThreadTS)
 			if err := c.clearFn(ctx, chatID); err != nil {
 				c.logger.Error("slack: failed to clear history", zap.Error(err))
 			}
 			c.client.PostMessage(slackChannel, //nolint:errcheck,gosec
-				slackapi.MsgOptionText(i18n.Tl(tag, "TelegramHistoryCleared"), false))
+				slackapi.MsgOptionText(i18n.Tl(tag, "ChatHistoryCleared"), false))
 		}
 		return nil
 	}
 
 	// Rate limit check.
-	chatID := c.composeChatID(slackChannel, slackUser)
+	chatID := c.composeChatID(slackChannel, slackUser, effectiveThreadTS)
 	if c.rateLimiter != nil && !c.rateLimiter.Allow(chatID) {
 		c.client.PostEphemeral(slackChannel, slackUser, //nolint:errcheck,gosec
-			slackapi.MsgOptionText(i18n.Tl(tag, "TelegramRateLimited"), false))
+			slackapi.MsgOptionText(i18n.Tl(tag, "ChatRateLimited"), false))
 		return nil
-	}
-
-	// Determine threading: in public channels, use thread; in DMs, no thread.
-	effectiveThreadTS := threadTS
-	if !strings.HasPrefix(slackChannel, "D") && effectiveThreadTS == "" {
-		// Public channel without existing thread → reply in thread under user's message.
-		effectiveThreadTS = messageTS
 	}
 
 	// Resolve user identity.
@@ -310,7 +336,7 @@ func (c *Channel) buildIncomingMessage(ctx context.Context, slackChannel, slackU
 			c.logger.Warn("slack: user resolution failed", zap.Error(resolveErr))
 			tag := i18n.ResolveLocale("", msg.LanguageCode)
 			c.client.PostEphemeral(slackChannel, slackUser, //nolint:errcheck,gosec
-				slackapi.MsgOptionText(i18n.Tl(tag, "TelegramRegistrationNotAllowed"), false))
+				slackapi.MsgOptionText(i18n.Tl(tag, "ChatRegistrationNotAllowed"), false))
 			return nil
 		}
 		msg.ResolvedUserID = resolvedID
@@ -325,13 +351,18 @@ func (c *Channel) buildIncomingMessage(ctx context.Context, slackChannel, slackU
 
 	// Store chat meta for routing responses. inboundTS is the user's message
 	// timestamp so reactions land on the user's message, not the bot's.
-	c.storeChatMeta(chatID, &chatMeta{
+	meta := &chatMeta{
 		channelID: slackChannel,
 		threadTS:  effectiveThreadTS,
 		userID:    slackUser,
 		locale:    msg.Locale,
 		inboundTS: messageTS,
-	})
+	}
+	c.storeChatMeta(chatID, meta)
+	// Persist routing coordinates so proactive delivery survives cache eviction
+	// (1h TTL) and restarts. Runs on a tracked background goroutine so inbound
+	// handling never blocks on the DB write.
+	c.persistRoute(chatID, meta)
 
 	return msg
 }
@@ -356,7 +387,7 @@ func (c *Channel) processMessage(parentCtx context.Context, handler channel.Mess
 	if err != nil {
 		c.logger.Error("slack: handler error", zap.Error(err), zap.String("chat_id", msg.ChatID))
 		tag := i18n.ResolveLocale(msg.Locale, msg.LanguageCode)
-		response = i18n.Tl(tag, "TelegramErrorResponse")
+		response = i18n.Tl(tag, "CommonErrorResponse")
 	}
 
 	// Check if remember skill was used this turn (skip bookmark button if so).
@@ -369,10 +400,10 @@ func (c *Channel) processMessage(parentCtx context.Context, handler channel.Mess
 	}
 
 	if c.rememberSvc != nil && response != "" && err == nil && !skipBookmark && msg.ResolvedUserID != "" {
-		c.sendResponseWithBookmark(msg.ChatID, response, msg.ResolvedUserID)
+		c.sendResponseWithBookmark(parentCtx, msg.ChatID, response, msg.ResolvedUserID)
 		return
 	}
-	c.sendResponse(msg.ChatID, response)
+	c.sendResponse(parentCtx, msg.ChatID, response)
 }
 
 // handleInteraction processes Block Kit interactive components.
@@ -393,19 +424,29 @@ func (c *Channel) handleInteraction(callback slackapi.InteractionCallback) {
 func (c *Channel) handleSlashCommand(ctx context.Context, evt socketmode.Event, cmd slackapi.SlashCommand) {
 	switch cmd.Command {
 	case "/clear":
-		chatID := c.composeChatID(cmd.ChannelID, cmd.UserID)
 		tag := i18n.ResolveLocale(c.lookupLocale(ctx, cmd.UserID), "")
+		// Channel conversations are thread-scoped, but a slash command carries no
+		// thread_ts, so we cannot target the active thread. Rather than clear an
+		// always-empty base scope and falsely report success, guide the user to
+		// type /clear inside the thread. DMs are a single scope, so they clear.
+		if !strings.HasPrefix(cmd.ChannelID, "D") {
+			c.socketClient.Ack(*evt.Request, map[string]interface{}{
+				"text": i18n.Tl(tag, "ChatClearInThreadHint"),
+			})
+			return
+		}
+		chatID := c.composeChatID(cmd.ChannelID, cmd.UserID, "")
 		if c.clearFn != nil {
 			if err := c.clearFn(ctx, chatID); err != nil {
 				c.logger.Error("slack: /clear failed", zap.Error(err))
 				c.socketClient.Ack(*evt.Request, map[string]interface{}{
-					"text": i18n.Tl(tag, "TelegramHistoryClearFailed"),
+					"text": i18n.Tl(tag, "ChatHistoryClearFailed"),
 				})
 				return
 			}
 		}
 		c.socketClient.Ack(*evt.Request, map[string]interface{}{
-			"text": i18n.Tl(tag, "TelegramHistoryCleared"),
+			"text": i18n.Tl(tag, "ChatHistoryCleared"),
 		})
 	default:
 		c.socketClient.Ack(*evt.Request)
@@ -426,11 +467,13 @@ func (c *Channel) lookupLocale(ctx context.Context, slackUser string) string {
 
 // --- SendMessage / StartStream (channel.StreamingSender) ---
 
-// SendMessage sends a proactive message to a Slack chat.
-func (c *Channel) SendMessage(_ context.Context, chatID, text string) error {
-	meta := c.getChatMeta(chatID)
+// SendMessage sends a proactive message to a Slack chat. Routing is recovered
+// from the persisted route or the chatID itself, so delivery works even when the
+// in-memory cache was evicted or lost on restart.
+func (c *Channel) SendMessage(ctx context.Context, chatID, text string) error {
+	meta := c.resolveMeta(ctx, chatID)
 	if meta == nil {
-		return fmt.Errorf("no chat context for %s", chatID)
+		return fmt.Errorf("invalid slack chat id %q", chatID)
 	}
 
 	mrkdwn := ToMrkdwn(text)
@@ -451,13 +494,28 @@ func (c *Channel) SendMessage(_ context.Context, chatID, text string) error {
 	return nil
 }
 
+// streamUpdate edits a streamed message, logging (not dropping) failures so the
+// write layer can observe errors like not_in_channel / channel_not_found.
+func (c *Channel) streamUpdate(channelID, ts string, opts ...slackapi.MsgOption) {
+	if _, _, _, err := c.client.UpdateMessage(channelID, ts, opts...); err != nil {
+		c.logger.Warn("slack: stream edit failed", zap.String("channel", channelID), zap.Error(err))
+	}
+}
+
+// streamPost posts a follow-up chunk during streaming, logging failures.
+func (c *Channel) streamPost(channelID string, opts ...slackapi.MsgOption) {
+	if _, _, err := c.client.PostMessage(channelID, opts...); err != nil {
+		c.logger.Warn("slack: stream post failed", zap.String("channel", channelID), zap.Error(err))
+	}
+}
+
 // StartStream sends an initial placeholder and returns edit/done functions.
 //
 //nolint:gocritic // unnamedResult: returning two anonymous funcs is idiomatic for stream API
-func (c *Channel) StartStream(_ context.Context, chatID string, _ int) (func(string), func(string), error) {
-	meta := c.getChatMeta(chatID)
+func (c *Channel) StartStream(ctx context.Context, chatID string, _ int) (func(string), func(string), error) {
+	meta := c.resolveMeta(ctx, chatID)
 	if meta == nil {
-		return nil, nil, fmt.Errorf("no chat context for %s", chatID)
+		return nil, nil, fmt.Errorf("invalid slack chat id %q", chatID)
 	}
 
 	opts := []slackapi.MsgOption{
@@ -484,8 +542,7 @@ func (c *Channel) StartStream(_ context.Context, chatID string, _ int) (func(str
 			return
 		}
 		truncated := truncateRunes(text, maxMessageLen)
-		c.client.UpdateMessage(meta.channelID, ts, //nolint:errcheck,gosec
-			slackapi.MsgOptionText(truncated, false))
+		c.streamUpdate(meta.channelID, ts, slackapi.MsgOptionText(truncated, false))
 		lastEditNs.Store(time.Now().UnixNano())
 	}
 
@@ -493,19 +550,17 @@ func (c *Channel) StartStream(_ context.Context, chatID string, _ int) (func(str
 		done.Store(true)
 		mrkdwn := ToMrkdwn(text)
 		if len(mrkdwn) <= maxMessageLen {
-			c.client.UpdateMessage(meta.channelID, ts, //nolint:errcheck,gosec
-				slackapi.MsgOptionText(mrkdwn, false))
+			c.streamUpdate(meta.channelID, ts, slackapi.MsgOptionText(mrkdwn, false))
 		} else {
 			chunks := splitMessage(mrkdwn, maxMessageLen)
 			if len(chunks) > 0 {
-				c.client.UpdateMessage(meta.channelID, ts, //nolint:errcheck,gosec
-					slackapi.MsgOptionText(chunks[0], false))
+				c.streamUpdate(meta.channelID, ts, slackapi.MsgOptionText(chunks[0], false))
 				for _, chunk := range chunks[1:] {
 					sendOpts := []slackapi.MsgOption{slackapi.MsgOptionText(chunk, false)}
 					if meta.threadTS != "" {
 						sendOpts = append(sendOpts, slackapi.MsgOptionTS(meta.threadTS))
 					}
-					c.client.PostMessage(meta.channelID, sendOpts...) //nolint:errcheck,gosec
+					c.streamPost(meta.channelID, sendOpts...)
 				}
 			}
 		}
@@ -518,9 +573,9 @@ func (c *Channel) StartStream(_ context.Context, chatID string, _ int) (func(str
 //
 //nolint:gocritic // unnamedResult: returning two anonymous funcs is idiomatic for stream API
 func (c *Channel) StartStreamWithBookmark(ctx context.Context, chatID string, replyTo int, userID string) (func(string), func(string), error) {
-	meta := c.getChatMeta(chatID)
+	meta := c.resolveMeta(ctx, chatID)
 	if meta == nil {
-		return nil, nil, fmt.Errorf("no chat context for %s", chatID)
+		return nil, nil, fmt.Errorf("invalid slack chat id %q", chatID)
 	}
 
 	if c.rememberSvc == nil {
@@ -551,8 +606,7 @@ func (c *Channel) StartStreamWithBookmark(ctx context.Context, chatID string, re
 			return
 		}
 		truncated := truncateRunes(text, maxMessageLen)
-		c.client.UpdateMessage(meta.channelID, ts, //nolint:errcheck,gosec
-			slackapi.MsgOptionText(truncated, false))
+		c.streamUpdate(meta.channelID, ts, slackapi.MsgOptionText(truncated, false))
 		lastEditNs.Store(time.Now().UnixNano())
 	}
 
@@ -577,8 +631,7 @@ func (c *Channel) StartStreamWithBookmark(ctx context.Context, chatID string, re
 		}
 		blocks = append(blocks, slackapi.NewActionBlock("bookmark_actions", btn))
 
-		c.client.UpdateMessage(meta.channelID, ts, //nolint:errcheck,gosec
-			slackapi.MsgOptionBlocks(blocks...))
+		c.streamUpdate(meta.channelID, ts, slackapi.MsgOptionBlocks(blocks...))
 
 		c.remembers.store(actionID, &rememberEntry{
 			slackChannel: meta.channelID,
@@ -630,14 +683,24 @@ func (c *Channel) NotifyStatus(_ context.Context, chatID string, event channel.S
 // composeChatID creates a routable chatID.
 // All Slack chatIDs are prefixed with "slack:" so NotifyStatus prefix-based
 // routing matches DMs as well as public/private channels.
-// For DMs (channel starts with D): "slack:<channelID>" (DMs are 1:1, so the
-// channel ID already implies the user).
-// For public/private channels: "slack:<channelID>:<userID>".
-func (c *Channel) composeChatID(slackChannel, slackUser string) string {
+//
+//   - DMs (channel starts with D): "slack:<channelID>" — DMs are a single 1:1
+//     conversation, so the channel ID alone identifies it (no thread).
+//   - Channels: "slack:<channelID>:<userID>:<threadTS>" — each thread is its own
+//     conversation, so the thread timestamp is part of the identity. This keeps
+//     per-turn state (threadTS, inboundTS, skipBookmark) from colliding between
+//     concurrent threads of the same user in the same channel, and routes
+//     status/streaming/prompts to the correct thread. When threadTS is empty the
+//     suffix is omitted (falls back to a channel-user scope).
+func (c *Channel) composeChatID(slackChannel, slackUser, threadTS string) string {
 	if strings.HasPrefix(slackChannel, "D") {
 		return "slack:" + slackChannel
 	}
-	return "slack:" + slackChannel + ":" + slackUser
+	base := "slack:" + slackChannel + ":" + slackUser
+	if threadTS != "" {
+		return base + ":" + threadTS
+	}
+	return base
 }
 
 func (c *Channel) storeChatMeta(chatID string, meta *chatMeta) {
@@ -645,6 +708,22 @@ func (c *Channel) storeChatMeta(chatID string, meta *chatMeta) {
 	c.chatMetaMu.Lock()
 	c.chatMetaM[chatID] = meta
 	c.chatMetaMu.Unlock()
+}
+
+// storeChatMetaIfAbsent inserts meta only if no entry exists, returning whichever
+// entry is now current. Used by resolveMeta when re-hydrating from the persisted
+// route: a route carries only channelID/threadTS/userID/locale, so it must never
+// clobber a concurrently-stored inbound entry that has the richer inboundTS /
+// skipBookmark / a fresher threadTS (lost-update guard).
+func (c *Channel) storeChatMetaIfAbsent(chatID string, meta *chatMeta) *chatMeta {
+	meta.lastUsed = time.Now()
+	c.chatMetaMu.Lock()
+	defer c.chatMetaMu.Unlock()
+	if existing, ok := c.chatMetaM[chatID]; ok {
+		return existing
+	}
+	c.chatMetaM[chatID] = meta
+	return meta
 }
 
 // cleanupChatMeta evicts stale chat meta entries every 10 minutes.
@@ -663,7 +742,30 @@ func (c *Channel) cleanupChatMeta(ctx context.Context) {
 				}
 			}
 			c.chatMetaMu.Unlock()
+			c.sweepStaleRoutes(ctx)
 		}
+	}
+}
+
+// slackRouteRetention bounds how long a persisted route survives without a new
+// inbound. Thread-scoped chatIDs mint one route row per thread, so without a
+// sweep the table would grow unbounded (unlike chatMeta, which has a TTL).
+const slackRouteRetention = 30 * 24 * time.Hour
+
+// sweepStaleRoutes prunes persisted routes for this instance older than the
+// retention window. Best-effort: failures are logged, never fatal.
+func (c *Channel) sweepStaleRoutes(ctx context.Context) {
+	if c.store == nil || c.instanceID == "" {
+		return
+	}
+	cutoff := time.Now().Add(-slackRouteRetention)
+	n, err := c.store.DeleteSlackRoutesOlderThan(ctx, c.instanceID, cutoff)
+	if err != nil {
+		c.logger.Warn("slack: route retention sweep failed", zap.Error(err))
+		return
+	}
+	if n > 0 {
+		c.logger.Debug("slack: swept stale routes", zap.Int64("count", n))
 	}
 }
 
@@ -674,12 +776,20 @@ func (c *Channel) getChatMeta(chatID string) *chatMeta {
 	return m
 }
 
-// userInfo is a cached entry for Slack user metadata.
+// userInfo is a cached entry for Slack user metadata. A failed lookup is cached
+// too (with a shorter TTL) so a single unresolvable/rate-limited user does not
+// trigger a GetUserInfo call on every message.
 type userInfo struct {
-	name string
-	lang string
-	ts   time.Time
+	name   string
+	lang   string
+	ts     time.Time
+	failed bool
 }
+
+const (
+	userCacheTTL         = 30 * time.Minute
+	userNegativeCacheTTL = 1 * time.Minute
+)
 
 // lookupUser returns the display name and Slack-reported locale for a user,
 // caching results for 30 minutes. Concurrent first-time lookups for the same
@@ -693,15 +803,27 @@ func (c *Channel) lookupUser(slackUser string) (string, string, bool) {
 	}
 
 	c.userCacheMu.RLock()
-	if u, ok := c.userCache[slackUser]; ok && time.Since(u.ts) < 30*time.Minute {
-		c.userCacheMu.RUnlock()
-		return u.name, u.lang, true
+	if u, ok := c.userCache[slackUser]; ok {
+		if u.failed {
+			if time.Since(u.ts) < userNegativeCacheTTL {
+				c.userCacheMu.RUnlock()
+				return "", "", false
+			}
+		} else if time.Since(u.ts) < userCacheTTL {
+			c.userCacheMu.RUnlock()
+			return u.name, u.lang, true
+		}
 	}
 	c.userCacheMu.RUnlock()
 
 	v, err, _ := c.userSF.Do(slackUser, func() (interface{}, error) {
 		info, err := c.client.GetUserInfo(slackUser)
 		if err != nil {
+			// Cache the failure briefly so a burst of messages from an
+			// unresolvable/rate-limited user does not hammer GetUserInfo.
+			c.userCacheMu.Lock()
+			c.userCache[slackUser] = userInfo{failed: true, ts: time.Now()}
+			c.userCacheMu.Unlock()
 			return nil, err
 		}
 		name := info.Name
@@ -753,15 +875,15 @@ func (c *Channel) removeReaction(name, slackChannel, ts string) {
 // sendResponseWithBookmark sends a non-streaming response with a 💾 Save
 // button attached so the user can persist the assistant message as a fact.
 // Falls back to sendResponse when the bookmark service is not wired.
-func (c *Channel) sendResponseWithBookmark(chatID, text, resolvedUserID string) {
+func (c *Channel) sendResponseWithBookmark(ctx context.Context, chatID, text, resolvedUserID string) {
 	if c.rememberSvc == nil {
-		c.sendResponse(chatID, text)
+		c.sendResponse(ctx, chatID, text)
 		return
 	}
 
-	meta := c.getChatMeta(chatID)
+	meta := c.resolveMeta(ctx, chatID)
 	if meta == nil {
-		c.logger.Warn("slack: no chat meta for response", zap.String("chat_id", chatID))
+		c.logger.Warn("slack: unroutable chat id for response", zap.String("chat_id", chatID))
 		return
 	}
 
@@ -827,10 +949,10 @@ func (c *Channel) sendResponseWithBookmark(chatID, text, resolvedUserID string) 
 }
 
 // sendResponse sends a text response (non-streaming) to the chat.
-func (c *Channel) sendResponse(chatID, text string) {
-	meta := c.getChatMeta(chatID)
+func (c *Channel) sendResponse(ctx context.Context, chatID, text string) {
+	meta := c.resolveMeta(ctx, chatID)
 	if meta == nil {
-		c.logger.Warn("slack: no chat meta for response", zap.String("chat_id", chatID))
+		c.logger.Warn("slack: unroutable chat id for response", zap.String("chat_id", chatID))
 		return
 	}
 

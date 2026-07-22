@@ -4,11 +4,17 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	slackapi "github.com/slack-go/slack"
 
 	"github.com/iulita-ai/iulita/internal/skill/interact"
 )
+
+// promptTimeout bounds how long an interactive prompt waits for a user click.
+// It caps goroutine lifetime even when the handler runs under a detached context;
+// channel shutdown unblocks sooner via shutdownCh.
+const promptTimeout = 30 * time.Minute
 
 // promptState manages pending interactive prompts for Slack.
 type promptState struct {
@@ -89,15 +95,24 @@ func (p *slackPrompter) Ask(ctx context.Context, question string, options []inte
 
 	replyCh := p.channel.prompts.register(promptID)
 
+	ctx, cancel := context.WithTimeout(ctx, promptTimeout)
+	defer cancel()
+
+	cleanup := func() {
+		p.channel.prompts.mu.Lock()
+		delete(p.channel.prompts.pending, promptID)
+		p.channel.prompts.mu.Unlock()
+	}
+
 	select {
 	case answer := <-replyCh:
 		return answer, nil
 	case <-ctx.Done():
-		// Clean up leaked entry.
-		p.channel.prompts.mu.Lock()
-		delete(p.channel.prompts.pending, promptID)
-		p.channel.prompts.mu.Unlock()
+		cleanup()
 		return "", ctx.Err()
+	case <-p.channel.shutdownCh:
+		cleanup()
+		return "", fmt.Errorf("slack channel shutting down")
 	}
 }
 

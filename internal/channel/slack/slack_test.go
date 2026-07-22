@@ -6,19 +6,29 @@ import (
 
 func TestComposeChatID_DM(t *testing.T) {
 	c := &Channel{}
-	chatID := c.composeChatID("D1234567890", "U9876543210")
+	// DMs ignore the thread component entirely.
+	chatID := c.composeChatID("D1234567890", "U9876543210", "1700.0001")
 	expected := "slack:D1234567890"
 	if chatID != expected {
 		t.Errorf("DM chatID = %q, want %q", chatID, expected)
 	}
 }
 
-func TestComposeChatID_PublicChannel(t *testing.T) {
+func TestComposeChatID_PublicChannel_Threaded(t *testing.T) {
 	c := &Channel{}
-	chatID := c.composeChatID("C1234567890", "U9876543210")
+	chatID := c.composeChatID("C1234567890", "U9876543210", "1700.0001")
+	expected := "slack:C1234567890:U9876543210:1700.0001"
+	if chatID != expected {
+		t.Errorf("threaded channel chatID = %q, want %q", chatID, expected)
+	}
+}
+
+func TestComposeChatID_PublicChannel_NoThread(t *testing.T) {
+	c := &Channel{}
+	chatID := c.composeChatID("C1234567890", "U9876543210", "")
 	expected := "slack:C1234567890:U9876543210"
 	if chatID != expected {
-		t.Errorf("public channel chatID = %q, want %q", chatID, expected)
+		t.Errorf("channel chatID = %q, want %q", chatID, expected)
 	}
 }
 

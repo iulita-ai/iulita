@@ -239,6 +239,12 @@ type Repository interface {
 	GetChannelLocale(ctx context.Context, channelType, channelUserID string) (string, error)
 	GetChannelLocaleByChatID(ctx context.Context, chatID string) (string, error)
 
+	// Slack routing: persists a composite chatID -> Slack coordinates so proactive
+	// delivery survives in-memory cache eviction and process restarts.
+	UpsertSlackRoute(ctx context.Context, r *domain.SlackChatRoute) error
+	GetSlackRoute(ctx context.Context, instanceID, chatID string) (*domain.SlackChatRoute, error)
+	DeleteSlackRoutesOlderThan(ctx context.Context, instanceID string, olderThan time.Time) (int64, error)
+
 	// Data migration
 	BackfillUserIDs(ctx context.Context) (int64, error)
 
