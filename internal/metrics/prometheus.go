@@ -27,12 +27,12 @@ type Metrics struct {
 	ImportsInFlight    prometheus.Gauge
 
 	// Slack (Phase 4).
-	SlackUserSearches      *prometheus.CounterVec // labels: outcome (ok/rate_limited/error)
-	SlackSearchResults     prometheus.Counter     // total messages returned
-	SlackUserTokenRefresh  *prometheus.CounterVec // labels: outcome (ok/error)
-	SlackAutoposts         *prometheus.CounterVec // labels: mode (draft/auto)
-	SlackPermissionDenials *prometheus.CounterVec // labels: kind
-	SlackSocketReconnects  *prometheus.CounterVec // labels: instance_id
+	SlackUserSearches     *prometheus.CounterVec // labels: outcome (ok/rate_limited/error)
+	SlackSearchResults    prometheus.Counter     // total messages returned
+	SlackUserTokenRefresh *prometheus.CounterVec // labels: outcome (ok/error)
+	SlackAutoposts        *prometheus.CounterVec // labels: mode (draft/auto)
+	SlackPostFailures     *prometheus.CounterVec // labels: kind (denied/blocked_guardrail/blocked_secret/error/discarded/approval_failed)
+	SlackSocketReconnects *prometheus.CounterVec // labels: instance_id
 }
 
 // New registers all Prometheus metrics and returns a Metrics instance.
@@ -163,9 +163,9 @@ func New() *Metrics {
 			Namespace: "iulita", Subsystem: "slack", Name: "autoposts_total",
 			Help: "Total successful bot posts to channels by mode.",
 		}, []string{"mode"}),
-		SlackPermissionDenials: promauto.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "iulita", Subsystem: "slack", Name: "permission_denials_total",
-			Help: "Total blocked/denied bot post attempts by kind.",
+		SlackPostFailures: promauto.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "iulita", Subsystem: "slack", Name: "post_failures_total",
+			Help: "Total non-successful bot post attempts by kind (denied, blocked_guardrail, blocked_secret, error, discarded, approval_failed).",
 		}, []string{"kind"}),
 		SlackSocketReconnects: promauto.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "iulita", Subsystem: "slack", Name: "socketmode_reconnects_total",

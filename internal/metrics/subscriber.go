@@ -122,7 +122,9 @@ func (m *Metrics) RegisterSubscribers(bus *eventbus.Bus) {
 		if p.Success {
 			m.SlackAutoposts.WithLabelValues(p.Mode).Inc()
 		} else {
-			m.SlackPermissionDenials.WithLabelValues(p.Decision).Inc()
+			// Decision carries the true failure kind (blocked_guardrail, denied,
+			// blocked_secret, error, discarded, approval_failed), not the post mode.
+			m.SlackPostFailures.WithLabelValues(p.Decision).Inc()
 		}
 		return nil
 	})

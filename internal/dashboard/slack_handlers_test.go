@@ -283,6 +283,39 @@ func TestSlackActivity(t *testing.T) {
 	}
 }
 
+// TestSlackActivity_StripsFreeText proves the server-side whitelist: free-text
+// fields that can carry copied Slack content (provenance) and non-whitelisted keys
+// never appear in the response, even though the audit row stored them.
+func TestSlackActivity_StripsFreeText(t *testing.T) {
+	store := &fakeSlackStore{audit: []domain.AuditEntry{
+		{ID: 1, Action: "slack.post.sent", Success: true, Detail: `{"channel":"C1","decision":"auto","provenance":"secret internal message body","text_sha256":"abc","text_len":42,"extra":"nope"}`},
+	}}
+	s := newTestServer(store, &fakeSlackOAuth{})
+	app := fiber.New()
+	app.Get("/api/slack/activity", s.handleSlackActivity)
+
+	resp, _ := app.Test(httptest.NewRequest(http.MethodGet, "/api/slack/activity", http.NoBody))
+	var out []map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	if len(out) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(out))
+	}
+	d, ok := out[0]["detail"].(map[string]any)
+	if !ok {
+		t.Fatalf("detail missing: %v", out[0]["detail"])
+	}
+	// Whitelisted, audit-useful metadata survives.
+	if d["channel"] != "C1" || d["decision"] != "auto" || d["text_len"] != float64(42) {
+		t.Errorf("whitelisted keys missing/wrong: %v", d)
+	}
+	// Free-text and non-whitelisted keys are stripped server-side.
+	for _, k := range []string{"provenance", "text_sha256", "extra"} {
+		if _, present := d[k]; present {
+			t.Errorf("key %q must be stripped from the response, got %v", k, d)
+		}
+	}
+}
+
 func TestSlackAuth_NotConfigured(t *testing.T) {
 	s := newTestServer(&fakeSlackStore{}, &fakeSlackOAuth{notConfigured: true, encEnabled: true})
 	app := fiber.New()

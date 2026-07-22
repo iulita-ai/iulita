@@ -178,6 +178,90 @@ describe('ChannelConfigForm.vue', () => {
     })
   })
 
+  describe('Slack posting config', () => {
+    it('defaults write_mode to off and empty channels', () => {
+      const wrapper = mount(ChannelConfigForm, {
+        props: { channelType: 'slack', modelValue: '{}' },
+      })
+      const vm = wrapper.vm as any
+      expect(vm.slackCfg.write_mode).toBe('off')
+      expect(vm.slackCfg.write_channels).toEqual([])
+      expect(vm.slackCfg.max_posts_per_hour).toBe(0)
+    })
+
+    it('parses existing posting config', () => {
+      const cfg = { write_mode: 'auto', write_channels: ['C1', 'C2'], guardrails: { max_posts_per_hour: 5, quiet_hours: [22, 7] } }
+      const wrapper = mount(ChannelConfigForm, {
+        props: { channelType: 'slack', modelValue: JSON.stringify(cfg) },
+      })
+      const vm = wrapper.vm as any
+      expect(vm.slackCfg.write_mode).toBe('auto')
+      expect(vm.slackCfg.write_channels).toEqual(['C1', 'C2'])
+      expect(vm.slackCfg.max_posts_per_hour).toBe(5)
+      expect(vm.slackCfg.quiet_start).toBe(22)
+      expect(vm.slackCfg.quiet_end).toBe(7)
+    })
+
+    it('emits write_channels change', () => {
+      const wrapper = mount(ChannelConfigForm, {
+        props: { channelType: 'slack', modelValue: '{}' },
+      })
+      const vm = wrapper.vm as any
+      vm.onWriteChannelsChange(['C123'])
+      const emitted = wrapper.emitted('update:modelValue')
+      expect(JSON.parse(emitted![emitted!.length - 1][0] as string).write_channels).toEqual(['C123'])
+    })
+
+    it('commits non-auto write_mode directly', () => {
+      const wrapper = mount(ChannelConfigForm, {
+        props: { channelType: 'slack', modelValue: '{}' },
+      })
+      const vm = wrapper.vm as any
+      vm.onWriteModeChange('draft')
+      const emitted = wrapper.emitted('update:modelValue')
+      expect(JSON.parse(emitted![emitted!.length - 1][0] as string).write_mode).toBe('draft')
+    })
+
+    it('commitAuto seeds a default rate cap and quiet hours', () => {
+      const wrapper = mount(ChannelConfigForm, {
+        props: { channelType: 'slack', modelValue: '{}' },
+      })
+      const vm = wrapper.vm as any
+      vm.commitAuto()
+      const emitted = wrapper.emitted('update:modelValue')
+      const cfg = JSON.parse(emitted![emitted!.length - 1][0] as string)
+      expect(cfg.write_mode).toBe('auto')
+      expect(cfg.guardrails.max_posts_per_hour).toBe(1)
+      expect(cfg.guardrails.quiet_hours).toEqual([0, 0])
+    })
+
+    it('commitAuto preserves an existing positive rate cap', () => {
+      const start = { guardrails: { max_posts_per_hour: 5, quiet_hours: [22, 7] } }
+      const wrapper = mount(ChannelConfigForm, {
+        props: { channelType: 'slack', modelValue: JSON.stringify(start) },
+      })
+      const vm = wrapper.vm as any
+      vm.commitAuto()
+      const emitted = wrapper.emitted('update:modelValue')
+      const cfg = JSON.parse(emitted![emitted!.length - 1][0] as string)
+      expect(cfg.write_mode).toBe('auto')
+      expect(cfg.guardrails.max_posts_per_hour).toBe(5)
+      expect(cfg.guardrails.quiet_hours).toEqual([22, 7])
+    })
+
+    it('emits guardrail updates', () => {
+      const wrapper = mount(ChannelConfigForm, {
+        props: { channelType: 'slack', modelValue: '{}' },
+      })
+      const vm = wrapper.vm as any
+      vm.updateGuardrail('max_posts_per_hour', 3)
+      const emitted = wrapper.emitted('update:modelValue')
+      const g = JSON.parse(emitted![emitted!.length - 1][0] as string).guardrails
+      expect(g.max_posts_per_hour).toBe(3)
+      expect(g.quiet_hours).toEqual([0, 0])
+    })
+  })
+
   describe('disabled state', () => {
     it('passes disabled prop', () => {
       const wrapper = mount(ChannelConfigForm, {

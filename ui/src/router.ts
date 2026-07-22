@@ -116,6 +116,12 @@ const router = createRouter({
       component: () => import('./views/Import.vue'),
       meta: { admin: true },
     },
+    {
+      path: '/slack-activity',
+      name: 'slack-activity',
+      component: () => import('./views/SlackActivity.vue'),
+      meta: { admin: true },
+    },
   ],
 })
 

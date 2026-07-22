@@ -52,6 +52,13 @@ func (c *Channel) SetWriteConfig(channels []string, mode string, maxPerHour int,
 	if mode != "draft" && mode != "auto" {
 		mode = "off"
 	}
+	// Fail-closed: "auto" without a positive hourly cap would post autonomously with
+	// no rate limit. The UI forbids this, but a hand-crafted config could set it, so
+	// downgrade to approval-gated "draft" here rather than trust the caller.
+	if mode == "auto" && maxPerHour <= 0 {
+		c.logger.Warn("slack: auto write mode requires a positive max_posts_per_hour; downgrading to draft")
+		mode = "draft"
+	}
 	c.writeMu.Lock()
 	c.writeCfg = writeConfig{
 		channels:   set,

@@ -216,12 +216,20 @@ func (s *PostSkill) writeAudit(ctx context.Context, action string, in postInput,
 		s.logger.Warn("slack_post: audit write failed", zap.Error(err))
 	}
 	if s.bus != nil {
+		// On success `decision` is the mode (auto/draft_approved). On failure the
+		// caller may pass the mode, so take the true failure kind from the action
+		// suffix (slack.post.blocked_guardrail -> "blocked_guardrail") — that is
+		// what the post-failure metric labels on.
 		mode := "auto"
 		if decision == "draft_approved" {
 			mode = "draft"
 		}
+		kind := decision
+		if !success {
+			kind = strings.TrimPrefix(action, "slack.post.")
+		}
 		s.bus.Publish(ctx, eventbus.Event{Type: eventbus.SlackPost, Payload: eventbus.SlackPostPayload{
-			Mode: mode, Decision: decision, Success: success,
+			Mode: mode, Decision: kind, Success: success,
 		}})
 	}
 }

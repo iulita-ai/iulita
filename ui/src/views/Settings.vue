@@ -85,6 +85,63 @@
       <n-empty v-if="googleAccounts.length === 0" :description="t('settings.noGoogleAccounts')" />
     </n-card>
 
+    <!-- Slack (personal user token) -->
+    <n-card v-if="admin" :title="t('settings.slackPersonal')">
+      <template #header-extra>
+        <n-button size="small" @click="loadSlackStatus">{{ t('common.refresh') }}</n-button>
+      </template>
+      <n-text :depth="3" style="display: block; margin-bottom: 12px; font-size: 12px;">
+        {{ t('settings.slackPersonalHint') }}
+      </n-text>
+      <n-card size="small" embedded>
+        <template #header>
+          <n-space :size="8" align="center">
+            <n-text strong style="font-size: 13px;">{{ t('settings.credentialStatus') }}</n-text>
+            <n-tag
+              v-if="slackStatus"
+              :type="slackStatus.source === 'none' ? 'default' : 'success'"
+              size="small"
+            >
+              {{ slackStatus.source === 'none' ? t('settings.notConfigured') : t('settings.active') }}
+            </n-tag>
+          </n-space>
+        </template>
+        <n-descriptions v-if="slackStatus && slackStatus.source !== 'none'" bordered :column="2" label-placement="left" size="small">
+          <n-descriptions-item v-if="slackStatus.team_name" :label="t('settings.slackTeam')">
+            {{ slackStatus.team_name }}
+          </n-descriptions-item>
+          <n-descriptions-item v-if="slackStatus.slack_user_id" :label="t('settings.slackUserId')">
+            <n-text code>{{ slackStatus.slack_user_id }}</n-text>
+          </n-descriptions-item>
+          <n-descriptions-item v-if="slackStatus.scopes && slackStatus.scopes.length" :label="t('settings.scopes')">
+            {{ slackStatus.scopes.join(', ') }}
+          </n-descriptions-item>
+          <n-descriptions-item v-if="slackStatus.connected_at" :label="t('settings.slackConnectedAt')">
+            {{ formatSlackTime(slackStatus.connected_at) }}
+          </n-descriptions-item>
+        </n-descriptions>
+        <n-space :size="8" style="margin-top: 12px;">
+          <n-button
+            v-if="!slackStatus || slackStatus.source === 'none'"
+            type="primary"
+            size="small"
+            :loading="slackConnecting"
+            @click="connectSlack"
+          >
+            {{ t('settings.slackConnect') }}
+          </n-button>
+          <n-popconfirm v-else @positive-click="disconnectSlack">
+            <template #trigger>
+              <n-button type="error" size="small" :loading="slackDisconnecting">
+                {{ t('settings.slackDisconnect') }}
+              </n-button>
+            </template>
+            {{ t('settings.slackDisconnectConfirm') }}
+          </n-popconfirm>
+        </n-space>
+      </n-card>
+    </n-card>
+
     <n-card :title="t('settings.systemConfig')">
       <template #header-extra>
         <n-space :size="8">
@@ -509,8 +566,8 @@ import {
   NCollapseItem, NUpload, useMessage,
 } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
-import { api } from '../api'
-import type { SystemInfo, SkillInfo, ChatInfo, JobInfo, Task, TaskCounts, ConfigEntry, GoogleAccount, GoogleCredentialStatus, SkillConfigField, ConfigSchemaSection, ConfigSchemaField, CredentialView } from '../api'
+import { api, isAdmin } from '../api'
+import type { SystemInfo, SkillInfo, ChatInfo, JobInfo, Task, TaskCounts, ConfigEntry, GoogleAccount, GoogleCredentialStatus, SlackUserStatus, SkillConfigField, ConfigSchemaSection, ConfigSchemaField, CredentialView } from '../api'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -743,6 +800,52 @@ const googleAccounts = ref<GoogleAccount[]>([])
 const googleAlias = ref('')
 const googleConnecting = ref(false)
 const googleStatus = ref<GoogleCredentialStatus | null>(null)
+
+// Slack personal (user token, owner-only)
+const admin = isAdmin()
+const slackStatus = ref<SlackUserStatus | null>(null)
+const slackConnecting = ref(false)
+const slackDisconnecting = ref(false)
+
+function formatSlackTime(iso: string): string {
+  if (!iso) return '-'
+  const d = new Date(iso)
+  return isNaN(d.getTime()) ? '-' : d.toLocaleString()
+}
+
+async function loadSlackStatus() {
+  if (!admin) return
+  try {
+    slackStatus.value = await api.getSlackUserStatus()
+  } catch {
+    slackStatus.value = null
+  }
+}
+
+async function connectSlack() {
+  slackConnecting.value = true
+  try {
+    const result = await api.getSlackUserAuthURL()
+    window.location.href = result.url
+  } catch (e: any) {
+    message.error(e.message)
+  } finally {
+    slackConnecting.value = false
+  }
+}
+
+async function disconnectSlack() {
+  slackDisconnecting.value = true
+  try {
+    await api.disconnectSlackUser()
+    message.success(t('settings.slackDisconnected'))
+    await loadSlackStatus()
+  } catch (e: any) {
+    message.error(e.message)
+  } finally {
+    slackDisconnecting.value = false
+  }
+}
 
 // Config schema
 const schemaSections = ref<ConfigSchemaSection[]>([])
@@ -1173,6 +1276,16 @@ onMounted(async () => {
     message.success(t('settings.googleConnected'))
     window.history.replaceState({}, '', window.location.pathname)
   }
+  const slackParam = params.get('slack')
+  if (slackParam === 'connected') {
+    message.success(t('settings.slackConnected'))
+    window.history.replaceState({}, '', window.location.pathname)
+  } else if (slackParam === 'denied') {
+    // OAuth callback redirects here with ?slack=denied when the user declines the
+    // Slack consent or the exchange fails — otherwise the failure is silent.
+    message.error(t('settings.slackConnectFailed'))
+    window.history.replaceState({}, '', window.location.pathname)
+  }
 
   const [sys, sk, ch] = await Promise.all([
     api.getSystem(),
@@ -1183,6 +1296,7 @@ onMounted(async () => {
     loadConfig(),
     loadGoogleAccounts(),
     loadGoogleStatus(),
+    loadSlackStatus(),
     loadSchema(),
   ])
   system.value = sys

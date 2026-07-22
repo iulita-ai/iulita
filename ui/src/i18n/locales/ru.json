@@ -17,7 +17,8 @@
     "credentials": "Учетные данные",
     "skillStats": "Статистика навыков",
     "skillProposals": "Заявки на навыки",
-    "import": "Импорт"
+    "import": "Импорт",
+    "slackActivity": "Активность Slack"
   },
   "common": {
     "save": "Сохранить",
@@ -208,7 +209,18 @@
     "credentialBound": "Учетные данные привязаны",
     "credentialUnbound": "Привязка удалена",
     "savedRequiresRestart": "Сохранено: {label} — вступит в силу после перезапуска",
-    "requiresRestart": "нужен перезапуск"
+    "requiresRestart": "нужен перезапуск",
+    "slackPersonal": "Slack (личный)",
+    "slackPersonalHint": "Подключите личный аккаунт Slack, чтобы ассистент мог искать всё, что видите вы. Это не связано с ботом — общение и публикация ботом настраиваются по каналам в разделе «Каналы». Только для владельца.",
+    "slackTeam": "Рабочее пространство",
+    "slackUserId": "ID пользователя Slack",
+    "slackConnectedAt": "Подключено",
+    "slackConnect": "Подключить Slack",
+    "slackDisconnect": "Отключить",
+    "slackDisconnectConfirm": "Отключить личный аккаунт Slack? Сохранённые токены будут отозваны.",
+    "slackDisconnected": "Аккаунт Slack отключён",
+    "slackConnected": "Аккаунт Slack подключён",
+    "slackConnectFailed": "Подключение Slack отменено или не удалось. Ничего не сохранено."
   },
   "agentJobs": {
     "title": "Задания агента",
@@ -536,7 +548,20 @@
     "slackAppTokenHelp": "App-Level Token для Slack (xapp-...) для Socket Mode. Создайте в настройках приложения Slack.",
     "slackAllowedUserIds": "Разрешённые ID пользователей Slack",
     "slackAllowedUserIdsHelp": "ID пользователей Slack (U...), которые могут взаимодействовать с ботом. Пусто = все.",
-    "slackAppTokenRequired": "App-Level Token (xapp-...) обязателен для Socket Mode."
+    "slackAppTokenRequired": "App-Level Token (xapp-...) обязателен для Socket Mode.",
+    "slackAutoRequiresGuardrails": "Для авторежима нужен хотя бы один канал и лимит постов в час больше 0.",
+    "slackPosting": "Публикация",
+    "slackWriteChannels": "Каналы для записи",
+    "slackWriteChannelsHelp": "ID каналов, в которые бот может писать. Оставьте пустым, чтобы отключить публикацию.",
+    "slackWriteMode": "Режим записи",
+    "slackWriteOff": "Выкл — никогда не публиковать",
+    "slackWriteDraft": "Черновик — подготовить пост и запросить подтверждение",
+    "slackWriteAuto": "Авто — публиковать без подтверждения",
+    "slackWriteAutoWarn": "Авторежим публикует сообщения в Slack без запроса подтверждения. Включайте только для доверенных каналов с настроенными ограничениями. Продолжить?",
+    "slackMaxPostsPerHour": "Макс. постов в час",
+    "slackQuietHours": "Тихие часы (начало–конец)",
+    "slackQuietHoursHelp": "Часы (0–23), когда авто-публикация подавляется. Установите оба в 0, чтобы отключить.",
+    "slackPostingHelp": "Только публикация ботом. Личный поиск (чтение всего, что видите вы) подключается отдельно в Настройках."
   },
   "locale": {
     "label": "Язык",
@@ -748,5 +773,19 @@
     "reindexStarted": "Переиндексация архива — прогресс на вкладке «Импорт».",
     "reindexQueued": "Переиндексация уже выполняется.",
     "chunks": "фрагментов"
+  },
+  "slackActivity": {
+    "title": "Активность Slack",
+    "subtitle": "Журнал поисков и публикаций в Slack",
+    "privacyNote": "В журнал записываются только метаданные (действие, результат, счётчики) — без текста сообщений и поисковых запросов.",
+    "recent": "Недавняя активность",
+    "noData": "Активность Slack пока не зафиксирована.",
+    "time": "Время",
+    "action": "Действие",
+    "result": "Результат",
+    "ok": "OK",
+    "failed": "Ошибка",
+    "detail": "Детали",
+    "loadFailed": "Не удалось загрузить активность Slack"
   }
 }

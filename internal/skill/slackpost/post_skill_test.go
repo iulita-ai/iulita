@@ -236,6 +236,18 @@ func TestPost_PublishesEvent(t *testing.T) {
 	if n != 1 || got.Success || got.Decision != "denied" {
 		t.Errorf("denial published %+v (n=%d), want denied/false", got, n)
 	}
+
+	// A guardrail block on an AUTO post must publish the true failure kind, not the
+	// post mode: Decision="blocked_guardrail", not "auto".
+	blocked := &fakePoster{mode: "auto", postErr: slackch.ErrGuardrailBlocked}
+	s3, _ := newSkill(blocked)
+	got = eventbus.SlackPostPayload{}
+	n = 0
+	s3.SetBus(bus)
+	run(t, s3, context.Background(), map[string]any{"channel": "C1", "text": "x"})
+	if n != 1 || got.Success || got.Decision != "blocked_guardrail" {
+		t.Errorf("guardrail block published %+v (n=%d), want blocked_guardrail/false", got, n)
+	}
 }
 
 func TestPost_Metadata(t *testing.T) {

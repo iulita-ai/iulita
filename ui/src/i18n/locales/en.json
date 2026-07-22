@@ -17,7 +17,8 @@
     "skillStats": "Skill Stats",
     "skillProposals": "Skill Proposals",
     "logout": "Logout",
-    "import": "Import"
+    "import": "Import",
+    "slackActivity": "Slack Activity"
   },
   "common": {
     "save": "Save",
@@ -208,7 +209,18 @@
     "worker": "Worker",
     "attempts": "Attempts",
     "created": "Created",
-    "errorCol": "Error"
+    "errorCol": "Error",
+    "slackPersonal": "Slack (personal)",
+    "slackPersonalHint": "Connect your personal Slack account so the assistant can search everything you can see. This is independent of the bot — bot messaging and posting are configured per-channel under Channels. Owner-only.",
+    "slackTeam": "Workspace",
+    "slackUserId": "Slack user ID",
+    "slackConnectedAt": "Connected",
+    "slackConnect": "Connect Slack",
+    "slackDisconnect": "Disconnect",
+    "slackDisconnectConfirm": "Disconnect your personal Slack account? Stored tokens will be revoked.",
+    "slackDisconnected": "Slack account disconnected",
+    "slackConnected": "Slack account connected",
+    "slackConnectFailed": "Slack connection was cancelled or failed. Nothing was saved."
   },
   "agentJobs": {
     "title": "Agent Jobs",
@@ -538,7 +550,20 @@
     "slackAppTokenHelp": "Slack App-Level Token (xapp-...) for Socket Mode. Generate in Slack App Settings → Basic Information → App-Level Tokens.",
     "slackAllowedUserIds": "Allowed Slack User IDs",
     "slackAllowedUserIdsHelp": "Slack user IDs (U...) that can interact with the bot. Empty = allow all.",
-    "slackAppTokenRequired": "Slack App-Level Token (xapp-...) is required for Socket Mode."
+    "slackAppTokenRequired": "Slack App-Level Token (xapp-...) is required for Socket Mode.",
+    "slackAutoRequiresGuardrails": "Auto posting requires at least one target channel and a max-posts-per-hour limit above 0.",
+    "slackPosting": "Posting",
+    "slackWriteChannels": "Writable channels",
+    "slackWriteChannelsHelp": "Channel IDs the bot may post to. Leave empty to disable posting.",
+    "slackWriteMode": "Write mode",
+    "slackWriteOff": "Off — never post",
+    "slackWriteDraft": "Draft — prepare a post and ask for approval",
+    "slackWriteAuto": "Auto — post without approval",
+    "slackWriteAutoWarn": "Auto mode posts messages to Slack without asking for confirmation. Only enable this for trusted channels with guardrails set. Continue?",
+    "slackMaxPostsPerHour": "Max posts per hour",
+    "slackQuietHours": "Quiet hours (start–end)",
+    "slackQuietHoursHelp": "Hours (0–23) during which auto posting is suppressed. Set both to 0 to disable.",
+    "slackPostingHelp": "Bot posting only. Personal search (reading everything you can see) is connected separately in Settings."
   },
   "locale": {
     "label": "Language",
@@ -741,5 +766,19 @@
     "reindexStarted": "Reindexing the archive — progress shows on the Import tab.",
     "reindexQueued": "Reindex already running.",
     "chunks": "chunks"
+  },
+  "slackActivity": {
+    "title": "Slack Activity",
+    "subtitle": "Audit log of Slack searches and posts",
+    "privacyNote": "This log records metadata only (action, outcome, counts) — never message text or search queries.",
+    "recent": "Recent activity",
+    "noData": "No Slack activity recorded yet.",
+    "time": "Time",
+    "action": "Action",
+    "result": "Result",
+    "ok": "OK",
+    "failed": "Failed",
+    "detail": "Detail",
+    "loadFailed": "Failed to load Slack activity"
   }
 }

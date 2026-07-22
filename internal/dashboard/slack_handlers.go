@@ -231,10 +231,20 @@ func (s *Server) handleDeleteSlackAccount(c *fiber.Ctx) error {
 
 // handleSlackActivity returns recent Slack audit entries (search + post), newest
 // first, with Detail parsed from JSON for the UI. Admin-only.
+// slackActivityDetailKeys is the allow-list of audit Detail fields the activity
+// endpoint may return. This is the server-enforced "metadata only" contract — the
+// frontend renderer is a convenience, not the guarantee. Free-text fields that can
+// carry copied Slack content (notably slack_post's model-supplied "provenance") are
+// deliberately excluded so they never leave the process, even to the admin UI.
+var slackActivityDetailKeys = []string{"mode", "outcome", "decision", "result_count", "channel", "text_len"}
+
 func (s *Server) handleSlackActivity(c *fiber.Ctx) error {
 	limit := c.QueryInt("limit", 50)
 	if limit <= 0 {
 		limit = 50
+	}
+	if limit > 500 {
+		limit = 500
 	}
 	entries, err := s.store.ListAuditEntriesByPrefix(c.Context(), "slack.", limit)
 	if err != nil {
@@ -244,9 +254,16 @@ func (s *Server) handleSlackActivity(c *fiber.Ctx) error {
 	out := make([]fiber.Map, 0, len(entries))
 	for i := range entries {
 		e := &entries[i]
-		var detail map[string]any
-		if err := json.Unmarshal([]byte(e.Detail), &detail); err != nil {
-			detail = map[string]any{}
+		var raw map[string]any
+		if err := json.Unmarshal([]byte(e.Detail), &raw); err != nil {
+			raw = map[string]any{}
+		}
+		// Whitelist: copy only known-safe metadata keys into the response.
+		detail := make(map[string]any, len(slackActivityDetailKeys))
+		for _, k := range slackActivityDetailKeys {
+			if v, ok := raw[k]; ok {
+				detail[k] = v
+			}
 		}
 		out = append(out, fiber.Map{
 			"id": e.ID, "action": e.Action, "success": e.Success,

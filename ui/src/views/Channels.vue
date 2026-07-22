@@ -176,7 +176,7 @@ const typeOptions = [
 const defaultConfigs: Record<string, string> = {
   telegram: JSON.stringify({ token: '', allowed_ids: [], debounce_window: '1.5s', rate_limit: 0, rate_window: '1m' }),
   discord: JSON.stringify({ token: '', allowed_channel_ids: [] }),
-  slack: JSON.stringify({ bot_token: '', app_token: '', allowed_user_ids: [], debounce_window: '2s', rate_limit: 0, rate_window: '1m' }),
+  slack: JSON.stringify({ bot_token: '', app_token: '', allowed_user_ids: [], debounce_window: '2s', rate_limit: 0, rate_window: '1m', write_channels: [], write_mode: 'off', guardrails: { max_posts_per_hour: 0, quiet_hours: [0, 0] } }),
   web: JSON.stringify({}),
 }
 
@@ -352,6 +352,24 @@ const bindingColumns: DataTableColumn<ChannelBinding>[] = [
   },
 ]
 
+// Validates a Slack channel-instance config. Returns the i18n key of the first
+// failure, or null if valid. Shared by create and update (same rules).
+function validateSlackConfig(configStr: string): string | null {
+  let parsed: { app_token?: unknown; write_mode?: string; write_channels?: unknown; guardrails?: { max_posts_per_hour?: number } }
+  try {
+    parsed = JSON.parse(configStr || '{}')
+  } catch {
+    return 'channels.invalidConfig'
+  }
+  if (!parsed.app_token || typeof parsed.app_token !== 'string' || !parsed.app_token.trim()) {
+    return 'channelConfig.slackAppTokenRequired'
+  }
+  if (parsed.write_mode === 'auto' && (!Array.isArray(parsed.write_channels) || parsed.write_channels.length === 0 || !((parsed.guardrails?.max_posts_per_hour ?? 0) > 0))) {
+    return 'channelConfig.slackAutoRequiresGuardrails'
+  }
+  return null
+}
+
 async function handleCreate() {
   if (!createForm.value.id || !createForm.value.type || !createForm.value.name) {
     message.warning(t('channels.idTypeNameRequired'))
@@ -362,14 +380,9 @@ async function handleCreate() {
     return
   }
   if (createForm.value.type === 'slack') {
-    try {
-      const parsed = JSON.parse(createForm.value.config || '{}')
-      if (!parsed.app_token || typeof parsed.app_token !== 'string' || !parsed.app_token.trim()) {
-        message.warning(t('channelConfig.slackAppTokenRequired'))
-        return
-      }
-    } catch {
-      message.warning(t('channels.invalidConfig'))
+    const err = validateSlackConfig(createForm.value.config)
+    if (err) {
+      message.warning(t(err))
       return
     }
   }
@@ -396,14 +409,9 @@ async function handleCreate() {
 async function handleUpdate() {
   if (!editInstance.value) return
   if (editInstance.value.source === 'dashboard' && editInstance.value.type === 'slack') {
-    try {
-      const parsed = JSON.parse(editForm.value.config || '{}')
-      if (!parsed.app_token || typeof parsed.app_token !== 'string' || !parsed.app_token.trim()) {
-        message.warning(t('channelConfig.slackAppTokenRequired'))
-        return
-      }
-    } catch {
-      message.warning(t('channels.invalidConfig'))
+    const err = validateSlackConfig(editForm.value.config)
+    if (err) {
+      message.warning(t(err))
       return
     }
   }

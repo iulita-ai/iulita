@@ -134,7 +134,7 @@ func TestPostToChannel_QuietHoursAutoOnly(t *testing.T) {
 	c, _ := newWriteChannel(t)
 	// A wide quiet window that includes "now" in server-local time.
 	nowH := time.Now().Hour()
-	c.SetWriteConfig([]string{"C1"}, "auto", 0, [2]int{nowH, (nowH + 2) % 24})
+	c.SetWriteConfig([]string{"C1"}, "auto", 100, [2]int{nowH, (nowH + 2) % 24})
 	if !c.inQuietHours(time.Now()) {
 		t.Skip("could not construct a quiet window covering now")
 	}
@@ -145,6 +145,29 @@ func TestPostToChannel_QuietHoursAutoOnly(t *testing.T) {
 	c.SetWriteConfig([]string{"C1"}, "draft", 0, [2]int{nowH, (nowH + 2) % 24})
 	if _, err := c.PostToChannel(context.Background(), "C1", "hi"); err != nil {
 		t.Fatalf("draft post should ignore quiet hours, got %v", err)
+	}
+}
+
+// TestSetWriteConfig_AutoRequiresBudget proves the fail-closed downgrade: "auto"
+// with no positive hourly cap becomes approval-gated "draft" so it can never post
+// autonomously without a rate limit, even from a hand-crafted config.
+func TestSetWriteConfig_AutoRequiresBudget(t *testing.T) {
+	c, api := newWriteChannel(t)
+	c.SetWriteConfig([]string{"C1"}, "auto", 0, [2]int{})
+	if got := c.WriteMode("C1"); got != "draft" {
+		t.Fatalf("auto without a budget should downgrade to draft, got %q", got)
+	}
+	// It still functions as draft (approved posts send, no budget block).
+	if _, err := c.PostToChannel(context.Background(), "C1", "hi"); err != nil {
+		t.Fatalf("downgraded draft post should send: %v", err)
+	}
+	if api.calls != 1 {
+		t.Errorf("expected 1 post, got %d", api.calls)
+	}
+	// A positive cap keeps auto as auto.
+	c.SetWriteConfig([]string{"C1"}, "auto", 5, [2]int{})
+	if got := c.WriteMode("C1"); got != "auto" {
+		t.Errorf("auto with a budget should stay auto, got %q", got)
 	}
 }
 
