@@ -245,6 +245,13 @@ type Repository interface {
 	GetSlackRoute(ctx context.Context, instanceID, chatID string) (*domain.SlackChatRoute, error)
 	DeleteSlackRoutesOlderThan(ctx context.Context, instanceID string, olderThan time.Time) (int64, error)
 
+	// Slack personal user-token OAuth account (owner-only, single row total).
+	SaveSlackAccount(ctx context.Context, a *domain.SlackAccount) error
+	GetSlackAccountByUserID(ctx context.Context, userID string) (*domain.SlackAccount, error)
+	GetAnySlackAccount(ctx context.Context) (*domain.SlackAccount, error)
+	DeleteSlackAccount(ctx context.Context, userID string) error
+	UpdateSlackTokens(ctx context.Context, id int64, accessToken, refreshToken string, expiry time.Time) error
+
 	// Data migration
 	BackfillUserIDs(ctx context.Context) (int64, error)
 

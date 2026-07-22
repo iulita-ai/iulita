@@ -275,6 +275,7 @@ type SkillsConfig struct {
 	ShellExec   ShellExecConfig      `koanf:"shell_exec"`
 	Craft       CraftConfig          `koanf:"craft"`
 	Google      GoogleConfig         `koanf:"google"`
+	SlackOAuth  SlackOAuthConfig     `koanf:"slack_oauth"`
 	Todoist     TodoistConfig        `koanf:"todoist"`
 	External    ExternalSkillsConfig `koanf:"external"`
 	SelfImprove SelfImproveConfig    `koanf:"selfimprove"`
@@ -316,6 +317,15 @@ type GoogleConfig struct {
 	RedirectURL     string `koanf:"redirect_url"`     // OAuth2 callback URL (e.g. https://iulita.example.com/api/google/callback)
 	CredentialsFile string `koanf:"credentials_file"` // Path to service_account or authorized_user JSON for headless auth
 	Scopes          string `koanf:"scopes"`           // Scope preset (readonly/readwrite/full) or JSON array of scope URLs
+}
+
+// SlackOAuthConfig holds Slack app OAuth2 credentials for the OWNER's personal
+// user-token (xoxp-) connection used to read/search Slack. This is distinct from
+// the per-channel-instance bot_token/app_token used by internal/channel/slack.
+type SlackOAuthConfig struct {
+	ClientID     string `koanf:"client_id"`     // Slack app Client ID
+	ClientSecret string `koanf:"client_secret"` // Slack app Client Secret
+	RedirectURL  string `koanf:"redirect_url"`  // OAuth2 callback URL (e.g. https://iulita.example.com/api/slack/callback)
 }
 
 type CraftConfig struct {
@@ -519,6 +529,7 @@ func structToMap(cfg *Config) map[string]interface{} {
 	m["skills.shell_exec.timeout"] = cfg.Skills.ShellExec.Timeout
 	m["skills.shell_exec.forbidden_paths"] = cfg.Skills.ShellExec.ForbiddenPaths
 	m["skills.google.redirect_url"] = cfg.Skills.Google.RedirectURL
+	m["skills.slack_oauth.redirect_url"] = cfg.Skills.SlackOAuth.RedirectURL
 	m["skills.selfimprove.complexity_threshold"] = cfg.Skills.SelfImprove.ComplexityThreshold
 
 	// Scheduler

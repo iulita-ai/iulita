@@ -63,6 +63,9 @@ func DefaultConfig(paths *Paths) *Config {
 			Google: GoogleConfig{
 				RedirectURL: "http://localhost:8080/api/google/callback",
 			},
+			SlackOAuth: SlackOAuthConfig{
+				RedirectURL: "http://localhost:8080/api/slack/callback",
+			},
 			SelfImprove: SelfImproveConfig{
 				Enabled:             false,
 				ComplexityThreshold: 5,

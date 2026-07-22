@@ -122,6 +122,8 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 		{(*domain.ImportRun)(nil), "import_runs"},
 		// Slack proactive-delivery routing (survives cache eviction + restarts).
 		{(*domain.SlackChatRoute)(nil), "slack_chat_routes"},
+		// Slack personal user-token OAuth account (owner-only).
+		{(*domain.SlackAccount)(nil), "slack_accounts"},
 	}
 
 	// Rename legacy "dreams" table to "insights" (preserves existing data).
@@ -213,6 +215,9 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 
 	// Google accounts: unique index for user_id + account_email.
 	s.db.ExecContext(ctx, `CREATE UNIQUE INDEX IF NOT EXISTS idx_google_accounts_user_email ON google_accounts(user_id, account_email)`)
+
+	// Slack account: single-owner enforcement (defense in depth beyond the bun unique tag).
+	s.db.ExecContext(ctx, `CREATE UNIQUE INDEX IF NOT EXISTS idx_slack_accounts_user ON slack_accounts(user_id)`) //nolint:errcheck,gosec
 
 	// Embedding cache table.
 	_, err := s.db.ExecContext(ctx, `

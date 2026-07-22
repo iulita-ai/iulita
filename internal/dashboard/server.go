@@ -17,6 +17,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/llm"
 	"github.com/iulita-ai/iulita/internal/scheduler"
 	"github.com/iulita-ai/iulita/internal/skill"
+	slackskill "github.com/iulita-ai/iulita/internal/skill/slack"
 	"github.com/iulita-ai/iulita/internal/storage"
 )
 
@@ -53,6 +54,20 @@ type GoogleStatusProvider interface {
 // Optional — checked with type assertion at runtime.
 type GoogleCredentialUploader interface {
 	UploadCredentials(data []byte, filename, dataDir string) (credType, destPath string, err error)
+}
+
+// SlackOAuthClient provides OAuth2 operations for the owner's personal Slack
+// user-token connection. Defined as an interface so the dashboard depends on
+// behavior (and is mockable) rather than the concrete *slackskill.Client.
+type SlackOAuthClient interface {
+	Configured() bool
+	NewSignedState(userID string) (string, error)
+	VerifyState(state string) (userID string, ok bool)
+	AuthCodeURL(state string) string
+	ExchangeCode(ctx context.Context, code string) (*slackskill.ExchangeResult, error)
+	EncryptToken(value string) (string, error)
+	EncryptionEnabled() bool
+	RedirectURL() string
 }
 
 // ExternalSkillResult describes a skill search result from a marketplace.
@@ -133,6 +148,7 @@ type Config struct {
 	WSHub             *WSHub                // nil = WebSocket disabled
 	WebChat           WebChatProvider       // nil = web chat disabled
 	GoogleClient      GoogleOAuthClient     // nil = Google OAuth disabled
+	SlackClient       SlackOAuthClient      // nil = Slack personal OAuth disabled
 	SkillManager      ExternalSkillManager  // nil = external skills disabled
 	TodoProviders     []TodoProvider        // external task providers (Todoist, etc.)
 	CredentialManager CredentialManager     // nil = credential API disabled
@@ -154,6 +170,7 @@ type Server struct {
 	authService       *auth.Service
 	channelManager    ChannelLifecycle
 	googleClient      GoogleOAuthClient
+	slackClient       SlackOAuthClient
 	skillManager      ExternalSkillManager
 	todoProviders     []TodoProvider
 	credentialManager CredentialManager
@@ -175,6 +192,7 @@ func New(cfg Config) *Server {
 		authService:       cfg.AuthService,
 		channelManager:    cfg.ChannelManager,
 		googleClient:      cfg.GoogleClient,
+		slackClient:       cfg.SlackClient,
 		skillManager:      cfg.SkillManager,
 		todoProviders:     cfg.TodoProviders,
 		credentialManager: cfg.CredentialManager,
@@ -240,6 +258,14 @@ func New(cfg Config) *Server {
 
 	// System info is public (health checks, version).
 	api.Get("/system", s.handleSystem)
+
+	// Slack OAuth callback is a top-level browser redirect from slack.com and
+	// cannot carry an Authorization header, so it must be registered BEFORE the
+	// JWT middleware. It is protected instead by the signed, single-use state
+	// cookie plus a DB re-check that the embedded owner is still an admin.
+	if s.slackClient != nil {
+		api.Get("/slack/callback", s.handleSlackCallback)
+	}
 
 	// Protected routes: require JWT when auth is enabled.
 	if s.authService != nil {
@@ -416,6 +442,17 @@ func New(cfg Config) *Server {
 			google.Get("/accounts", s.handleListGoogleAccounts)
 			google.Delete("/accounts/:id", s.handleDeleteGoogleAccount)
 			google.Put("/accounts/:id", s.handleUpdateGoogleAccount)
+		}
+	}
+
+	// Slack personal user-token OAuth (owner-only). The callback is registered
+	// separately above (public). These are admin-gated like /users and /channels.
+	if s.authService != nil {
+		slackGroup := api.Group("/slack", auth.AdminOnly())
+		slackGroup.Get("/status", s.handleSlackStatus)
+		if s.slackClient != nil {
+			slackGroup.Get("/auth", s.handleSlackAuth)
+			slackGroup.Delete("/account", s.handleDeleteSlackAccount)
 		}
 	}
 

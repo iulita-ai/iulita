@@ -63,6 +63,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/skill/sessionsearch"
 	"github.com/iulita-ai/iulita/internal/skill/shellexec"
 	"github.com/iulita-ai/iulita/internal/skill/skillinfo"
+	slackskill "github.com/iulita-ai/iulita/internal/skill/slack"
 	tasksskill "github.com/iulita-ai/iulita/internal/skill/tasks"
 	"github.com/iulita-ai/iulita/internal/skill/todoist"
 	"github.com/iulita-ai/iulita/internal/skill/tokenusage"
@@ -944,6 +945,32 @@ func main() {
 	// Skills are capability-gated; dashboard OAuth endpoints check credentials at call time.
 	var dashboardGoogleClient dashboard.GoogleOAuthClient = googleClient
 
+	// Slack personal user-token OAuth (owner-only). Phase 1 wires only the OAuth
+	// infrastructure — no search skill is registered yet. The client is always
+	// created; dashboard endpoints guard on configuration/encryption at call time.
+	var slackCrypto slackskill.CryptoProvider
+	if encryptor != nil {
+		slackCrypto = encryptor
+	}
+	slackOAuthClient := slackskill.NewClient(slackskill.ClientOptions{
+		ClientID:     cfg.Skills.SlackOAuth.ClientID,
+		ClientSecret: cfg.Skills.SlackOAuth.ClientSecret,
+		RedirectURL:  cfg.Skills.SlackOAuth.RedirectURL,
+		Store:        store,
+		Crypto:       slackCrypto,
+		HTTPClient:   httpClient,
+		Logger:       logger,
+	})
+	var dashboardSlackClient dashboard.SlackOAuthClient = slackOAuthClient
+	if slackOAuthClient.Configured() {
+		// Log the redirect URL so an operator can confirm it matches the Slack
+		// app's registered callback (the top first-time-setup failure).
+		logger.Info("slack personal oauth client configured",
+			zap.String("redirect_url", cfg.Skills.SlackOAuth.RedirectURL))
+	} else {
+		logger.Info("slack personal oauth client created (inactive, no credentials)")
+	}
+
 	// Todoist skill — API token-based task management.
 	todoistClient := todoist.NewClient(cfg.Skills.Todoist.APIToken, httpClient, logger)
 	todoistManifest, err := todoist.LoadManifest()
@@ -1629,6 +1656,7 @@ func main() {
 			WSHub:             wsHub,
 			WebChat:           mgr,
 			GoogleClient:      dashboardGoogleClient,
+			SlackClient:       dashboardSlackClient,
 			SkillManager:      dashSkillMgr,
 			TodoProviders:     todoProviders,
 			CredentialManager: credStore,
