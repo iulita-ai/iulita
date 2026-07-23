@@ -95,4 +95,43 @@ func (m *Metrics) RegisterSubscribers(bus *eventbus.Bus) {
 		m.ImportsInFlight.Dec()
 		return nil
 	})
+
+	// Slack observability.
+	bus.Subscribe(eventbus.SlackSearch, func(_ context.Context, evt eventbus.Event) error {
+		p, ok := evt.Payload.(eventbus.SlackSearchPayload)
+		if !ok {
+			return nil
+		}
+		m.SlackUserSearches.WithLabelValues(p.Outcome).Inc()
+		if p.ResultCount > 0 {
+			m.SlackSearchResults.Add(float64(p.ResultCount))
+		}
+		return nil
+	})
+	bus.Subscribe(eventbus.SlackTokenRefresh, func(_ context.Context, evt eventbus.Event) error {
+		if p, ok := evt.Payload.(eventbus.SlackTokenRefreshPayload); ok {
+			m.SlackUserTokenRefresh.WithLabelValues(p.Outcome).Inc()
+		}
+		return nil
+	})
+	bus.Subscribe(eventbus.SlackPost, func(_ context.Context, evt eventbus.Event) error {
+		p, ok := evt.Payload.(eventbus.SlackPostPayload)
+		if !ok {
+			return nil
+		}
+		if p.Success {
+			m.SlackAutoposts.WithLabelValues(p.Mode).Inc()
+		} else {
+			// Decision carries the true failure kind (blocked_guardrail, denied,
+			// blocked_secret, error, discarded, approval_failed), not the post mode.
+			m.SlackPostFailures.WithLabelValues(p.Decision).Inc()
+		}
+		return nil
+	})
+	bus.Subscribe(eventbus.SlackReconnect, func(_ context.Context, evt eventbus.Event) error {
+		if p, ok := evt.Payload.(eventbus.SlackReconnectPayload); ok {
+			m.SlackSocketReconnects.WithLabelValues(p.InstanceID).Inc()
+		}
+		return nil
+	})
 }

@@ -236,6 +236,23 @@ export interface GoogleCredentialStatus {
   active_scopes: string
 }
 
+export interface SlackUserStatus {
+  source: 'oauth' | 'none'
+  team_id?: string
+  team_name?: string
+  slack_user_id?: string
+  scopes?: string[]
+  connected_at?: string
+}
+
+export interface SlackActivityEntry {
+  id: number
+  action: string
+  success: boolean
+  detail: Record<string, unknown>
+  created_at: string
+}
+
 // External skills (marketplace)
 export interface InstalledSkill {
   id: number
@@ -1043,6 +1060,13 @@ export const api = {
   deleteGoogleAccount: (id: number) => del<{ status: string }>(`/api/google/accounts/${id}`),
   updateGoogleAccount: (id: number, data: { account_alias?: string; is_default?: boolean }) =>
     put<{ status: string }>(`/api/google/accounts/${id}`, data),
+
+  // Slack (personal user-token, owner-only)
+  getSlackUserStatus: () => get<SlackUserStatus>('/api/slack/status'),
+  getSlackUserAuthURL: () => get<{ url: string }>('/api/slack/auth'),
+  disconnectSlackUser: () => del<{ status: string }>('/api/slack/account'),
+  getSlackActivity: (limit?: number) =>
+    get<SlackActivityEntry[]>(`/api/slack/activity${limit ? `?limit=${limit}` : ''}`),
 
   // Todo items (user-facing tasks)
   getTodoProviders: () => get<{ providers: TodoProvider[]; default_provider: string }>('/api/todos/providers'),

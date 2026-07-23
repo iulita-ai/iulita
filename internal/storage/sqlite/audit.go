@@ -20,6 +20,26 @@ func (s *Store) SaveAuditEntry(ctx context.Context, e *domain.AuditEntry) error 
 	return nil
 }
 
+// ListAuditEntriesByPrefix returns the most recent audit entries whose Action
+// starts with actionPrefix (e.g. "slack."), newest first. The prefix is a
+// hardcoded literal from the caller, never user input.
+func (s *Store) ListAuditEntriesByPrefix(ctx context.Context, actionPrefix string, limit int) ([]domain.AuditEntry, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	var entries []domain.AuditEntry
+	err := s.db.NewSelect().
+		Model(&entries).
+		Where("action LIKE ?", actionPrefix+"%").
+		Order("created_at DESC").
+		Limit(limit).
+		Scan(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("querying audit entries by prefix %q: %w", actionPrefix, err)
+	}
+	return entries, nil
+}
+
 func (s *Store) IncrementUsage(ctx context.Context, chatID string, inputTokens, outputTokens int64) error {
 	return s.UpsertUsage(ctx, storage.UsageUpsert{
 		ChatID:       chatID,

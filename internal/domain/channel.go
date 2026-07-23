@@ -27,4 +27,5 @@ const (
 	ChannelTypeDiscord  = "discord"
 	ChannelTypeWeb      = "web"
 	ChannelTypeConsole  = "console"
+	ChannelTypeSlack    = "slack"
 )

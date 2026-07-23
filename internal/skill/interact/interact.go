@@ -17,7 +17,12 @@ var (
 
 // DefaultTimeout is the default time to wait for a user response.
 // Kept short to avoid blocking the agentic loop; skill falls back gracefully on timeout.
-const DefaultTimeout = 30 * time.Second
+// DefaultTimeout is how long non-Slack prompters wait for a user's response to an
+// interactive prompt (button click or free-text). It must be long enough for a
+// human to react — 30s was too short, especially for slack_post draft approvals
+// delivered to a Telegram/console/web conversation. (Slack's own prompter uses a
+// longer, separate window.)
+const DefaultTimeout = 5 * time.Minute
 
 // MaxOptions is the hard limit on selectable choices (excluding free-text).
 const MaxOptions = 5

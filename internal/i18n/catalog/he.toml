@@ -36,6 +36,25 @@ other = "יותר מדי הודעות. אנא המתן."
 [TelegramErrorResponse]
 other = "מצטער, משהו השתבש."
 
+# Channel-neutral variants (used by Slack and future channels; Telegram* kept for Telegram).
+[ChatHistoryCleared]
+other = "ההיסטוריה נמחקה."
+
+[ChatHistoryClearFailed]
+other = "מחיקת ההיסטוריה נכשלה."
+
+[ChatRegistrationNotAllowed]
+other = "הרשמה אינה מותרת. צור קשר עם המנהל."
+
+[ChatRateLimited]
+other = "יותר מדי הודעות. אנא המתן."
+
+[CommonErrorResponse]
+other = "מצטער, משהו השתבש."
+
+[ChatClearInThreadHint]
+other = "כדי לנקות שיחה בערוץ, כתוב /clear בתגובה בתוך השרשור שלה."
+
 [TelegramVoicePrefix]
 other = "[הודעה קולית]: "
 
@@ -300,3 +319,6 @@ other = "כבר נשמר"
 
 [BookmarkError]
 other = "❌ שגיאה"
+
+[BookmarkNotYours]
+other = "סימנייה זו שייכת למשתמש אחר."

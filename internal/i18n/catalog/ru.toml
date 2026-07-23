@@ -38,6 +38,25 @@ other = "Слишком много сообщений. Пожалуйста, п�
 [TelegramErrorResponse]
 other = "Извините, произошла ошибка."
 
+# Channel-neutral variants (used by Slack and future channels; Telegram* kept for Telegram).
+[ChatHistoryCleared]
+other = "История очищена."
+
+[ChatHistoryClearFailed]
+other = "Не удалось очистить историю."
+
+[ChatRegistrationNotAllowed]
+other = "Регистрация не разрешена. Свяжитесь с администратором."
+
+[ChatRateLimited]
+other = "Слишком много сообщений. Пожалуйста, подождите."
+
+[CommonErrorResponse]
+other = "Извините, произошла ошибка."
+
+[ChatClearInThreadHint]
+other = "Чтобы очистить разговор в канале, напишите /clear ответом внутри его треда."
+
 [TelegramVoicePrefix]
 other = "[Голосовое сообщение]: "
 
@@ -309,3 +328,6 @@ other = "Уже сохранено"
 
 [BookmarkError]
 other = "❌ Ошибка"
+
+[BookmarkNotYours]
+other = "Эта закладка принадлежит другому пользователю."

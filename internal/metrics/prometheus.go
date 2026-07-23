@@ -25,6 +25,14 @@ type Metrics struct {
 	ImportChunks       prometheus.Counter // embedded chunks
 	ImportFailures     prometheus.Counter
 	ImportsInFlight    prometheus.Gauge
+
+	// Slack (Phase 4).
+	SlackUserSearches     *prometheus.CounterVec // labels: outcome (ok/rate_limited/error)
+	SlackSearchResults    prometheus.Counter     // total messages returned
+	SlackUserTokenRefresh *prometheus.CounterVec // labels: outcome (ok/error)
+	SlackAutoposts        *prometheus.CounterVec // labels: mode (draft/auto)
+	SlackPostFailures     *prometheus.CounterVec // labels: kind (denied/blocked_guardrail/blocked_secret/error/discarded/approval_failed)
+	SlackSocketReconnects *prometheus.CounterVec // labels: instance_id
 }
 
 // New registers all Prometheus metrics and returns a Metrics instance.
@@ -138,5 +146,30 @@ func New() *Metrics {
 			Name:      "in_flight",
 			Help:      "Number of imports currently running.",
 		}),
+
+		SlackUserSearches: promauto.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "iulita", Subsystem: "slack", Name: "user_search_total",
+			Help: "Total slack_search invocations by outcome.",
+		}, []string{"outcome"}),
+		SlackSearchResults: promauto.NewCounter(prometheus.CounterOpts{
+			Namespace: "iulita", Subsystem: "slack", Name: "search_results_total",
+			Help: "Total Slack messages returned by slack_search.",
+		}),
+		SlackUserTokenRefresh: promauto.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "iulita", Subsystem: "slack", Name: "user_token_refresh_total",
+			Help: "Total Slack user-token refresh attempts by outcome.",
+		}, []string{"outcome"}),
+		SlackAutoposts: promauto.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "iulita", Subsystem: "slack", Name: "autoposts_total",
+			Help: "Total successful bot posts to channels by mode.",
+		}, []string{"mode"}),
+		SlackPostFailures: promauto.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "iulita", Subsystem: "slack", Name: "post_failures_total",
+			Help: "Total non-successful bot post attempts by kind (denied, blocked_guardrail, blocked_secret, error, discarded, approval_failed).",
+		}, []string{"kind"}),
+		SlackSocketReconnects: promauto.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "iulita", Subsystem: "slack", Name: "socketmode_reconnects_total",
+			Help: "Total Socket Mode reconnects by instance.",
+		}, []string{"instance_id"}),
 	}
 }

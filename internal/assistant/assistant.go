@@ -165,6 +165,10 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 	// replace the context deadline with their own longer timeout.
 	ctx = skill.WithDeadlineExtender(ctx, skill.DefaultDeadlineExtender)
 
+	// Per-turn taint holder so one skill (e.g. slack_search reading untrusted
+	// content) can force later skills (e.g. slack_post) through approval.
+	ctx = skill.WithTurnTaint(ctx)
+
 	// Enrich context with caller identity for skills.
 	ctx = skill.WithChatID(ctx, msg.ChatID)
 	// Use resolved iulita user ID if available, otherwise fall back to platform user ID.

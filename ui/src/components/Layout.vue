@@ -1,6 +1,7 @@
 <template>
   <n-config-provider :theme="darkTheme">
     <n-message-provider>
+    <n-dialog-provider>
     <n-layout has-sider style="height: 100vh">
       <n-layout-sider
         bordered
@@ -44,6 +45,7 @@
         </div>
       </n-layout-content>
     </n-layout>
+    </n-dialog-provider>
     </n-message-provider>
   </n-config-provider>
 </template>
@@ -53,7 +55,7 @@ import { computed, h, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useLocale } from '../composables/useLocale'
-import { darkTheme, NConfigProvider, NLayout, NLayoutSider, NLayoutContent, NMenu, NText, NIcon, NMessageProvider, NButton } from 'naive-ui'
+import { darkTheme, NConfigProvider, NLayout, NLayoutSider, NLayoutContent, NMenu, NText, NIcon, NMessageProvider, NDialogProvider, NButton } from 'naive-ui'
 import type { MenuOption } from 'naive-ui'
 import {
   HomeOutline,
@@ -73,6 +75,7 @@ import {
   ConstructOutline,
   KeyOutline,
   CloudUploadOutline,
+  LogoSlack,
 } from '@vicons/ionicons5'
 import { currentUser, clearTokens, isAdmin } from '../api'
 import { useSkillStatus } from '../composables/useSkillStatus'
@@ -119,6 +122,7 @@ const menuOptions = computed<MenuOption[]>(() => {
     items.push({ label: t('nav.credentials'), key: 'credentials', icon: renderIcon(KeyOutline) })
     items.push({ label: t('nav.users'), key: 'users', icon: renderIcon(PeopleOutline) })
     items.push({ label: t('nav.import'), key: 'import', icon: renderIcon(CloudUploadOutline) })
+    items.push({ label: t('nav.slackActivity'), key: 'slack-activity', icon: renderIcon(LogoSlack) })
   }
   return items
 })

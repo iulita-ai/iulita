@@ -38,6 +38,25 @@ other = "Too many messages. Please wait a moment."
 [TelegramErrorResponse]
 other = "Sorry, something went wrong."
 
+# Channel-neutral variants (used by Slack and future channels; Telegram* kept for Telegram).
+[ChatHistoryCleared]
+other = "History cleared."
+
+[ChatHistoryClearFailed]
+other = "Failed to clear history."
+
+[ChatRegistrationNotAllowed]
+other = "Registration is not allowed. Contact admin."
+
+[ChatRateLimited]
+other = "Too many messages. Please wait a moment."
+
+[CommonErrorResponse]
+other = "Sorry, something went wrong."
+
+[ChatClearInThreadHint]
+other = "To clear a channel conversation, type /clear as a reply inside its thread."
+
 [TelegramVoicePrefix]
 other = "[Voice message]: "
 
@@ -309,3 +328,6 @@ other = "Already saved"
 
 [BookmarkError]
 other = "❌ Error"
+
+[BookmarkNotYours]
+other = "This bookmark belongs to another user."

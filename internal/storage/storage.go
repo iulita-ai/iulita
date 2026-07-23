@@ -128,6 +128,7 @@ type Repository interface {
 
 	// Audit log
 	SaveAuditEntry(ctx context.Context, e *domain.AuditEntry) error
+	ListAuditEntriesByPrefix(ctx context.Context, actionPrefix string, limit int) ([]domain.AuditEntry, error)
 
 	// Skill execution telemetry
 	SaveSkillExecution(ctx context.Context, e *domain.SkillExecution) error
@@ -238,6 +239,19 @@ type Repository interface {
 	UpdateChannelLocale(ctx context.Context, chatID string, locale string) error
 	GetChannelLocale(ctx context.Context, channelType, channelUserID string) (string, error)
 	GetChannelLocaleByChatID(ctx context.Context, chatID string) (string, error)
+
+	// Slack routing: persists a composite chatID -> Slack coordinates so proactive
+	// delivery survives in-memory cache eviction and process restarts.
+	UpsertSlackRoute(ctx context.Context, r *domain.SlackChatRoute) error
+	GetSlackRoute(ctx context.Context, instanceID, chatID string) (*domain.SlackChatRoute, error)
+	DeleteSlackRoutesOlderThan(ctx context.Context, instanceID string, olderThan time.Time) (int64, error)
+
+	// Slack personal user-token OAuth account (owner-only, single row total).
+	SaveSlackAccount(ctx context.Context, a *domain.SlackAccount) error
+	GetSlackAccountByUserID(ctx context.Context, userID string) (*domain.SlackAccount, error)
+	GetAnySlackAccount(ctx context.Context) (*domain.SlackAccount, error)
+	DeleteSlackAccount(ctx context.Context, userID string) error
+	UpdateSlackTokens(ctx context.Context, id int64, accessToken, refreshToken string, expiry time.Time) error
 
 	// Data migration
 	BackfillUserIDs(ctx context.Context) (int64, error)

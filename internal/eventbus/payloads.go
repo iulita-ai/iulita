@@ -140,3 +140,27 @@ type OrchestrationDonePayload struct {
 	TotalTokens  int64
 	DurationMs   int64
 }
+
+// SlackSearchPayload is published after slack_search executes (any mode).
+type SlackSearchPayload struct {
+	Mode        string // "search" | "history" | "replies"
+	Outcome     string // "ok" | "rate_limited" | "error"
+	ResultCount int
+}
+
+// SlackPostPayload is published after slack_post resolves a post attempt.
+type SlackPostPayload struct {
+	Mode     string // "draft" | "auto" — the mode actually used
+	Decision string // draft_approved | auto | denied | discarded | blocked_* | approval_failed | error
+	Success  bool
+}
+
+// SlackReconnectPayload is published when Socket Mode reconnects (connect count > 1).
+type SlackReconnectPayload struct {
+	InstanceID string
+}
+
+// SlackTokenRefreshPayload is published after an xoxp- token refresh attempt.
+type SlackTokenRefreshPayload struct {
+	Outcome string // "ok" | "error"
+}
