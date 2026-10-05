@@ -1,6 +1,10 @@
 package eventbus
 
-import "time"
+import (
+	"github.com/iulita-ai/iulita/internal/cost"
+	"github.com/iulita-ai/iulita/internal/llm"
+	"time"
+)
 
 // MessageReceivedPayload is published when a user message arrives.
 type MessageReceivedPayload struct {
@@ -32,6 +36,7 @@ type SkillExecutedPayload struct {
 
 // LLMUsagePayload is published after each LLM completion.
 type LLMUsagePayload struct {
+	AttemptID                string
 	ChatID                   string
 	UserID                   string
 	Model                    string
@@ -41,6 +46,37 @@ type LLMUsagePayload struct {
 	CacheReadInputTokens     int64
 	CacheCreationInputTokens int64
 	Iteration                int
+	RequestedModel           string
+	ModelVerified            bool
+	ProfileID                string
+	Role                     string
+	Operation                string
+	PolicyRevision           uint64
+	StartedAt                time.Time
+	CompletedAt              time.Time
+	Status                   string
+	UsageAvailable           bool
+	ChargeUnknown            bool
+	Cached                   bool
+	CostEstimate             *cost.Estimate
+}
+
+// UsagePayload freezes the indicative price at request time. Subscribers never
+// recalculate observed attempts using a later price table or wall clock.
+func UsagePayload(a llm.Attempt, estimate cost.Estimate) LLMUsagePayload {
+	return LLMUsagePayload{AttemptID: a.AttemptID, ChatID: a.ChatID, UserID: a.UserID,
+		Model: a.Model, Provider: a.Provider, RequestedModel: a.RequestedModel,
+		ModelVerified: a.ModelVerified, ProfileID: a.ProfileID, Role: a.Role,
+		Operation: a.Operation, PolicyRevision: a.PolicyRevision,
+		StartedAt: a.StartedAt, CompletedAt: a.CompletedAt, Status: a.Status,
+		UsageAvailable: a.UsageAvailable, ChargeUnknown: a.ChargeUnknown, Cached: a.Cached,
+		InputTokens: a.Usage.InputTokens, OutputTokens: a.Usage.OutputTokens,
+		CacheReadInputTokens: a.Usage.CacheReadInputTokens, CacheCreationInputTokens: a.Usage.CacheCreationInputTokens,
+		CostEstimate: &estimate}
+}
+
+func NewAttemptUsagePayload(a llm.Attempt, estimate cost.Estimate) LLMUsagePayload {
+	return UsagePayload(a, estimate)
 }
 
 // TaskCompletedPayload is published when a background task finishes successfully.

@@ -12,8 +12,14 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	_ "golang.org/x/image/webp"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"net/http"
 	"sort"
@@ -30,7 +36,8 @@ const defaultBaseURL = "https://api.deepseek.com/v1"
 
 // errBodyLimit bounds how much of a non-2xx response body we read into an
 // error string, preventing a huge upstream body from leaking into logs.
-const errBodyLimit = 8 << 10 // 8 KiB
+const errBodyLimit = 8 << 10       // 8 KiB
+const responseBodyLimit = 32 << 20 // bounds even a misbehaving compatible gateway
 
 // Provider implements llm.Provider/llm.StreamingProvider against DeepSeek.
 type Provider struct {
@@ -42,12 +49,28 @@ type Provider struct {
 	mu        sync.RWMutex
 	model     string
 	maxTokens int
+	options   Options
 }
 
 var (
 	_ llm.Provider          = (*Provider)(nil)
 	_ llm.StreamingProvider = (*Provider)(nil)
 )
+
+// Options fixes a model profile's protocol and attachment contract. Zero limits
+// select conservative deployment defaults. New keeps the legacy protocol;
+// profile callers must specify thinking explicitly.
+type Options struct {
+	ProviderName       string
+	Vision             bool
+	Thinking           string // enabled, disabled, or empty for legacy behavior
+	ReasoningEffort    string // low, high, max (Z.ai); high, max (DeepSeek)
+	MaxImages          int
+	MaxImageBytes      int
+	MaxTotalImageBytes int
+	MaxImagePixels     int
+	MaxRequestBytes    int
+}
 
 // New creates a DeepSeek provider. baseURL defaults to the public endpoint
 // when empty. httpClient SHOULD be a configured (proxy/SSRF-aware,
@@ -56,6 +79,16 @@ var (
 // logger may be nil (a no-op logger is used); it is set once at construction
 // so no synchronization is needed on reads.
 func New(apiKey, model string, maxTokens int, baseURL string, httpClient *http.Client, logger *zap.Logger) *Provider {
+	options := Options{}
+	if model == "deepseek-flash" || model == "deepseek-v4-flash" || model == "deepseek-v4-flash-vision-exp" || model == "deepseek-v4-pro" {
+		options.Thinking = "disabled"
+	}
+	return NewWithOptions(apiKey, model, maxTokens, baseURL, httpClient, logger, options)
+}
+
+// NewWithOptions creates an immutable profile adapter. The legacy update methods
+// remain for old callers; new profile registries create a new client on changes.
+func NewWithOptions(apiKey, model string, maxTokens int, baseURL string, httpClient *http.Client, logger *zap.Logger, options Options) *Provider {
 	if baseURL == "" {
 		baseURL = defaultBaseURL
 	}
@@ -63,10 +96,34 @@ func New(apiKey, model string, maxTokens int, baseURL string, httpClient *http.C
 	if httpClient == nil {
 		httpClient = &http.Client{}
 	}
+	// Keep the caller's client and transport immutable. Completion credentials
+	// must never follow redirects, including same-host or subdomain redirects.
+	clientCopy := *httpClient
+	clientCopy.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
+	httpClient = &clientCopy
 	if logger == nil {
 		logger = zap.NewNop()
 	}
+	if options.ProviderName == "" {
+		options.ProviderName = "deepseek"
+	}
+	if options.MaxImages <= 0 {
+		options.MaxImages = 4
+	}
+	if options.MaxImageBytes <= 0 {
+		options.MaxImageBytes = 8 << 20
+	}
+	if options.MaxTotalImageBytes <= 0 {
+		options.MaxTotalImageBytes = 16 << 20
+	}
+	if options.MaxImagePixels <= 0 {
+		options.MaxImagePixels = 40_000_000
+	}
+	if options.MaxRequestBytes <= 0 {
+		options.MaxRequestBytes = 32 << 20
+	}
 	return &Provider{
+		options:    options,
 		apiKey:     apiKey,
 		baseURL:    baseURL,
 		httpClient: httpClient,
@@ -102,8 +159,9 @@ func (p *Provider) endpoint() string { return p.baseURL + "/chat/completions" }
 // --- Wire types (OpenAI shape) -------------------------------------------------
 
 type chatMessage struct {
-	Role    string  `json:"role"`
-	Content *string `json:"content,omitempty"` // pointer: distinguish "" from absent
+	Role    string        `json:"role"`
+	Content *string       `json:"content,omitempty"` // pointer: distinguish "" from absent
+	Parts   []contentPart `json:"-"`
 	// ReasoningContent must be replayed on assistant tool-call turns in thinking
 	// mode, or DeepSeek rejects the request with a 400.
 	ReasoningContent *string    `json:"reasoning_content,omitempty"`
@@ -111,12 +169,49 @@ type chatMessage struct {
 	ToolCallID       string     `json:"tool_call_id,omitempty"`
 }
 
+type contentPart struct {
+	Type     string `json:"type"`
+	Text     string `json:"text,omitempty"`
+	ImageURL *struct {
+		URL string `json:"url"`
+	} `json:"image_url,omitempty"`
+}
+
+func (m chatMessage) MarshalJSON() ([]byte, error) {
+	type plain chatMessage
+	if len(m.Parts) == 0 {
+		return json.Marshal(plain(m))
+	}
+	return json.Marshal(struct {
+		Role    string        `json:"role"`
+		Content []contentPart `json:"content"`
+	}{Role: m.Role, Content: m.Parts})
+}
+
+// arguments accepts the string shape used by DeepSeek and the object shape
+// returned by compatible GLM endpoints. Marshal always uses a JSON string.
+type arguments string
+
+func (a *arguments) UnmarshalJSON(data []byte) error {
+	var value string
+	if err := json.Unmarshal(data, &value); err == nil {
+		*a = arguments(value)
+		return nil
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(data, &object); err != nil || object == nil {
+		return fmt.Errorf("invalid tool arguments")
+	}
+	*a = arguments(data)
+	return nil
+}
+
 type toolCall struct {
 	ID       string `json:"id"`
 	Type     string `json:"type"` // "function"
 	Function struct {
-		Name      string `json:"name"`
-		Arguments string `json:"arguments"` // JSON-encoded string, not an object
+		Name      string    `json:"name"`
+		Arguments arguments `json:"arguments"` // JSON string on requests; object or string on responses
 	} `json:"function"`
 }
 
@@ -141,13 +236,21 @@ type chatRequest struct {
 	ToolChoice    any            `json:"tool_choice,omitempty"`
 	Stream        bool           `json:"stream,omitempty"`
 	StreamOptions *streamOptions `json:"stream_options,omitempty"`
+	Thinking      *struct {
+		Type          string `json:"type"`
+		ClearThinking *bool  `json:"clear_thinking,omitempty"`
+	} `json:"thinking,omitempty"`
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 }
 
 type chatUsage struct {
 	PromptTokens          int64 `json:"prompt_tokens"`
 	CompletionTokens      int64 `json:"completion_tokens"`
-	PromptCacheHitTokens  int64 `json:"prompt_cache_hit_tokens"`  // parsed now, mapped in Phase 2
-	PromptCacheMissTokens int64 `json:"prompt_cache_miss_tokens"` // parsed now, mapped in Phase 2
+	PromptCacheHitTokens  int64 `json:"prompt_cache_hit_tokens"`
+	PromptCacheMissTokens int64 `json:"prompt_cache_miss_tokens"`
+	PromptTokensDetails   struct {
+		CachedTokens int64 `json:"cached_tokens"`
+	} `json:"prompt_tokens_details"`
 }
 
 type respMessage struct {
@@ -157,23 +260,27 @@ type respMessage struct {
 }
 
 type chatResponse struct {
+	Model   string `json:"model"`
 	Choices []struct {
-		Message respMessage `json:"message"`
+		Message      respMessage `json:"message"`
+		FinishReason string      `json:"finish_reason"`
 	} `json:"choices"`
-	Usage chatUsage `json:"usage"`
+	Usage *chatUsage `json:"usage"`
 }
 
 type streamChunk struct {
+	Model   string `json:"model"`
 	Choices []struct {
-		Delta struct {
+		FinishReason string `json:"finish_reason"`
+		Delta        struct {
 			Content          string `json:"content"`
 			ReasoningContent string `json:"reasoning_content"`
 			ToolCalls        []struct {
 				Index    int    `json:"index"`
 				ID       string `json:"id"`
 				Function struct {
-					Name      string `json:"name"`
-					Arguments string `json:"arguments"`
+					Name      string    `json:"name"`
+					Arguments arguments `json:"arguments"`
 				} `json:"function"`
 			} `json:"tool_calls"`
 		} `json:"delta"`
@@ -186,18 +293,9 @@ type streamChunk struct {
 // Complete sends a non-streaming chat completion request to DeepSeek.
 func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response, error) {
 	model, maxTok := p.getParams()
-	p.warnUnsupportedAttachments(req)
-
-	body, err := json.Marshal(chatRequest{
-		Model:      model,
-		Messages:   buildMessages(req),
-		MaxTokens:  maxTok,
-		Tools:      buildToolDefs(req.Tools),
-		ToolChoice: buildToolChoice(req, model),
-		Stream:     false,
-	})
+	body, err := p.requestBody(req, model, maxTok, false)
 	if err != nil {
-		return llm.Response{}, fmt.Errorf("marshaling request: %w", err)
+		return llm.Response{}, err
 	}
 
 	httpReq, err := p.newHTTPRequest(ctx, body)
@@ -207,26 +305,34 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 
 	resp, err := p.httpClient.Do(httpReq)
 	if err != nil {
-		return llm.Response{}, fmt.Errorf("deepseek request: %w", err)
+		return llm.Response{}, safeTransportError(ctx, p.options.ProviderName, err)
 	}
 	defer func() {
 		if cerr := resp.Body.Close(); cerr != nil {
-			p.logger.Debug("closing deepseek response body", zap.Error(cerr))
+			p.logger.Debug("closing model response body failed")
 		}
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return llm.Response{}, errorFromResponse("deepseek completion", resp)
+		return llm.Response{}, errorFromResponse(p.options.ProviderName+" completion", resp)
 	}
 
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, responseBodyLimit+1))
+	if err != nil {
+		return llm.Response{}, safeTransportError(ctx, p.options.ProviderName, err)
+	}
+	if len(raw) > responseBodyLimit {
+		return llm.Response{}, fmt.Errorf("%s response exceeds limit", p.options.ProviderName)
+	}
 	var cr chatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&cr); err != nil {
-		return llm.Response{}, fmt.Errorf("decoding response: %w", err)
+	if err := json.Unmarshal(raw, &cr); err != nil {
+		return llm.Response{}, fmt.Errorf("%s invalid completion response", p.options.ProviderName)
 	}
 
 	var response llm.Response
 	if len(cr.Choices) > 0 {
 		msg := cr.Choices[0].Message
+		response.FinishReason = cr.Choices[0].FinishReason
 		if msg.Content != nil {
 			response.Content = *msg.Content
 		}
@@ -237,13 +343,24 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 			response.ToolCalls = append(response.ToolCalls, llm.ToolCall{
 				ID:    tc.ID,
 				Name:  tc.Function.Name,
-				Input: rawArgs(tc.Function.Arguments),
+				Input: rawArgs(string(tc.Function.Arguments)),
 			})
 		}
 	}
-	response.Usage = mapUsage(cr.Usage)
+	if cr.Usage != nil {
+		response.Usage = mapUsage(*cr.Usage)
+		response.UsageReported = true
+	}
+	response.RequestedModel = model
 	response.Model = model
-	response.Provider = "deepseek"
+	if cr.Model != "" {
+		response.Model = cr.Model
+		response.ModelVerified = true
+	}
+	response.Provider = p.options.ProviderName
+	if err := validateResponse(response); err != nil {
+		return response, err
+	}
 	return response, nil
 }
 
@@ -251,21 +368,11 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 
 // CompleteStream sends a streaming chat completion request to DeepSeek,
 // invoking callback for each text delta and reassembling fragmented tool calls.
-func (p *Provider) CompleteStream(ctx context.Context, req llm.Request, callback llm.StreamCallback) (llm.Response, error) {
+func (p *Provider) CompleteStream(ctx context.Context, req llm.Request, callback llm.StreamCallback) (response llm.Response, retErr error) {
 	model, maxTok := p.getParams()
-	p.warnUnsupportedAttachments(req)
-
-	body, err := json.Marshal(chatRequest{
-		Model:         model,
-		Messages:      buildMessages(req),
-		MaxTokens:     maxTok,
-		Tools:         buildToolDefs(req.Tools),
-		ToolChoice:    buildToolChoice(req, model),
-		Stream:        true,
-		StreamOptions: &streamOptions{IncludeUsage: true}, // emit a final usage chunk
-	})
+	body, err := p.requestBody(req, model, maxTok, true)
 	if err != nil {
-		return llm.Response{}, fmt.Errorf("marshaling request: %w", err)
+		return llm.Response{}, err
 	}
 
 	httpReq, err := p.newHTTPRequest(ctx, body)
@@ -275,32 +382,42 @@ func (p *Provider) CompleteStream(ctx context.Context, req llm.Request, callback
 
 	resp, err := p.httpClient.Do(httpReq)
 	if err != nil {
-		return llm.Response{}, fmt.Errorf("deepseek stream request: %w", err)
+		return llm.Response{}, safeTransportError(ctx, p.options.ProviderName, err)
 	}
 	defer func() {
 		if cerr := resp.Body.Close(); cerr != nil {
-			p.logger.Debug("closing deepseek response body", zap.Error(cerr))
+			p.logger.Debug("closing model response body failed")
 		}
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return llm.Response{}, errorFromResponse("deepseek stream", resp)
+		return llm.Response{}, errorFromResponse(p.options.ProviderName+" stream", resp)
 	}
 
-	var response llm.Response
+	response = llm.Response{RequestedModel: model, Model: model, Provider: p.options.ProviderName}
+	var visible strings.Builder
+	// Preserve visible partial output even on cancellation or malformed SSE,
+	// without quadratic concatenation as small token deltas arrive.
+	defer func() { response.Content = visible.String() }()
+	done := false
 	var reasoning strings.Builder
 	acc := newToolCallAccumulator()
 
-	scanner := bufio.NewScanner(resp.Body)
+	scanner := bufio.NewScanner(io.LimitReader(resp.Body, responseBodyLimit+1))
+	receivedBytes := 0
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024) // large tool-arg deltas
 	for scanner.Scan() {
 		select {
 		case <-ctx.Done():
-			return llm.Response{}, ctx.Err()
+			return response, ctx.Err()
 		default:
 		}
 
 		line := scanner.Text()
+		receivedBytes += len(line) + 1
+		if receivedBytes > responseBodyLimit {
+			return response, fmt.Errorf("%s stream exceeds limit", p.options.ProviderName)
+		}
 		if line == "" || strings.HasPrefix(line, ":") { // blank or SSE comment (keep-alive)
 			continue
 		}
@@ -312,19 +429,32 @@ func (p *Provider) CompleteStream(ctx context.Context, req llm.Request, callback
 			// A canceled context that coincides with [DONE] must still surface
 			// as an error, not a partial success.
 			if ctx.Err() != nil {
-				return llm.Response{}, ctx.Err()
+				return response, ctx.Err()
 			}
+			done = true
 			break
 		}
 
 		var chunk streamChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			continue // tolerate partial/keepalive frames
+			return response, fmt.Errorf("%s invalid stream frame", p.options.ProviderName)
+		}
+		if chunk.Model != "" {
+			if response.ModelVerified && response.Model != chunk.Model {
+				return response, fmt.Errorf("%s stream model identity changed", p.options.ProviderName)
+			}
+			response.Model = chunk.Model
+			response.ModelVerified = true
 		}
 		for _, ch := range chunk.Choices {
+			if ch.FinishReason != "" {
+				response.FinishReason = ch.FinishReason
+			}
 			if ch.Delta.Content != "" {
-				callback(ch.Delta.Content)
-				response.Content += ch.Delta.Content
+				if callback != nil {
+					callback(ch.Delta.Content)
+				}
+				visible.WriteString(ch.Delta.Content)
 			}
 			// Reasoning (chain-of-thought) is captured but never streamed to the
 			// user; it is threaded back via ToolExchange on tool-call turns.
@@ -332,43 +462,270 @@ func (p *Provider) CompleteStream(ctx context.Context, req llm.Request, callback
 				reasoning.WriteString(ch.Delta.ReasoningContent)
 			}
 			for _, tc := range ch.Delta.ToolCalls {
-				acc.add(tc.Index, tc.ID, tc.Function.Name, tc.Function.Arguments)
+				acc.add(tc.Index, tc.ID, tc.Function.Name, string(tc.Function.Arguments))
 			}
 		}
 		if chunk.Usage != nil {
 			response.Usage = mapUsage(*chunk.Usage)
+			response.UsageReported = true
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
 		if ctx.Err() != nil {
-			return llm.Response{}, ctx.Err()
+			return response, ctx.Err()
 		}
-		return llm.Response{}, fmt.Errorf("deepseek stream: %w", err)
+		return response, fmt.Errorf("%s stream interrupted", p.options.ProviderName)
 	}
 
+	response.Content = visible.String()
 	response.ToolCalls = acc.finalize()
 	response.ReasoningContent = reasoning.String()
-	response.Model = model
-	response.Provider = "deepseek"
+	response.RequestedModel = model
+	if response.Model == "" {
+		response.Model = model
+	}
+	response.Provider = p.options.ProviderName
+	if !done {
+		return response, fmt.Errorf("%s stream did not finish: %w", p.options.ProviderName, llm.ErrIncompleteResponse)
+	}
+	if err := validateResponse(response); err != nil {
+		return response, err
+	}
 	return response, nil
 }
 
 func (p *Provider) newHTTPRequest(ctx context.Context, body []byte) (*http.Request, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.endpoint(), bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
+		return nil, fmt.Errorf("%s invalid completion endpoint", p.options.ProviderName)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
 	return httpReq, nil
 }
 
-func (p *Provider) warnUnsupportedAttachments(req llm.Request) {
-	if n := len(req.Images) + len(req.Documents); n > 0 {
-		p.logger.Warn("deepseek provider does not support image/document attachments; skipping",
-			zap.Int("count", n))
+// requestBody validates capability, real image bytes and protocol before any
+// network admission. Attachments are never silently removed.
+func (p *Provider) requestBody(req llm.Request, model string, maxTok int, stream bool) ([]byte, error) {
+	o := p.options
+	// Legacy scalar model hot reload also must not opt the new Flash alias into
+	// thinking, whose durable-history replay has not passed the live gate.
+	if o.ProviderName == "deepseek" && (model == "deepseek-flash" || model == "deepseek-v4-flash" || model == "deepseek-v4-flash-vision-exp" || model == "deepseek-v4-pro") && o.Thinking == "" {
+		o.Thinking = "disabled"
 	}
+	if len(req.Documents) > 0 {
+		return nil, fmt.Errorf("%s documents are unsupported", o.ProviderName)
+	}
+	if len(req.Images) > 0 && (!o.Vision || model == "deepseek-v4-pro" || model == "glm-5.3") {
+		return nil, fmt.Errorf("%s model does not support images", o.ProviderName)
+	}
+	if len(req.Images) > o.MaxImages {
+		return nil, fmt.Errorf("image count exceeds limit")
+	}
+	if o.Thinking != "" && o.Thinking != "enabled" && o.Thinking != "disabled" {
+		return nil, fmt.Errorf("invalid thinking mode")
+	}
+	if req.ForceTool != "" && !req.RequireToolOutcome && (o.ProviderName == "zai" || o.Thinking == "enabled" || (o.Thinking == "" && isThinkingModel(model))) {
+		return nil, fmt.Errorf("%s model does not support required named tool choice", o.ProviderName)
+	}
+	if o.ReasoningEffort != "" && o.ReasoningEffort != "high" && o.ReasoningEffort != "max" && !(o.ProviderName == "zai" && o.ReasoningEffort == "low") {
+		return nil, fmt.Errorf("unsupported reasoning effort")
+	}
+	if o.ProviderName == "zai" && o.Thinking == "disabled" {
+		return nil, fmt.Errorf("GLM 5.3 requires thinking")
+	}
+	if o.ProviderName == "deepseek" && o.Thinking == "enabled" && (len(req.Tools) > 0 || len(req.ToolExchanges) > 0) {
+		for _, h := range req.History {
+			if h.Role == domain.RoleAssistant && h.Content != "" {
+				return nil, fmt.Errorf("thinking history requires verified replay strategy")
+			}
+		}
+		for _, ex := range req.ToolExchanges {
+			if len(ex.ToolCalls) > 0 && ex.ReasoningContent == "" {
+				return nil, fmt.Errorf("thinking tool continuation is missing reasoning")
+			}
+		}
+	}
+	if o.ProviderName == "zai" {
+		for _, ex := range req.ToolExchanges {
+			if len(ex.ToolCalls) > 0 && ex.ReasoningContent == "" {
+				return nil, fmt.Errorf("GLM tool continuation is missing reasoning")
+			}
+		}
+	}
+	if err := validateToolTranscript(req); err != nil {
+		return nil, err
+	}
+	msgs := buildMessages(req)
+	// Preserve exact reasoning only from the current tool loop, never invent an
+	// empty block to make a thinking request appear valid.
+	for i := range msgs {
+		if msgs[i].ReasoningContent != nil && (*msgs[i].ReasoningContent == "" || o.Thinking == "disabled") {
+			msgs[i].ReasoningContent = nil
+		}
+	}
+	if len(req.Images) > 0 {
+		parts := make([]contentPart, 0, len(req.Images)+1)
+		if req.Message != "" {
+			parts = append(parts, contentPart{Type: "text", Text: req.Message})
+		}
+		total := 0
+		for _, attachment := range req.Images {
+			n := len(attachment.Data)
+			if n == 0 || n > o.MaxImageBytes || total > o.MaxTotalImageBytes-n {
+				return nil, fmt.Errorf("image bytes exceed limit")
+			}
+			total += n
+			mime := http.DetectContentType(attachment.Data)
+			if mime != "image/png" && mime != "image/jpeg" && mime != "image/gif" && mime != "image/webp" {
+				return nil, fmt.Errorf("unsupported image format")
+			}
+			if attachment.MediaType != "" && attachment.MediaType != mime {
+				return nil, fmt.Errorf("image MIME does not match actual bytes")
+			}
+			cfg, _, err := image.DecodeConfig(bytes.NewReader(attachment.Data))
+			if err != nil || cfg.Width <= 0 || cfg.Height <= 0 {
+				return nil, fmt.Errorf("invalid image header")
+			}
+			if int64(cfg.Width) > int64(o.MaxImagePixels)/int64(cfg.Height) {
+				return nil, fmt.Errorf("image dimensions exceed limit")
+			}
+			part := contentPart{Type: "image_url"}
+			part.ImageURL = &struct {
+				URL string `json:"url"`
+			}{URL: "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(attachment.Data)}
+			parts = append(parts, part)
+		}
+		current := 0
+		// Find the current user turn before the tool replay. buildMessages may omit
+		// empty history, so locate by counting the emitted prefix instead.
+		if req.FullSystemPrompt() != "" {
+			current++
+		}
+		for _, h := range req.History {
+			if h.Content != "" {
+				current++
+			}
+		}
+		msg := chatMessage{Role: "user", Parts: parts}
+		if req.Message != "" {
+			msgs[current] = msg
+		} else {
+			msgs = append(msgs, chatMessage{})
+			copy(msgs[current+1:], msgs[current:])
+			msgs[current] = msg
+		}
+	}
+	choice := buildToolChoice(req, model)
+	if o.ProviderName == "zai" || o.Thinking == "enabled" {
+		choice = nil
+	} else if o.Thinking == "disabled" && req.ForceTool != "" {
+		choice = map[string]any{"type": "function", "function": map[string]any{"name": req.ForceTool}}
+	}
+	cr := chatRequest{Model: model, Messages: msgs, MaxTokens: maxTok, Tools: buildToolDefs(req.Tools), ToolChoice: choice, Stream: stream, ReasoningEffort: o.ReasoningEffort}
+	if stream {
+		cr.StreamOptions = &streamOptions{IncludeUsage: true}
+	}
+	if o.Thinking != "" || o.ProviderName == "zai" {
+		cr.Thinking = &struct {
+			Type          string `json:"type"`
+			ClearThinking *bool  `json:"clear_thinking,omitempty"`
+		}{Type: o.Thinking}
+		if o.ProviderName == "zai" {
+			yes := true
+			cr.Thinking.Type = "enabled"
+			cr.Thinking.ClearThinking = &yes
+		}
+	}
+	body, err := json.Marshal(cr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid completion request")
+	}
+	if len(body) > o.MaxRequestBytes {
+		return nil, fmt.Errorf("serialized request exceeds limit")
+	}
+	return body, nil
+}
+
+// A malformed continuation is rejected locally so no ambiguous tool result is
+// attributed to a different operation by a compatible endpoint.
+func validateToolTranscript(req llm.Request) error {
+	if req.ForceTool != "" {
+		found := false
+		for _, t := range req.Tools {
+			if t.Name == req.ForceTool {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("required tool is not available")
+		}
+	}
+	seen := make(map[string]bool)
+	for _, ex := range req.ToolExchanges {
+		pending := make(map[string]bool)
+		for _, tc := range ex.ToolCalls {
+			var args map[string]json.RawMessage
+			if tc.ID == "" || tc.Name == "" || seen[tc.ID] || json.Unmarshal(rawArgs(string(tc.Input)), &args) != nil || args == nil {
+				return fmt.Errorf("invalid tool continuation")
+			}
+			seen[tc.ID] = true
+			pending[tc.ID] = true
+		}
+		for _, result := range ex.Results {
+			if !pending[result.ToolCallID] {
+				return fmt.Errorf("invalid tool result reference")
+			}
+			delete(pending, result.ToolCallID)
+		}
+		if len(pending) > 0 {
+			return fmt.Errorf("tool continuation is missing results")
+		}
+	}
+	return nil
+}
+
+func validateResponse(response llm.Response) error {
+	switch response.FinishReason {
+	case "network_error":
+		return fmt.Errorf("%s output interrupted: %w", response.Provider, llm.ErrIncompleteResponse)
+	case "model_context_window_exceeded":
+		return fmt.Errorf("%s context exceeded: %w", response.Provider, llm.ErrContextTooLarge)
+	case "sensitive":
+		return fmt.Errorf("%s output was filtered", response.Provider)
+	}
+	if response.FinishReason == "length" {
+		return fmt.Errorf("%s output reached length limit: %w", response.Provider, llm.ErrIncompleteResponse)
+	}
+	if response.FinishReason == "content_filter" {
+		return fmt.Errorf("%s output was filtered", response.Provider)
+	}
+	if strings.TrimSpace(response.Content) == "" && len(response.ToolCalls) == 0 {
+		return fmt.Errorf("%s completion has no visible output: %w", response.Provider, llm.ErrIncompleteResponse)
+	}
+	seen := make(map[string]bool, len(response.ToolCalls))
+	for _, tc := range response.ToolCalls {
+		var input map[string]json.RawMessage
+		if tc.ID == "" || seen[tc.ID] || tc.Name == "" || json.Unmarshal(tc.Input, &input) != nil || input == nil {
+			return fmt.Errorf("%s invalid tool call", response.Provider)
+		}
+		seen[tc.ID] = true
+	}
+	return nil
+}
+
+func safeTransportError(ctx context.Context, provider string, err error) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	// URL errors may contain credential-bearing query/userinfo or proxy errors.
+	// Expose only a typed timeout; never echo the upstream transport string.
+	if e, ok := err.(interface{ Timeout() bool }); ok && e.Timeout() {
+		return fmt.Errorf("%s request timed out: %w", provider, context.DeadlineExceeded)
+	}
+	return fmt.Errorf("%s request failed", provider)
 }
 
 // --- Pure helpers (network-free, unit-tested) ----------------------------------
@@ -406,13 +763,12 @@ func buildMessages(req llm.Request) []chatMessage {
 			c.ID = tc.ID
 			c.Type = "function"
 			c.Function.Name = tc.Name
-			c.Function.Arguments = argsString(tc.Input)
+			c.Function.Arguments = arguments(argsString(tc.Input))
 			am.ToolCalls = append(am.ToolCalls, c)
 		}
-		// DeepSeek thinking-mode REQUIRES reasoning_content to be replayed on an
-		// assistant turn that carries tool_calls (otherwise: 400 "must be passed
-		// back"). Emit it (possibly empty) whenever there are tool calls.
-		if len(am.ToolCalls) > 0 {
+		// Replay reasoning from this tool round unchanged. Missing values are
+		// rejected by explicit thinking profiles before the HTTP request.
+		if len(am.ToolCalls) > 0 && ex.ReasoningContent != "" {
 			am.ReasoningContent = strPtr(ex.ReasoningContent)
 		}
 		// A bare {"role":"assistant"} with neither content nor tool_calls is
@@ -513,14 +869,29 @@ func buildToolChoice(req llm.Request, model string) any {
 // split isn't reported (older/compatible endpoints), all prompt tokens fall
 // back to InputTokens at the full rate.
 func mapUsage(u chatUsage) llm.Usage {
-	out := llm.Usage{OutputTokens: u.CompletionTokens}
-	if u.PromptCacheHitTokens > 0 || u.PromptCacheMissTokens > 0 {
-		out.InputTokens = u.PromptCacheMissTokens
-		out.CacheReadInputTokens = u.PromptCacheHitTokens
-	} else {
-		out.InputTokens = u.PromptTokens
+	total := u.PromptTokens
+	if total < 0 {
+		total = 0
 	}
-	return out
+	hit := u.PromptCacheHitTokens
+	if hit == 0 {
+		hit = u.PromptTokensDetails.CachedTokens
+	}
+	if hit < 0 {
+		hit = 0
+	}
+	if hit > total {
+		hit = total
+	}
+	input := total - hit
+	if input < 0 {
+		input = 0
+	}
+	output := u.CompletionTokens
+	if output < 0 {
+		output = 0
+	}
+	return llm.Usage{InputTokens: input, CacheReadInputTokens: hit, OutputTokens: output}
 }
 
 // toolCallAccumulator reassembles streamed tool calls that arrive fragmented
@@ -551,7 +922,7 @@ func (a *toolCallAccumulator) add(index int, id, name, argsFragment string) {
 		acc.id = id
 	}
 	if name != "" {
-		acc.name = name
+		acc.name += name
 	}
 	if argsFragment != "" {
 		acc.args.WriteString(argsFragment)
@@ -584,7 +955,7 @@ type apiError struct {
 }
 
 func (e *apiError) Error() string {
-	return fmt.Sprintf("deepseek returned status %d: %s", e.status, e.body)
+	return fmt.Sprintf("model API returned status %d: %s", e.status, e.body)
 }
 
 // StatusCode satisfies llm.HTTPStatusError so 429/5xx responses are retried.
@@ -602,7 +973,18 @@ func errorFromResponse(prefix string, resp *http.Response) error {
 	if isContextOverflowError(resp.StatusCode, body) {
 		return fmt.Errorf("%s: %w", prefix, llm.ErrContextTooLarge)
 	}
-	return &apiError{status: resp.StatusCode, body: extractErrorMessage(body)}
+	message := "provider request rejected"
+	switch resp.StatusCode {
+	case 400:
+		message = "invalid model or request"
+	case 401, 403:
+		message = "authentication or permission denied"
+	case 429:
+		message = "rate limit exceeded"
+	case 500, 502, 503, 504:
+		message = "provider unavailable"
+	}
+	return &apiError{status: resp.StatusCode, body: message}
 }
 
 // extractErrorMessage prefers the structured error.message; the raw body is

@@ -52,7 +52,7 @@ func (p *RetryProvider) Complete(ctx context.Context, req Request) (Response, er
 		if err == nil {
 			return resp, nil
 		}
-		if !isRetryable(err) {
+		if ctx.Err() != nil || len(req.ToolExchanges) > 0 || resp.Content != "" || len(resp.ToolCalls) > 0 || !isRetryable(err) {
 			return resp, err
 		}
 		lastErr = err

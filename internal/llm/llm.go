@@ -23,9 +23,10 @@ type ToolCall struct {
 
 // ToolResult carries the outcome of a tool execution back to the LLM.
 type ToolResult struct {
-	ToolCallID string
-	Content    string
-	IsError    bool
+	ToolCallID      string
+	Content         string
+	IsError         bool
+	PendingApproval bool // tool has not executed; never treat this as success
 }
 
 // ToolExchange records one round of tool use: the assistant's response
@@ -38,6 +39,8 @@ type ToolExchange struct {
 	// provider-specific (DeepSeek thinking-mode REQUIRES it to be replayed on
 	// assistant tool-call turns); providers that don't use it leave it empty.
 	ReasoningContent string
+	// ProfileID records the origin of an in-memory tool round.
+	ProfileID string
 }
 
 // ImageAttachment holds raw image data to send to the LLM.
@@ -69,6 +72,7 @@ type Request struct {
 	ToolExchanges      []ToolExchange       // accumulated tool use rounds in the current turn
 	ThinkingBudget     int64                // extended thinking budget in tokens (0 = disabled)
 	ForceTool          string               // if set, force the LLM to use this specific tool
+	RequireToolOutcome bool                 // caller verifies the required tool's actual outcome
 	RouteHint          string               // optional: routing hint for provider selection
 	// ProfileID is an explicit model profile reference, independent of legacy hints.
 	ProfileID string
@@ -77,6 +81,13 @@ type Request struct {
 	CacheScope string
 	// CacheIdentity binds an opt-in cache entry to resolved model settings/revision.
 	CacheIdentity string
+	Role          string
+	// RoutingSnapshot pins the entire policy for one conversational/tool turn.
+	RoutingSnapshot *ProfileSnapshot
+	ChatID          string
+	UserID          string
+	Operation       string
+	PolicyRevision  uint64
 }
 
 // Usage tracks token consumption for a single LLM call.
@@ -85,6 +96,12 @@ type Usage struct {
 	OutputTokens             int64
 	CacheReadInputTokens     int64
 	CacheCreationInputTokens int64
+}
+
+// TotalInputTokens includes cached context; discounts affect cost, not context
+// capacity or the amount of work consumed from a shared agent token budget.
+func (u Usage) TotalInputTokens() int64 {
+	return u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens
 }
 
 // Response is the output from an LLM provider.
@@ -96,8 +113,13 @@ type Response struct {
 	Provider       string // provider name (populated by provider)
 	RequestedModel string
 	ModelVerified  bool // actual model identity was present in the provider response
+	ProfileID      string
+	Role           string
+	PolicyRevision uint64
 	FinishReason   string
 	Cached         bool // local response-cache hit; Usage is zero for this invocation
+	UsageObserved  bool // an attempt observer already published this usage
+	UsageReported  bool // upstream supplied usage, including a legitimate zero
 	// ReasoningContent is the model's chain-of-thought, when the provider
 	// exposes it separately from Content (e.g. DeepSeek thinking mode). It is
 	// never streamed to the user; it is threaded back via ToolExchange so

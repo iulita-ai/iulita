@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/iulita-ai/iulita/internal/channel"
+	"github.com/iulita-ai/iulita/internal/cost"
 	"github.com/iulita-ai/iulita/internal/domain"
 	"github.com/iulita-ai/iulita/internal/llm"
 	"github.com/iulita-ai/iulita/internal/storage"
@@ -75,28 +76,64 @@ func RegisterUsageSubscriber(bus *Bus, store storage.Repository, costCalc UsageC
 		if !ok {
 			return nil
 		}
-		var costUSD float64
-		if costCalc != nil {
-			costUSD = costCalc.Calculate(p.Model, llm.Usage{
-				InputTokens:              p.InputTokens,
-				OutputTokens:             p.OutputTokens,
-				CacheReadInputTokens:     p.CacheReadInputTokens,
-				CacheCreationInputTokens: p.CacheCreationInputTokens,
-			})
+		at := p.StartedAt
+		if at.IsZero() {
+			at = time.Now().UTC()
 		}
-		return store.UpsertUsage(ctx, storage.UsageUpsert{
+		estimate := p.CostEstimate
+		// Only legacy, unobserved events may use the calculator fallback. New
+		// attempt events carry their frozen estimate, even when it is unknown.
+		if estimate == nil && p.AttemptID == "" {
+			if calc, ok := costCalc.(interface {
+				Estimate(string, llm.Usage, time.Time) cost.Estimate
+			}); ok {
+				e := calc.Estimate(p.Model, llm.Usage{InputTokens: p.InputTokens, OutputTokens: p.OutputTokens,
+					CacheReadInputTokens: p.CacheReadInputTokens, CacheCreationInputTokens: p.CacheCreationInputTokens}, at)
+				estimate = &e
+			}
+		}
+		if estimate == nil {
+			estimate = &cost.Estimate{Status: "price_unknown", At: at}
+		}
+		var costUSD float64
+		knownCost, unknownCost := int64(0), int64(1)
+		if estimate.Known && estimate.USD != nil {
+			costUSD, knownCost, unknownCost = *estimate.USD, 1, 0
+		}
+		unknownUsage := int64(0)
+		if p.AttemptID != "" && !p.UsageAvailable {
+			unknownUsage = 1
+		}
+		rec := storage.UsageUpsert{
 			ChatID:              p.ChatID,
 			UserID:              p.UserID,
 			Model:               p.Model,
 			Provider:            p.Provider,
-			Hour:                time.Now().Truncate(time.Hour),
+			Hour:                at.UTC().Truncate(time.Hour),
 			InputTokens:         p.InputTokens,
 			OutputTokens:        p.OutputTokens,
 			CacheReadTokens:     p.CacheReadInputTokens,
 			CacheCreationTokens: p.CacheCreationInputTokens,
 			Requests:            1,
 			CostUSD:             costUSD,
-		})
+			CostKnownRequests:   knownCost, CostUnknownRequests: unknownCost, UsageUnknownRequests: unknownUsage,
+		}
+		if p.AttemptID != "" {
+			if ledger, ok := store.(interface {
+				SaveUsageAttempt(context.Context, *domain.LLMUsageAttempt, storage.UsageUpsert) error
+			}); ok {
+				return ledger.SaveUsageAttempt(ctx, &domain.LLMUsageAttempt{
+					AttemptID: p.AttemptID, ChatID: p.ChatID, UserID: p.UserID, Provider: p.Provider,
+					RequestedModel: p.RequestedModel, Model: p.Model, ModelVerified: p.ModelVerified,
+					ProfileID: p.ProfileID, Role: p.Role, Operation: p.Operation, PolicyRevision: p.PolicyRevision,
+					StartedAt: at, CompletedAt: p.CompletedAt, Status: p.Status, UsageAvailable: p.UsageAvailable,
+					ChargeUnknown: p.ChargeUnknown, Cached: p.Cached, InputTokens: p.InputTokens,
+					OutputTokens: p.OutputTokens, CacheReadTokens: p.CacheReadInputTokens, CacheCreationTokens: p.CacheCreationInputTokens,
+					EstimatedUSD: estimate.USD, CostStatus: estimate.Status, PriceVersion: estimate.PriceVersion, PriceSource: estimate.Source,
+				}, rec)
+			}
+		}
+		return store.UpsertUsage(ctx, rec)
 	})
 	logger.Info("usage metrics subscriber registered")
 }

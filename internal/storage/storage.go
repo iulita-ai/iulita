@@ -293,17 +293,20 @@ type TaskFilter struct {
 
 // UsageUpsert is the input for upserting a usage stats row.
 type UsageUpsert struct {
-	ChatID              string
-	UserID              string
-	Model               string
-	Provider            string
-	Hour                time.Time
-	InputTokens         int64
-	OutputTokens        int64
-	CacheReadTokens     int64
-	CacheCreationTokens int64
-	Requests            int64
-	CostUSD             float64
+	ChatID               string
+	UserID               string
+	Model                string
+	Provider             string
+	Hour                 time.Time
+	InputTokens          int64
+	OutputTokens         int64
+	CacheReadTokens      int64
+	CacheCreationTokens  int64
+	Requests             int64
+	CostUSD              float64
+	CostKnownRequests    int64
+	CostUnknownRequests  int64
+	UsageUnknownRequests int64
 }
 
 // UsageFilter specifies criteria for querying usage stats.
@@ -318,24 +321,28 @@ type UsageFilter struct {
 
 // UsageSummary is the aggregated usage summary.
 type UsageSummary struct {
-	TotalInputTokens         int64
-	TotalOutputTokens        int64
-	TotalCacheReadTokens     int64
-	TotalCacheCreationTokens int64
-	TotalRequests            int64
-	TotalCostUSD             float64
+	TotalInputTokens          int64
+	TotalOutputTokens         int64
+	TotalCacheReadTokens      int64
+	TotalCacheCreationTokens  int64
+	TotalRequests             int64
+	TotalCostUSD              float64
+	TotalCostUnknownRequests  int64
+	TotalUsageUnknownRequests int64
 }
 
 // DailyUsage is the per-day aggregation of usage stats.
 type DailyUsage struct {
-	Date                string  `json:"date"`
-	Model               string  `json:"model,omitempty"`
-	InputTokens         int64   `json:"input_tokens"`
-	OutputTokens        int64   `json:"output_tokens"`
-	CacheReadTokens     int64   `json:"cache_read_tokens"`
-	CacheCreationTokens int64   `json:"cache_creation_tokens"`
-	Requests            int64   `json:"requests"`
-	CostUSD             float64 `json:"cost_usd"`
+	Date                 string  `json:"date"`
+	Model                string  `json:"model,omitempty"`
+	InputTokens          int64   `json:"input_tokens"`
+	OutputTokens         int64   `json:"output_tokens"`
+	CacheReadTokens      int64   `json:"cache_read_tokens"`
+	CacheCreationTokens  int64   `json:"cache_creation_tokens"`
+	Requests             int64   `json:"requests"`
+	CostUSD              float64 `json:"cost_usd"`
+	CostUnknownRequests  int64   `json:"cost_unknown_requests"`
+	UsageUnknownRequests int64   `json:"usage_unknown_requests"`
 }
 
 // SkillStatsFilter specifies criteria for aggregating skill execution telemetry.
@@ -378,12 +385,14 @@ type CredentialFilter struct {
 
 // ModelUsage is the per-model aggregation of usage stats.
 type ModelUsage struct {
-	Model               string  `json:"model"`
-	Provider            string  `json:"provider"`
-	InputTokens         int64   `json:"input_tokens"`
-	OutputTokens        int64   `json:"output_tokens"`
-	CacheReadTokens     int64   `json:"cache_read_tokens"`
-	CacheCreationTokens int64   `json:"cache_creation_tokens"`
-	Requests            int64   `json:"requests"`
-	CostUSD             float64 `json:"cost_usd"`
+	Model                string  `json:"model"`
+	Provider             string  `json:"provider"`
+	InputTokens          int64   `json:"input_tokens"`
+	OutputTokens         int64   `json:"output_tokens"`
+	CacheReadTokens      int64   `json:"cache_read_tokens"`
+	CacheCreationTokens  int64   `json:"cache_creation_tokens"`
+	Requests             int64   `json:"requests"`
+	CostUSD              float64 `json:"cost_usd"`
+	CostUnknownRequests  int64   `json:"cost_unknown_requests"`
+	UsageUnknownRequests int64   `json:"usage_unknown_requests"`
 }

@@ -22,6 +22,11 @@ func (f *FallbackProvider) Complete(ctx context.Context, req Request) (Response,
 		if err == nil {
 			return resp, nil
 		}
+		// Never change vendor after a tool loop, visible output or a permanent
+		// rejection. Opaque reasoning and attachments are not transferable.
+		if ctx.Err() != nil || !isRetryable(err) || len(req.ToolExchanges) > 0 || len(req.Images) > 0 || len(req.Documents) > 0 || req.ThinkingBudget > 0 || resp.Content != "" || len(resp.ToolCalls) > 0 {
+			return resp, err
+		}
 		lastErr = err
 	}
 	return Response{}, fmt.Errorf("all providers failed, last error: %w", lastErr)

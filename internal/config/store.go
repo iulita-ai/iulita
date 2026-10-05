@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -42,11 +43,13 @@ type Store struct {
 	publisher ChangePublisher
 	logger    *zap.Logger
 
-	mu           sync.RWMutex
-	cache        map[string]*domain.ConfigOverride
-	dynamicKeys  map[string]bool // keys registered at runtime by skills
-	secretKeys   map[string]bool // keys that must always be encrypted
-	credProvider credentialProvider
+	modelMu            sync.RWMutex
+	mu                 sync.RWMutex
+	cache              map[string]*domain.ConfigOverride
+	dynamicKeys        map[string]bool // keys registered at runtime by skills
+	secretKeys         map[string]bool // keys that must always be encrypted
+	credProvider       credentialProvider
+	modelPolicyManaged bool
 }
 
 // NewStore creates a ConfigStore with the given base config and DB repository.
@@ -112,6 +115,9 @@ func (s *Store) ReplayOverrides(ctx context.Context) {
 // DB overrides take priority over base config. Encrypted values are decrypted.
 // Returns empty string if key not found in overrides (caller should fall back to base config struct).
 func (s *Store) Get(key string) (string, bool) {
+	if strings.HasPrefix(key, "models.") {
+		return "", false
+	}
 	s.mu.RLock()
 	o, ok := s.cache[key]
 	s.mu.RUnlock()
@@ -350,6 +356,11 @@ func (s *Store) DeleteConfigOverride(ctx context.Context, key string) error {
 // SetForImport creates or updates a config override, bypassing restart-only restrictions.
 // Used by the TOML import wizard — values take effect after restart.
 func (s *Store) SetForImport(ctx context.Context, key, value, updatedBy string, encrypt bool) error {
+	s.modelMu.RLock()
+	defer s.modelMu.RUnlock()
+	if s.ModelWriteProtected(key) {
+		return fmt.Errorf("use Models settings to change managed model configuration")
+	}
 	if !s.isKnownKey(key) && !restartOnlyKeys[key] && !coreKeys[key] {
 		return fmt.Errorf("unknown config key %q", key)
 	}
@@ -358,6 +369,11 @@ func (s *Store) SetForImport(ctx context.Context, key, value, updatedBy string, 
 
 // Set creates or updates a config override in DB and cache.
 func (s *Store) Set(ctx context.Context, key, value, updatedBy string, encrypt bool) error {
+	s.modelMu.RLock()
+	defer s.modelMu.RUnlock()
+	if s.ModelWriteProtected(key) {
+		return fmt.Errorf("use Models settings to change managed model configuration")
+	}
 	if restartOnlyKeys[key] {
 		return fmt.Errorf("key %q cannot be changed at runtime (requires restart)", key)
 	}
@@ -423,6 +439,11 @@ func (s *Store) doSet(ctx context.Context, key, value, updatedBy string, encrypt
 
 // Delete removes a config override, reverting to the base config value.
 func (s *Store) Delete(ctx context.Context, key string) error {
+	s.modelMu.RLock()
+	defer s.modelMu.RUnlock()
+	if s.ModelWriteProtected(key) {
+		return fmt.Errorf("use Models settings to change managed model configuration")
+	}
 	if err := s.repo.DeleteConfigOverride(ctx, key); err != nil {
 		return err
 	}
@@ -453,7 +474,7 @@ func (s *Store) List() []ConfigEntry {
 			UpdatedAt: o.UpdatedAt,
 			UpdatedBy: o.UpdatedBy,
 		}
-		if o.Encrypted || s.secretKeys[o.Key] {
+		if o.Encrypted || s.secretKeys[o.Key] || strings.HasPrefix(o.Key, "models.") {
 			entry.Value = "***"
 		}
 		entries = append(entries, entry)
@@ -475,7 +496,7 @@ func (s *Store) ListDecrypted() []ConfigEntry {
 			UpdatedAt: o.UpdatedAt,
 			UpdatedBy: o.UpdatedBy,
 		}
-		if s.secretKeys[o.Key] {
+		if s.secretKeys[o.Key] || strings.HasPrefix(o.Key, "models.") {
 			entry.Value = "***"
 		} else if o.Encrypted && s.encryptor != nil {
 			val, err := s.encryptor.Decrypt(o.Value)
@@ -492,6 +513,36 @@ func (s *Store) ListDecrypted() []ConfigEntry {
 		entries = append(entries, entry)
 	}
 	return entries
+}
+
+// SetModelPolicyManaged closes all legacy mutation paths after the typed model
+// policy is activated. Chat setters and imports use the same Store boundary.
+func (s *Store) SetModelPolicyManaged() {
+	s.modelMu.Lock()
+	defer s.modelMu.Unlock()
+	s.mu.Lock()
+	s.modelPolicyManaged = true
+	s.mu.Unlock()
+}
+func (s *Store) ModelWriteProtected(key string) bool {
+	if key == "routing.max_actions_per_hour" {
+		return false
+	}
+	if strings.HasPrefix(key, "models.") {
+		return true
+	}
+	s.mu.RLock()
+	managed := s.modelPolicyManaged
+	s.mu.RUnlock()
+	if !managed {
+		return false
+	}
+	for _, prefix := range []string{"claude.", "openai.", "deepseek.", "zai.", "ollama.", "routing."} {
+		if strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // Base returns the original base config (read-only, no overrides applied).

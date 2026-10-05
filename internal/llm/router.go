@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 )
@@ -12,15 +13,17 @@ type RoutingProvider struct {
 
 	mu              sync.RWMutex
 	defaultProvider Provider
+	snapshot        *ProfileSnapshot
 }
 
 // NewRoutingProvider creates a routing provider with named routes and a default.
 func NewRoutingProvider(defaultProvider Provider, routes map[string]Provider) *RoutingProvider {
-	if routes == nil {
-		routes = make(map[string]Provider)
+	ownedRoutes := make(map[string]Provider, len(routes))
+	for name, provider := range routes {
+		ownedRoutes[name] = provider
 	}
 	return &RoutingProvider{
-		providers:       routes,
+		providers:       ownedRoutes,
 		defaultProvider: defaultProvider,
 	}
 }
@@ -50,13 +53,25 @@ func (p *RoutingProvider) SetRoute(hint string, provider Provider) {
 
 // Complete routes the request based on RouteHint or message prefix.
 func (p *RoutingProvider) Complete(ctx context.Context, req Request) (Response, error) {
+	if resp, handled, err := p.completeProfile(ctx, req, nil, false); handled {
+		return resp, err
+	}
 	provider, modReq := p.resolveProvider(req)
+	if provider == nil {
+		return Response{}, fmt.Errorf("no model provider is available")
+	}
 	return provider.Complete(ctx, modReq)
 }
 
 // CompleteStream routes the request and delegates streaming.
 func (p *RoutingProvider) CompleteStream(ctx context.Context, req Request, callback StreamCallback) (Response, error) {
+	if resp, handled, err := p.completeProfile(ctx, req, callback, true); handled {
+		return resp, err
+	}
 	provider, modReq := p.resolveProvider(req)
+	if provider == nil {
+		return Response{}, fmt.Errorf("no model provider is available")
+	}
 	if sp, ok := provider.(StreamingProvider); ok {
 		return sp.CompleteStream(ctx, modReq, callback)
 	}
