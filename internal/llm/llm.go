@@ -70,6 +70,13 @@ type Request struct {
 	ThinkingBudget     int64                // extended thinking budget in tokens (0 = disabled)
 	ForceTool          string               // if set, force the LLM to use this specific tool
 	RouteHint          string               // optional: routing hint for provider selection
+	// ProfileID is an explicit model profile reference, independent of legacy hints.
+	ProfileID string
+	// CacheScope opts a stateless request into response caching. Private chat,
+	// history, attachments and tool exchanges are never response-cached.
+	CacheScope string
+	// CacheIdentity binds an opt-in cache entry to resolved model settings/revision.
+	CacheIdentity string
 }
 
 // Usage tracks token consumption for a single LLM call.
@@ -82,11 +89,15 @@ type Usage struct {
 
 // Response is the output from an LLM provider.
 type Response struct {
-	Content   string
-	ToolCalls []ToolCall // non-empty when the LLM wants to use tools
-	Usage     Usage
-	Model     string // actual model used (populated by provider)
-	Provider  string // provider name (populated by provider)
+	Content        string
+	ToolCalls      []ToolCall // non-empty when the LLM wants to use tools
+	Usage          Usage
+	Model          string // actual model used (populated by provider)
+	Provider       string // provider name (populated by provider)
+	RequestedModel string
+	ModelVerified  bool // actual model identity was present in the provider response
+	FinishReason   string
+	Cached         bool // local response-cache hit; Usage is zero for this invocation
 	// ReasoningContent is the model's chain-of-thought, when the provider
 	// exposes it separately from Content (e.g. DeepSeek thinking mode). It is
 	// never streamed to the user; it is threaded back via ToolExchange so

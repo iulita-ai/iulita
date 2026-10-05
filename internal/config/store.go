@@ -126,6 +126,9 @@ func (s *Store) Get(key string) (string, bool) {
 		}
 		return val, true
 	}
+	if o.Encrypted {
+		return "", false
+	}
 	return o.Value, true
 }
 
@@ -450,7 +453,7 @@ func (s *Store) List() []ConfigEntry {
 			UpdatedAt: o.UpdatedAt,
 			UpdatedBy: o.UpdatedBy,
 		}
-		if o.Encrypted {
+		if o.Encrypted || s.secretKeys[o.Key] {
 			entry.Value = "***"
 		}
 		entries = append(entries, entry)
@@ -472,13 +475,17 @@ func (s *Store) ListDecrypted() []ConfigEntry {
 			UpdatedAt: o.UpdatedAt,
 			UpdatedBy: o.UpdatedBy,
 		}
-		if o.Encrypted && s.encryptor != nil {
+		if s.secretKeys[o.Key] {
+			entry.Value = "***"
+		} else if o.Encrypted && s.encryptor != nil {
 			val, err := s.encryptor.Decrypt(o.Value)
 			if err != nil {
 				entry.Value = "***decrypt-error***"
 			} else {
 				entry.Value = val
 			}
+		} else if o.Encrypted {
+			entry.Value = "***"
 		} else {
 			entry.Value = o.Value
 		}

@@ -48,19 +48,25 @@ func NewCachingProvider(inner Provider, cache ResponseCache, ttl time.Duration, 
 
 // responseCacheKey computes a SHA-256 cache key from the request.
 func responseCacheKey(req Request) string {
-	systemPrefix := req.SystemPrompt
-	if len(systemPrefix) > 200 {
-		systemPrefix = systemPrefix[:200]
-	}
-	raw := "||" + systemPrefix + "|" + req.Message
-	h := sha256.Sum256([]byte(raw))
+	// Versioned, unambiguous serialization includes both complete prompts and
+	// the resolved profile/revision. Old, truncated keys are never reused.
+	raw, _ := json.Marshal(struct {
+		Version                                                 int
+		Scope, Identity, Profile, Hint, Static, System, Message string
+		Thinking                                                int64
+	}{2, req.CacheScope, req.CacheIdentity, req.ProfileID, req.RouteHint,
+		req.StaticSystemPrompt, req.SystemPrompt, req.Message, req.ThinkingBudget})
+	h := sha256.Sum256(raw)
 	return hex.EncodeToString(h[:])
 }
 
 // Complete checks cache first, calls inner on miss, and saves the result.
 func (p *CachingProvider) Complete(ctx context.Context, req Request) (Response, error) {
-	// Skip cache for requests with tools (non-deterministic).
-	if len(req.Tools) > 0 || len(req.ToolExchanges) > 0 {
+	// Explicit opt-in only. Callers must bind the identity after resolving the
+	// model; a global wrapper cannot safely infer a changing default model.
+	if req.CacheScope == "" || req.CacheIdentity == "" || len(req.History) > 0 ||
+		len(req.Images) > 0 || len(req.Documents) > 0 || len(req.Tools) > 0 ||
+		len(req.ToolExchanges) > 0 || req.ForceTool != "" {
 		return p.inner.Complete(ctx, req)
 	}
 
@@ -69,14 +75,12 @@ func (p *CachingProvider) Complete(ctx context.Context, req Request) (Response, 
 	// Check cache.
 	entry, err := p.cache.GetCachedResponse(ctx, key, p.ttl)
 	if err == nil && entry != nil {
-		var usage Usage
-		if entry.UsageJSON != "" {
-			_ = json.Unmarshal([]byte(entry.UsageJSON), &usage)
+		var meta cachedResponseMetadata
+		if json.Unmarshal([]byte(entry.UsageJSON), &meta) == nil && meta.Version == 2 {
+			return Response{Content: entry.Response, Model: meta.Model,
+				RequestedModel: meta.RequestedModel, Provider: meta.Provider,
+				ModelVerified: meta.ModelVerified, FinishReason: meta.FinishReason, Cached: true}, nil
 		}
-		return Response{
-			Content: entry.Response,
-			Usage:   usage,
-		}, nil
 	}
 
 	// Cache miss — call inner provider.
@@ -86,13 +90,23 @@ func (p *CachingProvider) Complete(ctx context.Context, req Request) (Response, 
 	}
 
 	// Save to cache (best effort).
-	usageJSON, _ := json.Marshal(resp.Usage)
-	_ = p.cache.SaveCachedResponse(ctx, key, "", resp.Content, string(usageJSON))
+	if len(resp.ToolCalls) != 0 || resp.Content == "" || resp.FinishReason == "length" || resp.Cached {
+		return resp, nil
+	}
+	metaJSON, _ := json.Marshal(cachedResponseMetadata{Version: 2, Model: resp.Model,
+		RequestedModel: resp.RequestedModel, ModelVerified: resp.ModelVerified, Provider: resp.Provider, FinishReason: resp.FinishReason})
+	_ = p.cache.SaveCachedResponse(ctx, key, resp.Model, resp.Content, string(metaJSON))
 
 	// Evict old entries (best effort).
 	_ = p.cache.EvictResponseCache(ctx, p.maxItems)
 
 	return resp, nil
+}
+
+type cachedResponseMetadata struct {
+	Version                                       int
+	Model, RequestedModel, Provider, FinishReason string
+	ModelVerified                                 bool
 }
 
 // CompleteStream delegates to inner provider without caching (streaming is not cached).
