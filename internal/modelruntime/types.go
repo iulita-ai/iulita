@@ -17,6 +17,7 @@ const StateKey = "models.runtime"
 const StageTTL = 30 * time.Minute
 const ProbeDeadline = 90 * time.Second
 const FixtureVersion = "model-probe-v1"
+const VisionFixtureVersion = "model-vision-probe-v2"
 const maxStateBytes = 4 << 20
 const maxProbeRecords = 128
 

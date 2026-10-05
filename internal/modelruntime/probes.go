@@ -287,6 +287,9 @@ func (m *Manager) runProbe(ctx context.Context, r probeRecord, profile models.Pr
 		errorCode = "cancelled_or_deadline_unknown"
 	}
 	result := Evidence{Kind: r.View.Kind, Passed: passed, CheckedAt: m.now().UTC(), RequestedModel: profile.Model, ServedModel: served, Fingerprint: r.Fingerprint, FixtureVersion: FixtureVersion, CatalogVersion: models.CatalogVersion, CompatibilityVersion: models.CompatibilityVersion(profile.Connection, profile.Model), Usage: usage}
+	if r.View.Kind == "vision" {
+		result.FixtureVersion = VisionFixtureVersion
+	}
 	if !passed {
 		result.ErrorCode = errorCode
 	}
@@ -412,13 +415,29 @@ func matchesNonce(content, nonce string) bool {
 	}
 	return parseObject(content, &output) && output.Nonce == nonce
 }
-func imageFixture(nonce string, rectangle color.RGBA) []byte {
+func imageFixtureCanvas(nonce string, rectangle color.RGBA) *image.RGBA {
 	canvas := image.NewRGBA(image.Rect(0, 0, 300, 100))
 	draw.Draw(canvas, canvas.Bounds(), image.NewUniform(color.White), image.Point{}, draw.Src)
 	draw.Draw(canvas, image.Rect(10, 10, 90, 90), image.NewUniform(rectangle), image.Point{}, draw.Src)
 	drawer := font.Drawer{Dst: canvas, Src: image.NewUniform(color.Black), Face: basicfont.Face7x13, Dot: fixed.P(110, 52)}
 	drawer.DrawString(nonce)
+	return canvas
+}
+
+func imageFixture(nonce string, rectangle color.RGBA) []byte {
+	canvas := imageFixtureCanvas(nonce, rectangle)
+	// Small bitmap labels are ambiguous after provider image preprocessing.
+	// Use a legible raster fixture while retaining the exact, image-only oracle.
+	const scale = 4
+	large := image.NewRGBA(image.Rect(0, 0, canvas.Bounds().Dx()*scale, canvas.Bounds().Dy()*scale))
+	for y := 0; y < large.Bounds().Dy(); y++ {
+		for x := 0; x < large.Bounds().Dx(); x++ {
+			from := canvas.PixOffset(x/scale, y/scale)
+			to := large.PixOffset(x, y)
+			copy(large.Pix[to:to+4], canvas.Pix[from:from+4])
+		}
+	}
 	var buffer bytes.Buffer
-	_ = png.Encode(&buffer, canvas)
+	_ = png.Encode(&buffer, large)
 	return buffer.Bytes()
 }

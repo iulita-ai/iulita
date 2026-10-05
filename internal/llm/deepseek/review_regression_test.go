@@ -2,7 +2,7 @@ package deepseek
 
 import (
 	"context"
-	"errors"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -60,10 +60,64 @@ func TestUsageNeverHasNegativeTokenBuckets(t *testing.T) {
 		}
 	}
 }
-func TestGLMContinuationMissingReasoningRejectedLocally(t *testing.T) {
-	p := NewWithOptions("synthetic", "glm-5.3", 1024, "https://invalid.test", nil, nil, Options{ProviderName: "zai", Thinking: "enabled"})
-	_, err := p.Complete(context.Background(), llm.Request{ToolExchanges: []llm.ToolExchange{{ToolCalls: []llm.ToolCall{{ID: "id", Name: "probe", Input: []byte(`{}`)}}, Results: []llm.ToolResult{{ToolCallID: "id", Content: "ok"}}}}})
-	if err == nil || errors.Is(err, context.DeadlineExceeded) {
-		t.Fatal("unsafe replay reached network")
+func TestGLMContinuationWithoutReasoningPreservesItsAbsence(t *testing.T) {
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		var request struct {
+			Messages []map[string]any `json:"messages"`
+		}
+		if json.NewDecoder(r.Body).Decode(&request) != nil {
+			t.Fatal("invalid payload")
+		}
+		for _, m := range request.Messages {
+			if m["role"] == "assistant" {
+				if _, present := m["reasoning_content"]; present {
+					t.Fatal("invented reasoning block")
+				}
+			}
+		}
+		io.WriteString(w, `{"model":"glm-5.3-flash","choices":[{"message":{"content":"done"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+	p := NewWithOptions("synthetic", "glm-5.3-flash", 1024, server.URL, server.Client(), nil, Options{ProviderName: "zai", Thinking: "enabled", ReasoningEffort: "low"})
+	response, err := p.Complete(context.Background(), llm.Request{ToolExchanges: []llm.ToolExchange{{ToolCalls: []llm.ToolCall{{ID: "id", Name: "probe", Input: []byte(`{}`)}}, Results: []llm.ToolResult{{ToolCallID: "id", Content: "ok"}}}}})
+	if err != nil || calls != 1 || response.Content != "done" {
+		t.Fatalf("valid no-reasoning tool continuation failed: %v calls=%d", err, calls)
+	}
+}
+
+func TestPreflightRejectionIsKnownZeroUsageWithoutHTTP(t *testing.T) {
+	for _, fixture := range []struct {
+		name, model string
+		options     Options
+		request     llm.Request
+	}{
+		{"text-only image", "glm-5.3", Options{ProviderName: "zai", Thinking: "enabled", ReasoningEffort: "low"}, llm.Request{Images: []llm.ImageAttachment{{Data: []byte("not an image"), MediaType: "image/png"}}}},
+		{"DeepSeek thinking continuation", "deepseek-flash", Options{Thinking: "enabled"}, llm.Request{ToolExchanges: []llm.ToolExchange{{ToolCalls: []llm.ToolCall{{ID: "call", Name: "echo", Input: []byte(`{}`)}}, Results: []llm.ToolResult{{ToolCallID: "call", Content: "ok"}}}}}},
+	} {
+		for _, stream := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/stream=%v", fixture.name, stream), func(t *testing.T) {
+				calls := 0
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++; w.WriteHeader(500) }))
+				defer server.Close()
+				inner := NewWithOptions("synthetic", fixture.model, 1024, server.URL, server.Client(), nil, fixture.options)
+				var attempts []llm.Attempt
+				observed := llm.NewObservingProvider(inner, llm.AttemptMetadata{RequestedModel: fixture.model}, func(_ context.Context, a llm.Attempt) { attempts = append(attempts, a) })
+				var err error
+				if stream {
+					_, err = observed.CompleteStream(context.Background(), fixture.request, func(string) { t.Error("rejected request emitted content") })
+				} else {
+					_, err = observed.Complete(context.Background(), fixture.request)
+				}
+				if err == nil || calls != 0 || len(attempts) != 1 {
+					t.Fatalf("preflight admission failed: err=%v calls=%d attempts=%d", err, calls, len(attempts))
+				}
+				a := attempts[0]
+				if a.Status != "rejected" || !a.UsageAvailable || a.ChargeUnknown || a.Usage != (llm.Usage{}) {
+					t.Fatalf("unsent request cost was not known zero: %+v", a)
+				}
+			})
+		}
 	}
 }

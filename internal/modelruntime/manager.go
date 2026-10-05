@@ -735,11 +735,11 @@ func (m *Manager) buildBindingsLocked(settings models.Settings, connections map[
 		b := llm.ProfileBinding{Profile: p, Provider: &guardedProvider{manager: m, inner: provider, provider: p.Connection, generation: c.Connection.Generation, stageID: stageID}, Eligibility: m.eligibilityLocked(p, c, evidence[p.ID])}
 		if d, known := models.Lookup(p.Connection, p.Model); known {
 			e := evidence[p.ID]["vision"]
-			b.Images = d.Images && e.Passed && e.Fingerprint == profileFingerprint(p, c.Connection) && e.FixtureVersion == FixtureVersion && e.CompatibilityVersion == models.CompatibilityVersion(p.Connection, p.Model)
+			b.Images = d.Images && e.Passed && e.Fingerprint == profileFingerprint(p, c.Connection) && validVisionFixtureVersion(e.FixtureVersion) && e.CompatibilityVersion == models.CompatibilityVersion(p.Connection, p.Model)
 			b.ContextTokens = d.ContextTokens
 		} else if p.Connection == "claude" {
 			e := evidence[p.ID]["vision"]
-			b.Images = e.Passed && e.Fingerprint == profileFingerprint(p, c.Connection) || b.Eligibility == "legacy_preserved" && legacyClaudeImages(p.Model)
+			b.Images = e.Passed && e.Fingerprint == profileFingerprint(p, c.Connection) && validVisionFixtureVersion(e.FixtureVersion) && e.CompatibilityVersion == models.CompatibilityVersion(p.Connection, p.Model) || b.Eligibility == "legacy_preserved" && legacyClaudeImages(p.Model)
 			b.ContextTokens = 200_000
 		}
 		out[p.ID] = b
@@ -1291,4 +1291,10 @@ func (m *Manager) SeedLegacyProfiles(ctx context.Context, settings models.Settin
 	}
 	m.state = candidate
 	return nil
+}
+
+// Both fixtures use the same strict image-only nonce/color oracle. Prior v1
+// successes remain valid; v2 only makes the raster label easier to read.
+func validVisionFixtureVersion(version string) bool {
+	return version == FixtureVersion || version == VisionFixtureVersion
 }

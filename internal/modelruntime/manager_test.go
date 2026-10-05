@@ -107,31 +107,35 @@ func echoFactory(profile models.Profile, _ Connection) (llm.Provider, error) {
 
 // This small fixture-only OCR checks the actual raster attachment rather than
 // taking the expected nonce from the text prompt, which contains no image label.
+var fixtureTemplatesOnce sync.Once
+var fixtureTemplates map[rune]image.Image
+
 func readFixture(data []byte) (string, string, error) {
 	decoded, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return "", "", err
 	}
-	red, _, blue, _ := decoded.At(20, 20).RGBA()
+	red, _, blue, _ := decoded.At(80, 80).RGBA()
 	name := "red"
-	rect := imageColorRed()
 	if blue > red {
 		name = "blue"
-		rect = imageColorBlue()
 	}
-	templates := map[rune]image.Image{}
-	for _, candidate := range "0123456789abcdef" {
-		templates[candidate], _, _ = image.Decode(bytes.NewReader(imageFixture(strings.Repeat(string(candidate), 8), rect)))
-	}
+	fixtureTemplatesOnce.Do(func() {
+		fixtureTemplates = map[rune]image.Image{}
+		for _, candidate := range "0123456789abcdef" {
+			fixtureTemplates[candidate] = imageFixtureCanvas(strings.Repeat(string(candidate), 8), imageColorRed())
+		}
+	})
+	scale := decoded.Bounds().Dx() / 300
 	var label strings.Builder
 	for pos := 0; pos < 8; pos++ {
 		matched := false
 		for _, candidate := range "0123456789abcdef" {
-			template := templates[candidate]
+			template := fixtureTemplates[candidate]
 			equal := true
 			for x := 110 + pos*7; x < 117+pos*7 && equal; x++ {
 				for y := 30; y < 60; y++ {
-					r, g, b, a := decoded.At(x, y).RGBA()
+					r, g, b, a := decoded.At(x*scale, y*scale).RGBA()
 					tr, tg, tb, ta := template.At(x, y).RGBA()
 					if r != tr || g != tg || b != tb || a != ta {
 						equal = false
@@ -1320,4 +1324,42 @@ func TestCatalogRefreshPreservesEvidenceButProtocolChangeDoesNot(t *testing.T) {
 		t.Fatalf("changed adapter contract inherited old evidence: %s", got)
 	}
 	m.mu.Unlock()
+}
+
+func TestVisionEvidenceVersionsSurviveRestartWithoutInvalidatingTextAndTools(t *testing.T) {
+	for _, version := range []string{FixtureVersion, VisionFixtureVersion, "unrecognized-vision-fixture"} {
+		t.Run(version, func(t *testing.T) {
+			repo := &memoryRepo{}
+			m := newTestManager(t, repo, echoFactory)
+			stage := stageDraft(t, m, 0, "secret-key")
+			checkStage(t, m, stage, "text")
+			checkStage(t, m, stage, "tools")
+			vision := checkStage(t, m, stage, "vision")
+			if vision.Result.FixtureVersion != VisionFixtureVersion {
+				t.Fatal("new vision evidence did not identify the enlarged raster")
+			}
+			if _, err := m.Activate(context.Background(), "admin", 0, stage.ID); err != nil {
+				t.Fatal(err)
+			}
+			m.mu.Lock()
+			candidate := cloneState(m.state)
+			evidence := candidate.Evidence["ds-flash"]["vision"]
+			evidence.FixtureVersion = version
+			candidate.Evidence["ds-flash"]["vision"] = evidence
+			err := m.persistLocked(context.Background(), candidate, "test")
+			m.mu.Unlock()
+			if err != nil {
+				t.Fatal(err)
+			}
+			restarted := newTestManager(t, repo, echoFactory)
+			_, bindings, _, err := restarted.Bindings()
+			if err != nil {
+				t.Fatal(err)
+			}
+			binding := bindings["ds-flash"]
+			if binding.Eligibility != "production_eligible" || binding.Images != (version != "unrecognized-vision-fixture") {
+				t.Fatalf("retained proofs/unknown version admission: %+v", binding)
+			}
+		})
+	}
 }

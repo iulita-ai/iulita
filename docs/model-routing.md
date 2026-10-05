@@ -56,6 +56,19 @@ as well as transient rate limits. The dashboard explains recognized account
 errors; retry and fallback do not repeat or switch providers on those rejections.
 Only fixed error categories are retained, without upstream messages.
 
+GLM tool responses may omit `reasoning_content` even with thinking enabled.
+Tool continuation preserves the supplied reasoning exactly, including its
+absence; it does not fabricate a block. DeepSeek thinking profiles still require
+their reasoning replay contract. Requests rejected before HTTP are recorded as
+known zero usage.
+
+The vision check uses large raster labels and a strict image-only oracle: the
+model must read an unseen label and rectangle color, then read two images in
+order. A successful older check remains valid for the same profile and
+connection. A check establishes synthetic conformance; it does not establish
+accuracy for arbitrary documents or small text.
+
+
 ## Routing and migration
 
 The existing router resolves explicit profile IDs separately from legacy hints.

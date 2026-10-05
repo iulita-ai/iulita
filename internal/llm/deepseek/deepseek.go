@@ -295,12 +295,12 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 	model, maxTok := p.getParams()
 	body, err := p.requestBody(req, model, maxTok, false)
 	if err != nil {
-		return llm.Response{}, err
+		return llm.Response{}, &llm.UnsentRequestError{Cause: err}
 	}
 
 	httpReq, err := p.newHTTPRequest(ctx, body)
 	if err != nil {
-		return llm.Response{}, err
+		return llm.Response{}, &llm.UnsentRequestError{Cause: err}
 	}
 
 	resp, err := p.httpClient.Do(httpReq)
@@ -372,12 +372,12 @@ func (p *Provider) CompleteStream(ctx context.Context, req llm.Request, callback
 	model, maxTok := p.getParams()
 	body, err := p.requestBody(req, model, maxTok, true)
 	if err != nil {
-		return llm.Response{}, err
+		return llm.Response{}, &llm.UnsentRequestError{Cause: err}
 	}
 
 	httpReq, err := p.newHTTPRequest(ctx, body)
 	if err != nil {
-		return llm.Response{}, err
+		return llm.Response{}, &llm.UnsentRequestError{Cause: err}
 	}
 
 	resp, err := p.httpClient.Do(httpReq)
@@ -547,13 +547,9 @@ func (p *Provider) requestBody(req llm.Request, model string, maxTok int, stream
 			}
 		}
 	}
-	if o.ProviderName == "zai" {
-		for _, ex := range req.ToolExchanges {
-			if len(ex.ToolCalls) > 0 && ex.ReasoningContent == "" {
-				return nil, fmt.Errorf("GLM tool continuation is missing reasoning")
-			}
-		}
-	}
+	// GLM can return tool calls without a reasoning block, even with thinking
+	// enabled. Preserve any supplied block exactly; preserve absence otherwise.
+	// DeepSeek's mandatory thinking replay contract remains guarded above.
 	if err := validateToolTranscript(req); err != nil {
 		return nil, err
 	}
