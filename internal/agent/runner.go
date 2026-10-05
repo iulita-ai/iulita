@@ -120,6 +120,15 @@ func (r *Runner) Run(ctx context.Context, spec AgentSpec, budget Budget, sharedT
 		Message:            spec.Task,
 		Tools:              tools,
 		RouteHint:          routeHint,
+		ProfileID:          spec.ProfileID,
+		Role:               spec.Role,
+		ChatID:             r.chatID, UserID: r.userID, Operation: "agent",
+	}
+	if p, ok := r.provider.(llm.ProfileInvoker); ok {
+		req.RoutingSnapshot = p.AcquireProfileSnapshot()
+	}
+	if req.RoutingSnapshot != nil && req.Role == "" && spec.RouteHint == "" && spec.Type == AgentTypePlanner {
+		req.Role = "complex"
 	}
 
 	maxTurns := budget.EffectiveMaxTurns()
@@ -151,7 +160,7 @@ func (r *Runner) Run(ctx context.Context, spec AgentSpec, budget Budget, sharedT
 		}
 
 		// Track token usage.
-		turnTokens := lastResp.Usage.InputTokens + lastResp.Usage.OutputTokens
+		turnTokens := lastResp.Usage.TotalInputTokens() + lastResp.Usage.OutputTokens
 		result.Tokens += turnTokens
 
 		r.logger.Info("sub-agent LLM usage",
@@ -165,7 +174,7 @@ func (r *Runner) Run(ctx context.Context, spec AgentSpec, budget Budget, sharedT
 		)
 
 		// Publish usage event so sub-agent tokens are tracked in usage_stats.
-		if r.bus != nil {
+		if r.bus != nil && !lastResp.UsageObserved {
 			r.bus.Publish(ctx, eventbus.Event{
 				Type: eventbus.LLMUsage,
 				Payload: eventbus.LLMUsagePayload{
@@ -182,6 +191,10 @@ func (r *Runner) Run(ctx context.Context, spec AgentSpec, budget Budget, sharedT
 			})
 		}
 		result.Turns = turn + 1
+		if lastResp.ProfileID != "" {
+			req.ProfileID = lastResp.ProfileID
+			req.Role = lastResp.Role
+		}
 
 		// Deduct from shared budget.
 		if sharedTokens != nil {
@@ -210,6 +223,7 @@ func (r *Runner) Run(ctx context.Context, spec AgentSpec, budget Budget, sharedT
 			AssistantText:    lastResp.Content,
 			ToolCalls:        lastResp.ToolCalls,
 			ReasoningContent: lastResp.ReasoningContent,
+			ProfileID:        lastResp.ProfileID,
 		}
 
 		for _, tc := range lastResp.ToolCalls {

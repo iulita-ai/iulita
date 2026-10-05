@@ -19,14 +19,16 @@ func LoadManifest() (*skill.Manifest, error) {
 }
 
 type delegateInput struct {
-	Prompt   string `json:"prompt"`
-	Provider string `json:"provider"` // optional: "ollama", "openai" — defaults to secondary
+	ProfileID string `json:"profile_id"`
+	Prompt    string `json:"prompt"`
+	Provider  string `json:"provider"` // optional: "ollama", "openai" — defaults to secondary
 }
 
 // Skill delegates a subtask to a secondary LLM provider.
 type Skill struct {
 	providers       map[string]llm.Provider
 	defaultProvider string
+	router          llm.Provider
 }
 
 // New creates a new delegate skill with named providers.
@@ -39,6 +41,10 @@ func New(providers map[string]llm.Provider, defaultProvider string) *Skill {
 		defaultProvider: defaultProvider,
 	}
 }
+
+// NewRouted delegates through the common profile router. The explicit
+// profile_id is never inferred from the legacy provider hint.
+func NewRouted(router llm.Provider) *Skill { return &Skill{router: router} }
 
 // OnConfigChanged implements skill.ConfigReloadable.
 func (s *Skill) OnConfigChanged(key, value string) {
@@ -58,6 +64,7 @@ func (s *Skill) InputSchema() json.RawMessage {
 		"type": "object",
 		"properties": {
 			"prompt": {"type": "string", "description": "The prompt to send to the secondary LLM"},
+			"profile_id": {"type":"string","description":"Optional configured model profile ID."},
 			"provider": {"type": "string", "description": "Optional provider name (e.g. 'ollama', 'openai'). Uses default if omitted."}
 		},
 		"required": ["prompt"]
@@ -74,6 +81,17 @@ func (s *Skill) Execute(ctx context.Context, input json.RawMessage) (string, err
 		return "", fmt.Errorf("prompt is required")
 	}
 
+	if s.router != nil {
+		role := ""
+		if inp.Provider == "" || inp.ProfileID != "" {
+			role = "background"
+		}
+		resp, err := s.router.Complete(ctx, llm.Request{Message: inp.Prompt, ProfileID: inp.ProfileID, RouteHint: inp.Provider, Role: role, Operation: "delegate", ChatID: skill.ChatIDFrom(ctx), UserID: skill.UserIDFrom(ctx)})
+		if err != nil {
+			return "", fmt.Errorf("delegate: %w", err)
+		}
+		return resp.Content, nil
+	}
 	// Determine which provider to use.
 	providerName := s.defaultProvider
 	if inp.Provider != "" {

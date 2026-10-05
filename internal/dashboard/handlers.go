@@ -15,6 +15,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/domain"
 	ollamallm "github.com/iulita-ai/iulita/internal/llm/ollama"
 	openaillm "github.com/iulita-ai/iulita/internal/llm/openai"
+	"github.com/iulita-ai/iulita/internal/models"
 	"github.com/iulita-ai/iulita/internal/skill"
 	"github.com/iulita-ai/iulita/internal/storage"
 	"github.com/iulita-ai/iulita/internal/version"
@@ -685,7 +686,12 @@ func (s *Server) handleGetConfigSchema(c *fiber.Ctx) error {
 // GET /api/config/models/:provider — provider is "openai", "ollama", or "claude"
 func (s *Server) handleListModels(c *fiber.Ctx) error {
 	provider := c.Params("provider")
-	httpClient := &http.Client{}
+	httpClient := &http.Client{Timeout: 20 * time.Second}
+	if s.modelHTTPClient != nil {
+		*httpClient = *s.modelHTTPClient
+		httpClient.Timeout = 20 * time.Second
+	}
+	httpClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 
 	switch provider {
 	case "claude":
@@ -709,25 +715,20 @@ func (s *Server) handleListModels(c *fiber.Ctx) error {
 		baseURL, _ := s.configStore.GetEffective("openai.base_url")
 		models, err := openaillm.ListModels(baseURL, apiKey, httpClient)
 		if err != nil {
-			return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": err.Error()})
+			return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": "model inventory is unavailable"})
 		}
 		return c.JSON(fiber.Map{"models": models, "source": "dynamic"})
 
-	case "deepseek":
-		apiKey, _ := s.configStore.GetEffective("deepseek.api_key")
-		if apiKey == "" {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "deepseek.api_key not configured"})
+	case "deepseek", "zai":
+		// Documentation inventory is side-effect free, including legacy setup.
+		// Account availability is established only by explicit Models checks.
+		names := []string{}
+		for _, entry := range models.Catalog() {
+			if entry.Provider == provider {
+				names = append(names, entry.Model)
+			}
 		}
-		baseURL, _ := s.configStore.GetEffective("deepseek.base_url")
-		if baseURL == "" {
-			baseURL = "https://api.deepseek.com/v1"
-		}
-		// DeepSeek's /v1/models endpoint is OpenAI-compatible.
-		models, err := openaillm.ListModels(baseURL, apiKey, httpClient)
-		if err != nil {
-			return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": err.Error()})
-		}
-		return c.JSON(fiber.Map{"models": models, "source": "dynamic"})
+		return c.JSON(fiber.Map{"models": names, "source": "documentation"})
 
 	case "ollama":
 		ollamaURL, _ := s.configStore.GetEffective("ollama.url")
@@ -736,7 +737,7 @@ func (s *Server) handleListModels(c *fiber.Ctx) error {
 		}
 		models, err := ollamallm.ListModels(ollamaURL, httpClient)
 		if err != nil {
-			return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": err.Error()})
+			return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": "model inventory is unavailable"})
 		}
 		return c.JSON(fiber.Map{"models": models, "source": "dynamic"})
 

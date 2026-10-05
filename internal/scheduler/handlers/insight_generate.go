@@ -204,6 +204,7 @@ func (h *InsightGenerateHandler) generateForPair(ctx context.Context, chatID, us
 	}
 
 	resp, err := h.provider.Complete(ctx, llm.Request{
+		ChatID: chatID, UserID: userID, Operation: "insight",
 		SystemPrompt: "Generate a creative insight from the fact clusters below. Be concise and insightful.",
 		Message:      prompt.String(),
 		RouteHint:    llm.RouteHintCheap,
@@ -219,7 +220,7 @@ func (h *InsightGenerateHandler) generateForPair(ctx context.Context, chatID, us
 	now := time.Now()
 	expiresAt := now.Add(h.ttl())
 
-	quality := h.scoreInsight(ctx, resp.Content)
+	quality := h.scoreInsight(ctx, resp.Content, chatID, userID)
 	threshold := h.cfg.QualityThreshold
 	if threshold > 0 && quality > 0 && quality < threshold {
 		return nil
@@ -238,8 +239,9 @@ func (h *InsightGenerateHandler) generateForPair(ctx context.Context, chatID, us
 	return h.store.SaveInsight(ctx, insight)
 }
 
-func (h *InsightGenerateHandler) scoreInsight(ctx context.Context, content string) int {
+func (h *InsightGenerateHandler) scoreInsight(ctx context.Context, content string, chatID, userID string) int {
 	resp, err := h.provider.Complete(ctx, llm.Request{
+		ChatID: chatID, UserID: userID, Operation: "insight",
 		SystemPrompt: "Rate the following insight on a scale of 1-5 for novelty and usefulness. " +
 			"Respond with ONLY a single digit (1-5), nothing else.",
 		Message:   content,

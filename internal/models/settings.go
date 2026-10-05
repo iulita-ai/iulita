@@ -127,6 +127,9 @@ func (s Settings) Validate() []FieldError {
 		if known && p.MaxOutputTokens > d.MaxOutputTokens {
 			add(path+".max_output_tokens", "invalid_output_limit", "output exceeds model capacity")
 		}
+		if p.Connection == "claude" && p.Thinking != "disabled" {
+			add(path+".thinking", "unsupported_parameter", "Claude profiles use visible-only tool history; signed thinking replay is not enabled")
+		}
 		if p.Connection == "zai" {
 			if !known {
 				add(path+".model", "unsupported_model", "model is not in the supported Z.ai catalog")

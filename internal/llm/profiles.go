@@ -110,6 +110,32 @@ func (s *ProfileSnapshot) eligible(id string) error {
 	}
 	return nil
 }
+
+// legacyVisibleHandoff retains the existing Claude-to-Haiku cheap synthesis
+// exception. New profiles, explicit overrides and opaque reasoning never switch.
+func (s *ProfileSnapshot) legacyVisibleHandoff(req Request) (Request, bool) {
+	if !req.PinnedProfile || req.ProfileID == "" || req.RouteHint != RouteHintCheap || len(req.ToolExchanges) == 0 || req.ThinkingBudget != 0 {
+		return req, false
+	}
+	source, ok := s.profiles[req.ProfileID]
+	target, exists := s.profiles[s.policy.Background]
+	if !ok || !exists || source.Profile.ID == target.Profile.ID || source.Eligibility != "legacy_preserved" || target.Eligibility != "legacy_preserved" || source.Profile.Connection != "claude" || target.Profile.Connection != "claude" || !strings.HasPrefix(target.Profile.Model, "claude-haiku-") || source.Profile.Thinking != "disabled" || target.Profile.Thinking != "disabled" {
+		return req, false
+	}
+	for _, exchange := range req.ToolExchanges {
+		if exchange.ReasoningContent != "" || exchange.ProfileID != "" && exchange.ProfileID != source.Profile.ID {
+			return req, false
+		}
+	}
+	req.ToolExchanges = append([]ToolExchange(nil), req.ToolExchanges...)
+	for i := range req.ToolExchanges {
+		req.ToolExchanges[i].ProfileID = target.Profile.ID
+	}
+	req.ProfileID = target.Profile.ID
+	req.Role = "background"
+	return req, true
+}
+
 func (s *ProfileSnapshot) resolve(req Request) (ProfileBinding, Request, string, error) {
 	role := "everyday"
 	if req.Role != "" {
@@ -241,6 +267,7 @@ func (p *RoutingProvider) completeProfile(ctx context.Context, req Request, call
 		}
 		return Response{}, false, nil
 	}
+	req, handoff := s.legacyVisibleHandoff(req)
 	b, req, role, err := s.resolve(req)
 	if err != nil {
 		return Response{}, true, err
@@ -260,6 +287,7 @@ func (p *RoutingProvider) completeProfile(ctx context.Context, req Request, call
 	} else {
 		resp, err = b.Provider.Complete(ctx, req)
 	}
+	resp.LegacyVisibleHandoff = handoff
 	resp.ProfileID = b.Profile.ID
 	resp.Role = role
 	resp.PolicyRevision = s.revision

@@ -82,6 +82,7 @@ func (h *HeartbeatHandler) Handle(ctx context.Context, payload string) (string, 
 		"If nothing warrants a message, respond with exactly: HEARTBEAT_OK"
 
 	resp, err := h.provider.Complete(ctx, llm.Request{
+		ChatID: p.ChatID, Operation: "heartbeat",
 		SystemPrompt: "You are a proactive personal assistant. Review the user's memory context and decide if a brief check-in message is warranted.",
 		Message:      prompt,
 		RouteHint:    llm.RouteHintCheap,

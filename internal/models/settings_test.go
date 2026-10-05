@@ -43,6 +43,11 @@ func TestInvalidSettingsCannotGrantCapabilitiesOrReferences(t *testing.T) {
 		{"unknown fallback role", func(s *Settings) { s.Policy.Fallbacks = map[string][]string{"planner": {"ds-pro"}} }},
 		{"large classifier", func(s *Settings) { s.Policy.Classifier = Classifier{Enabled: true, Profile: "glm-flash"} }},
 		{"unsupported model", func(s *Settings) { s.Profiles[0].Model = "made-up-vision-model" }},
+		{"Claude signed thinking is unsupported", func(s *Settings) {
+			s.Profiles[0].Connection = "claude"
+			s.Profiles[0].Model = "claude-sonnet-4-6"
+			s.Profiles[0].Thinking = "enabled"
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := candidateSettings()

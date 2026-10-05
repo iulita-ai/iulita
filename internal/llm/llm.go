@@ -58,6 +58,7 @@ type DocumentAttachment struct {
 
 // Request is the input to an LLM provider.
 type Request struct {
+	PinnedProfile bool // engine-selected profile, never an explicit user override
 	// StaticSystemPrompt contains the stable portion of the system prompt
 	// (base instructions, skill system prompts) that is eligible for
 	// provider-side caching. Claude uses cache_control: ephemeral on this
@@ -106,20 +107,21 @@ func (u Usage) TotalInputTokens() int64 {
 
 // Response is the output from an LLM provider.
 type Response struct {
-	Content        string
-	ToolCalls      []ToolCall // non-empty when the LLM wants to use tools
-	Usage          Usage
-	Model          string // actual model used (populated by provider)
-	Provider       string // provider name (populated by provider)
-	RequestedModel string
-	ModelVerified  bool // actual model identity was present in the provider response
-	ProfileID      string
-	Role           string
-	PolicyRevision uint64
-	FinishReason   string
-	Cached         bool // local response-cache hit; Usage is zero for this invocation
-	UsageObserved  bool // an attempt observer already published this usage
-	UsageReported  bool // upstream supplied usage, including a legitimate zero
+	LegacyVisibleHandoff bool // router-authorized Claude-to-Haiku visible-only transition
+	Content              string
+	ToolCalls            []ToolCall // non-empty when the LLM wants to use tools
+	Usage                Usage
+	Model                string // actual model used (populated by provider)
+	Provider             string // provider name (populated by provider)
+	RequestedModel       string
+	ModelVerified        bool // actual model identity was present in the provider response
+	ProfileID            string
+	Role                 string
+	PolicyRevision       uint64
+	FinishReason         string
+	Cached               bool // local response-cache hit; Usage is zero for this invocation
+	UsageObserved        bool // an attempt observer already published this usage
+	UsageReported        bool // upstream supplied usage, including a legitimate zero
 	// ReasoningContent is the model's chain-of-thought, when the provider
 	// exposes it separately from Content (e.g. DeepSeek thinking mode). It is
 	// never streamed to the user; it is threaded back via ToolExchange so

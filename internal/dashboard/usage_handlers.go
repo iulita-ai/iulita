@@ -39,12 +39,14 @@ func (s *Server) handleUsageSummaryV2(c *fiber.Ctx) error {
 		return s.errorResponse(c, err)
 	}
 	return c.JSON(fiber.Map{
-		"total_input_tokens":          summary.TotalInputTokens,
-		"total_output_tokens":         summary.TotalOutputTokens,
-		"total_cache_read_tokens":     summary.TotalCacheReadTokens,
-		"total_cache_creation_tokens": summary.TotalCacheCreationTokens,
-		"total_requests":              summary.TotalRequests,
-		"total_cost_usd":              summary.TotalCostUSD,
+		"total_input_tokens":           summary.TotalInputTokens,
+		"total_output_tokens":          summary.TotalOutputTokens,
+		"total_cache_read_tokens":      summary.TotalCacheReadTokens,
+		"total_cache_creation_tokens":  summary.TotalCacheCreationTokens,
+		"total_requests":               summary.TotalRequests,
+		"total_cost_usd":               summary.TotalCostUSD,
+		"total_cost_unknown_requests":  summary.TotalCostUnknownRequests,
+		"total_usage_unknown_requests": summary.TotalUsageUnknownRequests,
 	})
 }
 
@@ -61,12 +63,14 @@ func (s *Server) handleUsageByDay(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"rows": rows,
 		"summary": fiber.Map{
-			"total_input_tokens":          summary.TotalInputTokens,
-			"total_output_tokens":         summary.TotalOutputTokens,
-			"total_cache_read_tokens":     summary.TotalCacheReadTokens,
-			"total_cache_creation_tokens": summary.TotalCacheCreationTokens,
-			"total_requests":              summary.TotalRequests,
-			"total_cost_usd":              summary.TotalCostUSD,
+			"total_input_tokens":           summary.TotalInputTokens,
+			"total_output_tokens":          summary.TotalOutputTokens,
+			"total_cache_read_tokens":      summary.TotalCacheReadTokens,
+			"total_cache_creation_tokens":  summary.TotalCacheCreationTokens,
+			"total_requests":               summary.TotalRequests,
+			"total_cost_usd":               summary.TotalCostUSD,
+			"total_cost_unknown_requests":  summary.TotalCostUnknownRequests,
+			"total_usage_unknown_requests": summary.TotalUsageUnknownRequests,
 		},
 	})
 }

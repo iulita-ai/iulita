@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 	"time"
@@ -271,4 +272,35 @@ func actorFromCtx(c *fiber.Ctx) string {
 		return userID
 	}
 	return ""
+}
+
+// Old credential paths must not mutate a connection owned by Models.
+func (s *Server) modelCredentialWrite(c *fiber.Ctx) error {
+	if c.Method() == fiber.MethodGet || s.configStore == nil {
+		return c.Next()
+	}
+	name := ""
+	if raw := c.Params("id"); raw != "" {
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err == nil {
+			cred, err := s.credentialManager.GetByID(c.Context(), id)
+			if err == nil && cred != nil {
+				name = cred.Name
+			}
+		}
+	} else {
+		var body struct {
+			Name string `json:"name"`
+		}
+		_ = json.Unmarshal(c.Body(), &body)
+		name = body.Name
+	}
+	var binding struct {
+		ConsumerID string `json:"consumer_id"`
+	}
+	_ = json.Unmarshal(c.Body(), &binding)
+	if s.configStore.ModelWriteProtected(name) || s.configStore.ModelWriteProtected(binding.ConsumerID) || s.configStore.ModelWriteProtected(unescapeParam(c, "consumer_id")) {
+		return c.Status(409).JSON(fiber.Map{"error": "use Models settings to change managed model connections"})
+	}
+	return c.Next()
 }

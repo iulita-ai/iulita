@@ -278,9 +278,17 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 		return "", err
 	}
 
+	var turnSnapshot *llm.ProfileSnapshot
+	if provider, ok := a.provider.(llm.ProfileInvoker); ok {
+		turnSnapshot = provider.AcquireProfileSnapshot()
+	}
+	contextRequest := llm.Request{Message: msg.Text, RoutingSnapshot: turnSnapshot}
+	for _, image := range msg.Images {
+		contextRequest.Images = append(contextRequest.Images, llm.ImageAttachment{Data: image.Data, MediaType: image.MediaType})
+	}
 	// Compress history if context is getting too large.
 	if lit := a.lastInputTokens.Load(); lit > 0 {
-		history, err = a.compressIfNeeded(ctx, msg.ChatID, history, lit)
+		history, err = a.compressIfNeeded(ctx, msg.ChatID, history, lit, contextRequest)
 		if err != nil {
 			a.logger.Error("compression failed", zap.Error(err))
 		}
@@ -467,6 +475,10 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 		Documents:          documents,
 		Tools:              tools,
 		ThinkingBudget:     a.thinkingBudget,
+		ChatID:             msg.ChatID, UserID: effectiveUserID, Operation: "conversation",
+	}
+	if _, ok := a.provider.(llm.ProfileInvoker); ok {
+		req.RoutingSnapshot = turnSnapshot
 	}
 
 	// Force the remember tool when message matches memory trigger keywords.
@@ -487,6 +499,9 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 	}
 
 	// Agentic loop: call LLM, execute tools, repeat until text response.
+	requiredTool := req.ForceTool
+	requiredToolSucceeded := false
+	req.RequireToolOutcome = requiredTool != ""
 	var lastResp llm.Response
 	var synthHint string               // accumulates SynthesisModelDeclarer hints per iteration
 	var extCancelFn context.CancelFunc // tracks deadline extension from TimeoutDeclarer skills
@@ -545,6 +560,18 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 		} else {
 			lastResp, err = a.provider.Complete(ctx, req)
 		}
+		// The router may authorize a visible-only legacy handoff, including an
+		// overflow response. Update origins before compression/retry as well.
+		if lastResp.ProfileID != "" {
+			if lastResp.LegacyVisibleHandoff {
+				for j := range req.ToolExchanges {
+					req.ToolExchanges[j].ProfileID = lastResp.ProfileID
+				}
+			}
+			req.ProfileID = lastResp.ProfileID
+			req.PinnedProfile = true
+			req.Role = lastResp.Role
+		}
 		if err != nil {
 			if llm.IsContextTooLarge(err) && !compressedThisTurn {
 				a.logger.Warn("context overflow, compressing and retrying",
@@ -563,8 +590,8 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 		// This ensures the hint only applies to one call.
 		req.RouteHint = ""
 
-		a.lastInputTokens.Store(lastResp.Usage.InputTokens)
-		a.totalInputTokens.Add(lastResp.Usage.InputTokens)
+		a.lastInputTokens.Store(lastResp.Usage.TotalInputTokens())
+		a.totalInputTokens.Add(lastResp.Usage.TotalInputTokens())
 		a.totalOutputTokens.Add(lastResp.Usage.OutputTokens)
 		a.totalRequests.Add(1)
 
@@ -578,7 +605,7 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 			zap.Int("iteration", i),
 		)
 
-		if a.bus != nil {
+		if a.bus != nil && !lastResp.UsageObserved {
 			// Prefer model/provider from response (accurate for routed requests).
 			model := lastResp.Model
 			if model == "" {
@@ -610,6 +637,9 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 
 		// No tool calls — we have the final text response.
 		if len(lastResp.ToolCalls) == 0 {
+			if requiredTool != "" && !requiredToolSucceeded {
+				return "", fmt.Errorf("required tool %q did not complete successfully", requiredTool)
+			}
 			a.logger.Info("LLM responded without tool calls",
 				zap.Int("iteration", i),
 				zap.Int("available_tools", len(req.Tools)),
@@ -653,6 +683,7 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 			AssistantText:    lastResp.Content,
 			ToolCalls:        lastResp.ToolCalls,
 			ReasoningContent: lastResp.ReasoningContent,
+			ProfileID:        lastResp.ProfileID,
 		}
 
 		for _, tc := range lastResp.ToolCalls {
@@ -694,8 +725,15 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 			}
 
 			result := a.executeSkill(ctx, msg.ChatID, tc, i)
+			if tc.Name == requiredTool && !result.IsError && !result.PendingApproval {
+				requiredToolSucceeded = true
+			}
 			ledger.Record(tc, result)
 			exchange.Results = append(exchange.Results, result)
+			if result.PendingApproval {
+				a.saveAssistantResponse(ctx, msg.ChatID, result.Content)
+				return result.Content, nil
+			}
 		}
 
 		// Apply synthesis route hint for the next LLM call.
@@ -707,6 +745,9 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 	}
 
 	// Exhausted iterations — save any partial text so history stays consistent.
+	if requiredTool != "" && !requiredToolSucceeded {
+		return "", fmt.Errorf("required tool %q did not complete successfully", requiredTool)
+	}
 	// This is the most tool-intensive turn possible, so it is also a prime
 	// self-improvement candidate (it needs a saved boundary to anchor the review).
 	a.logger.Warn("agentic loop hit max iterations", zap.Int("max", maxIterations))
@@ -742,9 +783,10 @@ func (a *Assistant) executeSkill(ctx context.Context, chatID string, tc llm.Tool
 				_ = a.sender.SendMessage(ctx, chatID, prompt)
 			}
 			return llm.ToolResult{
-				ToolCallID: tc.ID,
-				Content:    i18n.T(ctx, "ApprovalAwaiting", map[string]any{"Tool": tc.Name}),
-				IsError:    false,
+				ToolCallID:      tc.ID,
+				Content:         i18n.T(ctx, "ApprovalAwaiting", map[string]any{"Tool": tc.Name}),
+				IsError:         false,
+				PendingApproval: true,
 			}
 		}
 	}

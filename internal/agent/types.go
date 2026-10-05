@@ -80,6 +80,8 @@ type AgentSpec struct { //nolint:revive // agent.AgentSpec is more readable than
 	Type         AgentType `json:"type"`
 	Task         string    `json:"task"`
 	RouteHint    string    `json:"route_hint,omitempty"`    // optional: routing hint for provider selection
+	ProfileID    string    `json:"profile_id,omitempty"`    // explicit model profile; separate from legacy hints
+	Role         string    `json:"role,omitempty"`          // explicit task role in the shared model policy
 	Tools        []string  `json:"tools,omitempty"`         // optional: explicit tool name allowlist
 	SystemPrompt string    `json:"system_prompt,omitempty"` // optional: task-specific instructions appended to the type profile prompt
 }

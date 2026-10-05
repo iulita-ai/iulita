@@ -87,6 +87,7 @@ Messages:
 %s`, mb.String())
 
 	resp, err := h.provider.Complete(ctx, llm.Request{
+		ChatID: p.ChatID, Operation: "techfact",
 		SystemPrompt: "You are a behavioral analysis system. Extract structured metadata from user messages. Respond only with valid JSON.",
 		Message:      prompt,
 		RouteHint:    llm.RouteHintCheap,
