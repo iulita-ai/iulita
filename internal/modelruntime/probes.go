@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"image"
 	"image/color"
 	"image/draw"
@@ -367,6 +368,13 @@ func (m *Manager) runProbe(ctx context.Context, r probeRecord, profile models.Pr
 	m.state = candidate
 }
 func probeErrorCode(err error) string {
+	var provider interface{ ModelErrorCode() string }
+	if errors.As(err, &provider) {
+		switch code := provider.ModelErrorCode(); code {
+		case "insufficient_balance", "authentication_failed", "model_access_denied", "credential_product_mismatch", "quota_exhausted":
+			return code
+		}
+	}
 	if e, ok := err.(*Error); ok {
 		return e.Code
 	}

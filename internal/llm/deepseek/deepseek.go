@@ -950,8 +950,10 @@ func (a *toolCallAccumulator) finalize() []llm.ToolCall {
 
 // apiError carries the HTTP status so RetryProvider can retry transient codes.
 type apiError struct {
-	status int
-	body   string // already bounded to <= errBodyLimit
+	status    int
+	body      string // fixed safe message, never provider response text
+	code      string // server-selected safe category
+	permanent bool
 }
 
 func (e *apiError) Error() string {
@@ -959,7 +961,9 @@ func (e *apiError) Error() string {
 }
 
 // StatusCode satisfies llm.HTTPStatusError so 429/5xx responses are retried.
-func (e *apiError) StatusCode() int { return e.status }
+func (e *apiError) StatusCode() int        { return e.status }
+func (e *apiError) Permanent() bool        { return e.permanent }
+func (e *apiError) ModelErrorCode() string { return e.code }
 
 // errorFromResponse reads a bounded portion of a non-2xx body and returns either
 // a wrapped llm.ErrContextTooLarge (so the agentic loop compresses and retries)
@@ -984,7 +988,36 @@ func errorFromResponse(prefix string, resp *http.Response) error {
 	case 500, 502, 503, 504:
 		message = "provider unavailable"
 	}
-	return &apiError{status: resp.StatusCode, body: message}
+	result := &apiError{status: resp.StatusCode, body: message}
+	// Z.ai also uses HTTP 429 for balance, product and quota errors. Preserve
+	// only allowlisted categories; never expose upstream messages or raw codes.
+	if strings.HasPrefix(prefix, "zai ") {
+		var envelope struct {
+			Error struct {
+				Code json.RawMessage `json:"code"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(raw, &envelope) == nil {
+			var code string
+			if json.Unmarshal(envelope.Error.Code, &code) != nil {
+				code = string(envelope.Error.Code)
+			}
+			switch code {
+			case "1113":
+				result.code, result.body = "insufficient_balance", "insufficient API balance or resource package"
+			case "1000", "1001", "1003", "1005":
+				result.code, result.body = "authentication_failed", "provider authentication failed"
+			case "1220", "1311":
+				result.code, result.body = "model_access_denied", "model access is not included"
+			case "1315":
+				result.code, result.body = "credential_product_mismatch", "credential belongs to another API product"
+			case "1308", "1309", "1310", "1313", "1314", "1316", "1317", "1318", "1319", "1320", "1321":
+				result.code, result.body = "quota_exhausted", "provider account quota or plan is unavailable"
+			}
+			result.permanent = result.code != ""
+		}
+	}
+	return result
 }
 
 // extractErrorMessage prefers the structured error.message; the raw body is

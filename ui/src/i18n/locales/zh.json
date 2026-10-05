@@ -851,7 +851,12 @@
       "admin_required": "需要管理员账户。草稿已保留。",
       "invalid_settings": "请检查标记的字段。更改已保留。",
       "network": "服务器未确认此操作。草稿已保留，请在重试前检查状态。",
-      "request_failed": "无法完成操作。草稿已保留，请检查连接和测试状态。"
+      "request_failed": "无法完成操作。草稿已保留，请检查连接和测试状态。",
+      "insufficient_balance": "提供商报告 API 余额不足或没有资源包。请检查 API 计费；编程订阅可能不包含标准 API 调用。",
+      "authentication_failed": "提供商拒绝了身份验证。请检查密钥和账户权限。",
+      "model_access_denied": "您的账户没有此模型的访问权限。请检查该模型是否适用于您的 API 产品。",
+      "credential_product_mismatch": "此密钥属于提供商的其他产品。请使用标准模型 API 的密钥。",
+      "quota_exhausted": "账户配额或套餐不可用。请检查限制、重置时间和订阅状态，然后再重试。"
     },
     "applyState": "应用状态",
     "connectionBlocked": "连接已阻止",

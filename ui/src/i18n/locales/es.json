@@ -786,7 +786,12 @@
       "admin_required": "Necesitas una cuenta de administrador. Se conserva el borrador.",
       "invalid_settings": "Revisa los campos marcados. Se conservan tus cambios.",
       "network": "El servidor no confirmó la acción. Se conserva el borrador. Consulta el estado antes de reintentar.",
-      "request_failed": "No se pudo completar la acción. Se conserva el borrador. Revisa la conexión y el estado de prueba."
+      "request_failed": "No se pudo completar la acción. Se conserva el borrador. Revisa la conexión y el estado de prueba.",
+      "insufficient_balance": "El proveedor indica saldo de API insuficiente o falta de un paquete de recursos. Revisa la facturación de la API; una suscripción de programación puede no cubrir la API estándar.",
+      "authentication_failed": "El proveedor rechazó la autenticación. Revisa la clave y el acceso de la cuenta.",
+      "model_access_denied": "Tu cuenta no incluye acceso a este modelo. Revisa su disponibilidad para tu producto de API.",
+      "credential_product_mismatch": "Esta clave pertenece a otro producto del proveedor. Usa una clave de la API estándar de modelos.",
+      "quota_exhausted": "La cuota o el plan de la cuenta no está disponible. Revisa los límites, las fechas de restablecimiento y la suscripción antes de reintentar."
     },
     "applyState": "Estado de aplicación",
     "connectionBlocked": "Conexión bloqueada",

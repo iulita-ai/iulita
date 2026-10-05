@@ -786,7 +786,12 @@
       "admin_required": "Un compte administrateur est requis. Le brouillon est conservé.",
       "invalid_settings": "Vérifiez les champs signalés. Vos modifications sont conservées.",
       "network": "Le serveur n'a pas confirmé l'action. Votre brouillon est conservé. Vérifiez l'état avant de réessayer.",
-      "request_failed": "L'action n'a pas abouti. Votre brouillon est conservé. Vérifiez la connexion et l'état du test."
+      "request_failed": "L'action n'a pas abouti. Votre brouillon est conservé. Vérifiez la connexion et l'état du test.",
+      "insufficient_balance": "Le fournisseur indique un solde API insuffisant ou l’absence de forfait de ressources. Vérifiez la facturation API ; un abonnement de programmation peut ne pas couvrir l’API standard.",
+      "authentication_failed": "Le fournisseur a refusé l’authentification. Vérifiez la clé et les droits du compte.",
+      "model_access_denied": "Votre compte ne donne pas accès à ce modèle. Vérifiez sa disponibilité pour votre produit API.",
+      "credential_product_mismatch": "Cette clé appartient à un autre produit du fournisseur. Utilisez une clé pour l’API standard des modèles.",
+      "quota_exhausted": "Le quota ou le forfait du compte est indisponible. Vérifiez les limites, les dates de réinitialisation et l’abonnement avant de réessayer."
     },
     "applyState": "État d’application",
     "connectionBlocked": "Connexion bloquée",

@@ -94,6 +94,10 @@ type HTTPStatusError interface {
 }
 
 func isRetryable(err error) bool {
+	var permanent interface{ Permanent() bool }
+	if errors.As(err, &permanent) && permanent.Permanent() {
+		return false
+	}
 	var httpErr HTTPStatusError
 	if errors.As(err, &httpErr) {
 		code := httpErr.StatusCode()

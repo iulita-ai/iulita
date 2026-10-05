@@ -889,7 +889,12 @@
       "admin_required": "An administrator account is required. Your draft is kept.",
       "invalid_settings": "Review the highlighted fields. Your changes are kept.",
       "network": "The server did not confirm this action. Your draft is kept. Check the status before trying again.",
-      "request_failed": "The action could not be completed. Your draft is kept. Check the connection and test status."
+      "request_failed": "The action could not be completed. Your draft is kept. Check the connection and test status.",
+      "insufficient_balance": "The provider reports insufficient API balance or no resource package. Check API billing; a coding subscription may not cover standard API calls.",
+      "authentication_failed": "The provider rejected authentication. Check the key and account access.",
+      "model_access_denied": "Your account does not include access to this model. Check model availability for your API product.",
+      "credential_product_mismatch": "This key belongs to another provider product. Use a key for the standard model API.",
+      "quota_exhausted": "The provider account quota or plan is unavailable. Check account limits, reset times and subscription status before retrying."
     },
     "applyState": "Application state",
     "connectionBlocked": "Connection blocked",

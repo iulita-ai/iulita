@@ -18,6 +18,16 @@ function fixture(): ModelSettingsView {
 beforeEach(() => { vi.clearAllMocks(); vi.mocked(api.getWizardStatus).mockResolvedValue({ setup_mode: false, wizard_completed: true, encryption_enabled: true, has_llm_provider: true }); sessionStorage.clear(); admin.mockReturnValue(true); vi.mocked(modelsApi.settings).mockResolvedValue(fixture()); vi.mocked(modelsApi.catalog).mockResolvedValue([{ provider: 'deepseek', model: 'deepseek-flash', name: 'Flash', context_tokens: 1000000, max_output_tokens: 384000, images: true, tools: true, streaming: true, thinking_required: false, source_url: '', catalog_version: '' }]) })
 async function openProfile(wrapper: ReturnType<typeof mount>) { await flushPromises(); await wrapper.findComponent(NCollapseItem).find('.n-collapse-item__header-main').trigger('click'); await flushPromises() }
 describe('Models admin controls', () => {
+  it('explains an API balance rejection without retrying a paid check', async () => {
+    vi.mocked(modelsApi.probe).mockResolvedValue({ id: 'probe-one', profile_id: 'ds-flash', kind: 'text', status: 'failed', error_code: 'insufficient_balance', started_at: '', deadline: '' })
+    vi.mocked(modelsApi.probeStatus).mockResolvedValue({ id: 'probe-one', profile_id: 'ds-flash', kind: 'text', status: 'failed', error_code: 'insufficient_balance', started_at: '', deadline: '' })
+    const wrapper = mount(Models); await openProfile(wrapper)
+    await wrapper.findAll('button').find(b => b.text() === 'Test text')!.trigger('click'); await flushPromises()
+    expect(wrapper.find('[data-testid="probe-error"]').text()).toContain('insufficient API balance')
+    expect(modelsApi.probe).toHaveBeenCalledOnce()
+    expect(modelsApi.activate).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
   it('ordinary users see a static explanation with no model requests', async () => {
     admin.mockReturnValue(false)
     const wrapper = mount(Models); await flushPromises()

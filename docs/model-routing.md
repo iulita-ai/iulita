@@ -51,6 +51,11 @@ operation; an expired key requires a new explicit request. Interrupted checks ar
 shown as uncertain after restart. Cancellation cannot promise that a provider
 has stopped billing work it already accepted.
 
+Z.ai can return HTTP 429 for account balance, product access and quota rejections
+as well as transient rate limits. The dashboard explains recognized account
+errors; retry and fallback do not repeat or switch providers on those rejections.
+Only fixed error categories are retained, without upstream messages.
+
 ## Routing and migration
 
 The existing router resolves explicit profile IDs separately from legacy hints.

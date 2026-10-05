@@ -140,6 +140,7 @@
           <n-card v-if="operation || pendingProbe" class="section-gap" size="small" :title="t('models.testStatus')" aria-live="polite">
             <n-space vertical>
               <n-text>{{ operation ? t(`models.probeStates.${operation.status}`, t('models.probeStates.unknown')) : t('models.probeStates.unknown') }}</n-text>
+              <n-alert v-if="operation?.error_code" type="error" data-testid="probe-error">{{ t(`models.errors.${operation.error_code}`, t('models.errors.request_failed')) }}</n-alert>
               <n-text :depth="3">{{ t('models.probeCharge') }}</n-text>
               <n-space>
                 <n-button v-if="operationRunning" data-testid="cancel-probe" :disabled="cancelPending" @click="cancelProbe">{{ t(cancelPending ? 'models.stopping' : 'models.cancelTest') }}</n-button>
