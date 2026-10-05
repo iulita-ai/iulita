@@ -1,6 +1,10 @@
 <template>
   <n-space vertical :size="24">
     <n-h2>{{ t('settings.title') }}</n-h2>
+    <n-card :title="t('models.title')">
+      <n-button v-if="admin" @click="router.push({ name: 'models' })">{{ t('models.connectionsProfiles') }}</n-button>
+      <n-text v-else>{{ t('models.adminManaged') }}</n-text>
+    </n-card>
 
     <n-card :title="t('settings.systemInfo')">
       <n-descriptions bordered :column="2" label-placement="left">
@@ -142,7 +146,7 @@
       </n-card>
     </n-card>
 
-    <n-card :title="t('settings.systemConfig')">
+    <n-card v-if="admin" :title="t('settings.systemConfig')">
       <template #header-extra>
         <n-space :size="8">
           <n-button size="small" :loading="schemaLoading" @click="loadSchema">{{ t('common.refresh') }}</n-button>
@@ -256,7 +260,7 @@
       </n-collapse>
     </n-card>
 
-    <n-card :title="t('settings.configOverrides')">
+    <n-card v-if="admin" :title="t('settings.configOverrides')">
       <template #header-extra>
         <n-space :size="8">
           <n-tag v-if="encryptionEnabled" type="success" size="small">{{ t('settings.encryptionOn') }}</n-tag>
@@ -559,6 +563,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch, h } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import {
   NH2, NSpace, NCard, NDescriptions, NDescriptionsItem, NList, NListItem,
   NThing, NTag, NSelect, NCode, NEmpty, NButton, NDataTable, NInput,
@@ -571,6 +576,7 @@ import type { SystemInfo, SkillInfo, ChatInfo, JobInfo, Task, TaskCounts, Config
 
 const { t } = useI18n()
 const message = useMessage()
+const router = useRouter()
 const system = ref<SystemInfo | null>(null)
 const skills = ref<SkillInfo[]>([])
 const chats = ref<ChatInfo[]>([])
@@ -847,6 +853,8 @@ async function disconnectSlack() {
   }
 }
 
+// Atomic model settings are edited on the Models page only.
+function isModelSetting(key: string) { return key !== 'routing.max_actions_per_hour' && /^(models\.|routing\.|claude\.|openai\.|deepseek\.|zai\.|ollama\.)/.test(key) }
 // Config schema
 const schemaSections = ref<ConfigSchemaSection[]>([])
 const schemaLoading = ref(false)
@@ -856,10 +864,11 @@ const modelLoading = reactive<Record<string, boolean>>({})
 const dynamicModels = reactive<Record<string, string[]>>({})
 
 async function loadSchema() {
+  if (!admin) return
   schemaLoading.value = true
   try {
     const result = await api.getConfigSchema()
-    schemaSections.value = result.sections ?? []
+    schemaSections.value = (result.sections ?? []).map(section => ({ ...section, fields: section.fields.filter(field => !isModelSetting(field.key)) })).filter(section => section.fields.length > 0)
     // Pre-fill edits from effective values
     for (const sec of schemaSections.value) {
       for (const f of sec.fields) {
@@ -1186,9 +1195,10 @@ async function deleteGoogleAccount(id: number) {
 }
 
 async function loadConfig() {
+  if (!admin) return
   try {
     const result = await api.getConfig()
-    configEntries.value = result.overrides ?? []
+    configEntries.value = (result.overrides ?? []).filter(entry => !isModelSetting(entry.key))
     encryptionEnabled.value = result.encryption_enabled
   } catch {
     configEntries.value = []
@@ -1196,6 +1206,7 @@ async function loadConfig() {
 }
 
 async function saveConfig() {
+  if (isModelSetting(newKey.value)) { message.warning(t('models.connectionsProfiles')); return }
   if (!newKey.value || !newValue.value) {
     message.warning(t('settings.keyValueRequired'))
     return
@@ -1293,11 +1304,10 @@ onMounted(async () => {
     api.getChats(),
     loadSchedulers(),
     loadTasks(),
-    loadConfig(),
+    ...(admin ? [loadConfig(), loadSchema()] : []),
     loadGoogleAccounts(),
     loadGoogleStatus(),
     loadSlackStatus(),
-    loadSchema(),
   ])
   system.value = sys
   skills.value = sk ?? []

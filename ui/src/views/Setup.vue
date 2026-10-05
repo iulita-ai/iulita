@@ -2,8 +2,18 @@
   <div class="setup-container">
     <n-card style="max-width: 700px; margin: 40px auto">
       <n-h2 style="text-align: center">{{ t('setup.title') }}</n-h2>
+      <n-alert type="info" :show-icon="false" style="margin-bottom: 20px">
+        {{ t('models.intro') }}
+        <n-button text type="primary" @click="$router.push({ name: 'models' })">{{ t('models.connectionsProfiles') }}</n-button>
+      </n-alert>
 
-      <n-steps :current="currentStep" style="margin-bottom: 24px">
+      <n-alert v-if="modelsReady && currentStep !== 5" type="success" :title="t('models.setupReady')" style="margin-bottom: 20px">
+        <n-text>{{ t(modelRestartRequired ? 'models.setupRestartHint' : 'models.setupFinishHint') }}</n-text>
+        <n-space style="margin-top: 16px">
+          <n-button data-testid="finish-model-setup" type="primary" :loading="completingSetup" @click="handleComplete">{{ t('models.finishSetup') }}</n-button>
+        </n-space>
+      </n-alert>
+      <n-steps v-if="!modelsReady" :current="currentStep" style="margin-bottom: 24px">
         <n-step :title="t('setup.welcome')" />
         <n-step :title="t('setup.llmProvider')" />
         <n-step :title="t('setup.providerConfig')" />
@@ -12,7 +22,7 @@
       </n-steps>
 
       <!-- Step 1: Welcome -->
-      <div v-if="currentStep === 1">
+      <div v-if="currentStep === 1 && !modelsReady">
         <n-alert type="info" :title="t('setup.welcomeTitle')" style="margin-bottom: 16px">
           {{ t('setup.welcomeDesc') }}
         </n-alert>
@@ -48,7 +58,7 @@
       </div>
 
       <!-- Step 2: Choose LLM Provider -->
-      <div v-if="currentStep === 2">
+      <div v-if="currentStep === 2 && !modelsReady">
         <n-text style="display: block; margin-bottom: 16px">
           {{ t('setup.selectProviders') }}
         </n-text>
@@ -79,7 +89,7 @@
       </div>
 
       <!-- Step 3: Provider Config -->
-      <div v-if="currentStep === 3">
+      <div v-if="currentStep === 3 && !modelsReady">
         <n-collapse :default-expanded-names="selectedProviders">
           <n-collapse-item
             v-for="section in activeLLMSections"
@@ -151,7 +161,7 @@
       </div>
 
       <!-- Step 4: Features -->
-      <div v-if="currentStep === 4">
+      <div v-if="currentStep === 4 && !modelsReady">
         <n-text style="display: block; margin-bottom: 16px">
           {{ t('setup.configureFeatures') }}
         </n-text>
@@ -261,6 +271,9 @@ const importing = ref(false)
 const importResult = ref<ImportTOMLResponse | null>(null)
 const completeError = ref('')
 const hasBaseConfig = ref(false)
+const modelsReady = ref(false)
+const modelRestartRequired = ref(false)
+const completingSetup = ref(false)
 
 const llmSections = computed(() => sections.value.filter(s => s.is_llm))
 const activeLLMSections = computed(() =>
@@ -353,6 +366,8 @@ async function saveFeatureConfig() {
 }
 
 async function handleComplete() {
+  if (completingSetup.value) return
+  completingSetup.value = true
   completeError.value = ''
   try {
     await api.completeWizard()
@@ -360,7 +375,7 @@ async function handleComplete() {
   } catch (e: any) {
     completeError.value = e.message || t('setup.completeFailed')
     currentStep.value = 5
-  }
+  } finally { completingSetup.value = false }
 }
 
 async function handleImportTOML() {
@@ -388,6 +403,8 @@ onMounted(async () => {
   // Check if wizard is already completed.
   try {
     const status = await api.getWizardStatus()
+    modelsReady.value = !!status.models_ready
+    modelRestartRequired.value = !!status.model_restart_required
     if (status.wizard_completed && !status.setup_mode) {
       // Already completed, redirect to dashboard.
       window.location.href = '/'

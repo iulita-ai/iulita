@@ -86,6 +86,18 @@ describe('Setup.vue', () => {
     vi.mocked(api.completeWizard).mockResolvedValue({ status: 'completed', message: 'ok' })
   })
 
+  it('finishes a Models-only install without writing legacy provider settings', async () => {
+    vi.mocked(api.getWizardStatus).mockResolvedValue({ wizard_completed: false, setup_mode: true, encryption_enabled: true, has_llm_provider: true, models_ready: true, model_restart_required: true })
+    const wrapper = mountSetup(); await flushPromises()
+    expect(wrapper.text()).toContain('Verified models are ready')
+    expect(wrapper.text()).toContain('restart Iulita')
+    await wrapper.find('[data-testid="finish-model-setup"]').trigger('click'); await flushPromises()
+    expect(api.completeWizard).toHaveBeenCalledOnce()
+    expect(api.setConfig).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('Restart the application')
+    wrapper.unmount()
+  })
+
   it('renders wizard title', async () => {
     const wrapper = mountSetup()
     await flushPromises()

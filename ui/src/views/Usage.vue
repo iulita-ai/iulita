@@ -47,15 +47,20 @@
         </n-grid-item>
         <n-grid-item span="5 m:1">
           <n-card>
-            <n-statistic :label="t('usage.totalCost')">
+            <n-statistic :label="t('usage.costEstimate')">
               <template #default>
-                ${{ (summary?.total_cost_usd ?? 0).toFixed(4) }}
+                <template v-if="summary?.total_cost_unknown_requests">{{ t('usage.knownSubtotal', { amount: (summary?.total_cost_usd ?? 0).toFixed(4) }) }}</template>
+                <template v-else>${{ (summary?.total_cost_usd ?? 0).toFixed(4) }}</template>
               </template>
             </n-statistic>
           </n-card>
         </n-grid-item>
       </n-grid>
 
+      <n-alert v-if="summary?.total_cost_unknown_requests || summary?.total_usage_unknown_requests" type="warning" :show-icon="false">
+        <div v-if="summary?.total_cost_unknown_requests">{{ t('usage.unknownCosts', { n: summary.total_cost_unknown_requests }) }}</div>
+        <div v-if="summary?.total_usage_unknown_requests">{{ t('usage.unknownUsage', { n: summary.total_usage_unknown_requests }) }}</div>
+      </n-alert>
       <!-- By Model -->
       <n-card :title="t('usage.byModel')" v-if="modelRows.length > 0">
         <n-data-table
@@ -92,7 +97,7 @@ import { useMessage } from 'naive-ui'
 import {
   NSpace, NGrid, NGridItem, NCard, NStatistic,
   NDataTable, NPageHeader, NSpin, NDatePicker,
-  NSelect, NEmpty,
+  NSelect, NEmpty, NAlert,
 } from 'naive-ui'
 import type { DataTableColumns, SelectOption } from 'naive-ui'
 import { api } from '../api'
@@ -131,7 +136,7 @@ const dailyColumns = computed<DataTableColumns<UsageRow>>(() => [
   { title: t('usage.outputTokens'), key: 'output_tokens', sorter: 'default', render: (row) => row.output_tokens.toLocaleString() },
   { title: t('usage.cacheRead'), key: 'cache_read_tokens', sorter: 'default', render: (row) => row.cache_read_tokens.toLocaleString() },
   { title: t('usage.requests'), key: 'requests', sorter: 'default' },
-  { title: t('usage.costUsd'), key: 'cost_usd', sorter: 'default', render: (row) => `$${row.cost_usd.toFixed(4)}` },
+  { title: t('usage.costUsd'), key: 'cost_usd', sorter: 'default', render: (row) => formatCost(row) },
 ])
 
 const modelColumns = computed<DataTableColumns<ModelUsageRow>>(() => [
@@ -141,9 +146,14 @@ const modelColumns = computed<DataTableColumns<ModelUsageRow>>(() => [
   { title: t('usage.outputTokens'), key: 'output_tokens', sorter: 'default', render: (row) => row.output_tokens.toLocaleString() },
   { title: t('usage.cacheRead'), key: 'cache_read_tokens', sorter: 'default', render: (row) => row.cache_read_tokens.toLocaleString() },
   { title: t('usage.requests'), key: 'requests', sorter: 'default' },
-  { title: t('usage.costUsd'), key: 'cost_usd', sorter: 'default', render: (row) => `$${row.cost_usd.toFixed(4)}` },
+  { title: t('usage.costUsd'), key: 'cost_usd', sorter: 'default', render: (row) => formatCost(row) },
 ])
 
+function formatCost(row: UsageRow | ModelUsageRow) {
+  const amount = row.cost_usd.toFixed(4)
+  const cost = row.cost_unknown_requests ? `${t('usage.knownSubtotal', { amount })}; ${t('usage.unknownCosts', { n: row.cost_unknown_requests })}` : `$${amount}`
+  return row.usage_unknown_requests ? `${cost}; ${t('usage.unknownUsage', { n: row.usage_unknown_requests })}` : cost
+}
 function onDateChange() {
   fetchData()
 }

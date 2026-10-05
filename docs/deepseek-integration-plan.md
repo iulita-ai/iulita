@@ -1,3 +1,8 @@
+> Historical integration record. Its model names and thinking assumptions describe
+> the API observed on `feat/deepseek`, not the current supported catalog. See
+> [Model profiles and task routing](model-routing.md) for current configuration,
+> verification requirements and migration.
+>
 > ## ✅ IMPLEMENTED & LIVE-VERIFIED (branch `feat/deepseek`)
 >
 > Both Phase 1 and Phase 2 are implemented, reviewed (code+architect per commit), and

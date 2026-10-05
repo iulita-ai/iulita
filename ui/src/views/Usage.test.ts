@@ -86,6 +86,17 @@ describe('Usage.vue', () => {
     wrapper.unmount()
   })
 
+  it('labels unknown costs and incomplete usage without reporting a complete zero bill', async () => {
+    vi.mocked(api.getUsageByDay).mockResolvedValue({ ...mockDailyResponse, summary: { ...mockDailyResponse.summary, total_cost_usd: 0, total_cost_unknown_requests: 3, total_usage_unknown_requests: 2 } })
+    vi.mocked(api.getUsageByModel).mockResolvedValue({ rows: [{ ...mockModelResponse.rows[0], cost_usd: 0, cost_unknown_requests: 3, usage_unknown_requests: 2 }] })
+    const wrapper = mountUsage()
+    await flushPromises()
+    expect(wrapper.text()).toContain('Known subtotal: $0.0000')
+    expect(wrapper.text()).toContain('3 requests have unknown cost')
+    expect(wrapper.text()).toContain('Token usage is unavailable for 2 requests')
+    wrapper.unmount()
+  })
+
   it('displays model breakdown table', async () => {
     vi.mocked(api.getUsageByDay).mockResolvedValue(mockDailyResponse)
     vi.mocked(api.getUsageByModel).mockResolvedValue(mockModelResponse)
