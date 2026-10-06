@@ -8,9 +8,9 @@ export interface ModelSettings {
   schema_version: number; profiles: ModelProfile[]
   policy: {
     everyday: string; complex: string; vision: string; background: string
-    classifier: { enabled: boolean; profile?: string }
+    classifier: { enabled: boolean; profile?: string; timeout_ms?: number }
     legacy_hints?: Record<string, string>; legacy_profile_hints?: Record<string, string>
-    fallbacks?: Record<string, string[]>; forbidden_providers?: string[]
+    fallbacks?: Record<string, string[]>; fallback_timeout_ms?: number; forbidden_providers?: string[]
   }
 }
 export interface ModelDefinition {
@@ -23,6 +23,7 @@ export interface ModelConnection {
 export interface ConnectionMutation { provider: string; endpoint?: string; api_key_action: 'keep' | 'replace'; api_key?: string }
 export interface ModelEvidence {
   kind: string; passed: boolean; checked_at: string; requested_model: string; served_model: string; error_code?: string
+  fixture_version?: string; classifier_timeout_ms?: number; cases?: number; correct?: number; complex_cases?: number; complex_correct?: number; max_latency_ms?: number
 }
 export interface ProfileEvidence { id: string; eligibility: string; fingerprint: string; evidence: ModelEvidence[] }
 export interface ModelStage {

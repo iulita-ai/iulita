@@ -98,6 +98,10 @@ func isRetryable(err error) bool {
 	if errors.As(err, &permanent) && permanent.Permanent() {
 		return false
 	}
+	var transient interface{ Retryable() bool }
+	if errors.As(err, &transient) {
+		return transient.Retryable()
+	}
 	var httpErr HTTPStatusError
 	if errors.As(err, &httpErr) {
 		code := httpErr.StatusCode()
@@ -105,6 +109,7 @@ func isRetryable(err error) bool {
 			code == http.StatusInternalServerError ||
 			code == http.StatusBadGateway ||
 			code == http.StatusServiceUnavailable ||
+			code == http.StatusGatewayTimeout ||
 			code == 529 // Anthropic overloaded
 	}
 	return false

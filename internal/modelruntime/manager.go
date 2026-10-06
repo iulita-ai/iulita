@@ -41,15 +41,16 @@ type stageState struct {
 	Evidence     map[string]map[string]Evidence `json:"evidence"`
 }
 type probeRecord struct {
-	Revision    uint64    `json:"revision"`
-	View        ProbeView `json:"view"`
-	Actor       string    `json:"actor"`
-	Key         string    `json:"key"`
-	RequestHash string    `json:"request_hash"`
-	Fingerprint string    `json:"fingerprint"`
-	Generation  string    `json:"generation"`
-	Provider    string    `json:"provider"`
-	ExpiresAt   time.Time `json:"expires_at"`
+	ClassifierTimeoutMS int       `json:"classifier_timeout_ms,omitempty"`
+	Revision            uint64    `json:"revision"`
+	View                ProbeView `json:"view"`
+	Actor               string    `json:"actor"`
+	Key                 string    `json:"key"`
+	RequestHash         string    `json:"request_hash"`
+	Fingerprint         string    `json:"fingerprint"`
+	Generation          string    `json:"generation"`
+	Provider            string    `json:"provider"`
+	ExpiresAt           time.Time `json:"expires_at"`
 }
 type durableState struct {
 	LegacySeeded      bool                           `json:"legacy_seeded,omitempty"`
@@ -441,7 +442,7 @@ func (m *Manager) profileViewsLocked(settings models.Settings, connections map[s
 				v.Eligibility = "suspended"
 			}
 		}
-		for _, kind := range []string{"text", "tools", "vision"} {
+		for _, kind := range []string{"text", "tools", "vision", "classifier"} {
 			if e, ok := evidence[p.ID][kind]; ok && e.Fingerprint == fp {
 				v.Evidence = append(v.Evidence, e)
 			}
@@ -523,14 +524,6 @@ func (m *Manager) prepareLocked(settings models.Settings, mutations []Connection
 		add("settings", "payload_too_large", "Settings exceed the size limit")
 	}
 	errs = append(errs, settings.Validate()...)
-	if settings.Policy.Classifier.Enabled {
-		add("policy.classifier.enabled", "evaluation_required", "New classifier activation requires a completed evaluation")
-	}
-	for _, ids := range settings.Policy.Fallbacks {
-		if len(ids) > 0 {
-			add("policy.fallbacks", "protocol_verification_required", "Fallbacks require verified continuation compatibility")
-		}
-	}
 	if len(m.state.Denied) > 8192 || len(m.state.DeniedCredentials) > 8192 {
 		add("connections", "deny_metadata_limit", "Credential history is full; new configuration requires maintenance")
 	}
@@ -772,7 +765,14 @@ func (m *Manager) buildBindingsLocked(settings models.Settings, connections map[
 			provider, err = m.factory(p, c.handle())
 		}
 		if err != nil || provider == nil {
-			assigned := false
+			assigned := settings.Policy.Classifier.Enabled && settings.Policy.Classifier.Profile == p.ID
+			for _, ids := range settings.Policy.Fallbacks {
+				for _, id := range ids {
+					if id == p.ID {
+						assigned = true
+					}
+				}
+			}
 			for _, id := range settings.Policy.Roles() {
 				if id == p.ID {
 					assigned = true
@@ -790,6 +790,8 @@ func (m *Manager) buildBindingsLocked(settings models.Settings, connections map[
 			continue
 		}
 		b := llm.ProfileBinding{Profile: p, Provider: &guardedProvider{manager: m, inner: provider, provider: p.Connection, generation: c.Connection.Generation, stageID: stageID}, Eligibility: m.eligibilityLocked(p, c, evidence[p.ID])}
+		evaluation := evidence[p.ID]["classifier"]
+		b.ClassifierVerified = b.Eligibility == "production_eligible" && evaluation.Passed && evaluation.Fingerprint == profileFingerprint(p, c.Connection) && evaluation.FixtureVersion == ClassifierFixtureVersion && evaluation.CompatibilityVersion == models.CompatibilityVersion(p.Connection, p.Model) && evaluation.ClassifierTimeoutMS == settings.Policy.Classifier.Timeout() && evaluation.Cases == 12 && evaluation.Correct >= 11 && evaluation.ComplexCases == 8 && evaluation.ComplexCorrect == 8
 		if d, known := models.Lookup(p.Connection, p.Model); known {
 			e := evidence[p.ID]["vision"]
 			b.Images = d.Images && e.Passed && e.Fingerprint == profileFingerprint(p, c.Connection) && validVisionFixtureVersion(e.FixtureVersion) && e.CompatibilityVersion == models.CompatibilityVersion(p.Connection, p.Model)
@@ -829,12 +831,12 @@ func (m *Manager) Activate(ctx context.Context, actor string, expected uint64, s
 	if s.Settings.Policy.Everyday == "" {
 		return View{}, failure("everyday_required", "Assign a verified everyday model before activation", 422)
 	}
-	if s.Settings.Policy.Classifier.Enabled {
-		return View{}, failure("evaluation_required", "Classifier activation requires evaluation", 422)
-	}
 	b, err := m.buildBindingsLocked(s.Settings, s.Connections, s.Evidence, "")
 	if err != nil {
 		return View{}, err
+	}
+	if s.Settings.Policy.Classifier.Enabled && !b[s.Settings.Policy.Classifier.Profile].ClassifierVerified {
+		return View{}, failure("evaluation_required", "Classifier activation requires current text, tools and classifier quality checks at the configured timeout", 422)
 	}
 	for role, id := range s.Settings.Policy.Roles() {
 		if id == "" {

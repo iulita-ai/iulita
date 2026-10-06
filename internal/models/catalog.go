@@ -48,6 +48,7 @@ func CandidateProfiles() []Profile {
 		{ID: "ds-pro", Name: "DeepSeek Pro", Connection: "deepseek", Model: "deepseek-v4-pro", MaxOutputTokens: 16384, Thinking: "disabled"},
 		{ID: "glm-flash", Name: "GLM Flash", Connection: "zai", Model: "glm-5.3-flash", MaxOutputTokens: 8192, Thinking: "enabled", ReasoningEffort: "low", ClearThinking: true},
 		{ID: "glm-main", Name: "GLM 5.3", Connection: "zai", Model: "glm-5.3", MaxOutputTokens: 16384, Thinking: "enabled", ReasoningEffort: "high", ClearThinking: true},
+		{ID: "glm-selector", Name: "GLM Flash Selector", Connection: "zai", Model: "glm-5.3-flash", MaxOutputTokens: 512, Thinking: "enabled", ReasoningEffort: "low", ClearThinking: true},
 	}
 }
 

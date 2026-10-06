@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	_ "image/gif"
@@ -24,6 +25,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 
 	_ "golang.org/x/image/webp"
 
@@ -720,9 +722,13 @@ func safeTransportError(ctx context.Context, provider string, err error) error {
 		return ctx.Err()
 	}
 	// URL errors may contain credential-bearing query/userinfo or proxy errors.
-	// Expose only a typed timeout; never echo the upstream transport string.
+	// Only recognized availability failures can cross providers. TLS, DNS and
+	// configuration errors stay permanent, without exposing the transport string.
 	if e, ok := err.(interface{ Timeout() bool }); ok && e.Timeout() {
-		return fmt.Errorf("%s request timed out: %w", provider, context.DeadlineExceeded)
+		return &llm.AvailabilityError{Provider: provider}
+	}
+	if errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return &llm.AvailabilityError{Provider: provider}
 	}
 	return fmt.Errorf("%s request failed", provider)
 }

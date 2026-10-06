@@ -2,8 +2,11 @@ package llm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/iulita-ai/iulita/internal/models"
 )
@@ -12,11 +15,12 @@ import (
 // Eligibility must come from local compatibility rules and server-owned probe
 // evidence, never a settings request. Experimental profiles are probe-only.
 type ProfileBinding struct {
-	Profile       models.Profile
-	Provider      Provider
-	Eligibility   string
-	Images        bool
-	ContextTokens int
+	Profile            models.Profile
+	Provider           Provider
+	Eligibility        string
+	Images             bool
+	ContextTokens      int
+	ClassifierVerified bool
 }
 
 // ProfileSnapshot holds one immutable policy revision. Clients shared by
@@ -35,12 +39,6 @@ func NewProfileSnapshot(revision uint64, settings models.Settings, bindings map[
 	if settings.Policy.Everyday == "" {
 		return nil, fmt.Errorf("everyday profile is required for activation")
 	}
-	// Future fallback policy is not silently ignored in the first resolver unit.
-	for _, ids := range settings.Policy.Fallbacks {
-		if len(ids) > 0 {
-			return nil, fmt.Errorf("profile fallbacks require protocol verification")
-		}
-	}
 	s := &ProfileSnapshot{revision: revision, profiles: map[string]ProfileBinding{}, policy: settings.Policy}
 	s.policy.LegacyHints = map[string]string{}
 	for hint, role := range settings.Policy.LegacyHints {
@@ -51,6 +49,10 @@ func NewProfileSnapshot(revision uint64, settings models.Settings, bindings map[
 		s.policy.LegacyProfileHints[hint] = id
 	}
 	s.policy.ForbiddenProviders = append([]string(nil), settings.Policy.ForbiddenProviders...)
+	s.policy.Fallbacks = make(map[string][]string)
+	for role, ids := range settings.Policy.Fallbacks {
+		s.policy.Fallbacks[role] = append([]string(nil), ids...)
+	}
 	for _, profile := range settings.Profiles {
 		b, ok := bindings[profile.ID]
 		if !ok {
@@ -78,6 +80,22 @@ func NewProfileSnapshot(revision uint64, settings models.Settings, bindings map[
 	if settings.Policy.Classifier.Enabled {
 		if err := s.eligible(settings.Policy.Classifier.Profile); err != nil {
 			return nil, err
+		}
+		if !s.profiles[settings.Policy.Classifier.Profile].ClassifierVerified {
+			return nil, fmt.Errorf("classifier requires a current evaluation")
+		}
+	}
+	for role, ids := range s.policy.Fallbacks {
+		for _, id := range ids {
+			if err := s.eligible(id); err != nil {
+				return nil, err
+			}
+			if s.profiles[id].Eligibility != "production_eligible" {
+				return nil, fmt.Errorf("fallback requires verified text and tools")
+			}
+			if role == "vision" && !s.profiles[id].Images {
+				return nil, fmt.Errorf("vision fallback requires verified images")
+			}
 		}
 	}
 	for _, id := range settings.Policy.LegacyProfileHints {
@@ -273,25 +291,82 @@ func (p *RoutingProvider) completeProfile(ctx context.Context, req Request, call
 		}
 		return Response{}, false, nil
 	}
+	allowFallback := req.ProfileID == "" && req.Operation != "classifier" && len(req.ToolExchanges) == 0 && len(req.Documents) == 0
+	if s.policy.LegacyProfileHints[req.RouteHint] != "" {
+		allowFallback = false
+	}
+	if strings.HasPrefix(req.Message, "hint:") && s.policy.LegacyProfileHints[strings.SplitN(req.Message[5:], " ", 2)[0]] != "" {
+		allowFallback = false
+	}
 	req, handoff := s.legacyVisibleHandoff(req)
 	b, req, role, err := s.resolve(req)
 	if err != nil {
 		return Response{}, true, err
 	}
-	// Current forbidden-provider policy takes precedence over a pinned snapshot.
-	current := p.AcquireProfileSnapshot()
-	if current != nil {
-		for _, provider := range current.policy.ForbiddenProviders {
-			if provider == b.Profile.Connection {
-				return Response{}, true, fmt.Errorf("model profile provider is forbidden")
-			}
-		}
+	ids := []string{b.Profile.ID}
+	if allowFallback {
+		ids = append(ids, s.policy.Fallbacks[role]...)
 	}
 	var resp Response
-	if sp, ok := b.Provider.(StreamingProvider); stream && ok {
-		resp, err = sp.CompleteStream(ctx, req, callback)
-	} else {
-		resp, err = b.Provider.Complete(ctx, req)
+	primaryContext := b.ContextTokens
+	for attempt, id := range ids {
+		if ctx.Err() != nil {
+			err = ctx.Err()
+			break
+		}
+		if attempt > 0 {
+			target := s.profiles[id]
+			if target.ContextTokens < primaryContext || len(req.Images) > 0 && !target.Images {
+				continue
+			}
+			next := req
+			next.ProfileID = id
+			next.Role = role
+			nextBinding, resolved, _, resolveErr := s.resolve(next)
+			if resolveErr != nil {
+				err = resolveErr
+				break
+			}
+			b = nextBinding
+			next = resolved
+			req = next
+		}
+		current := p.AcquireProfileSnapshot()
+		if current != nil {
+			for _, forbidden := range current.policy.ForbiddenProviders {
+				if forbidden == b.Profile.Connection {
+					return Response{}, true, fmt.Errorf("model profile provider is forbidden")
+				}
+			}
+		}
+		attemptCtx := ctx
+		cancel := func() {}
+		if len(ids) > 1 {
+			timeout := s.policy.FallbackTimeoutMS
+			if timeout == 0 {
+				timeout = 60000
+			}
+			attemptCtx, cancel = context.WithTimeout(ctx, time.Duration(timeout)*time.Millisecond)
+		}
+		var visible atomic.Bool
+		wrapped := func(chunk string) {
+			if chunk != "" {
+				visible.Store(true)
+			}
+			if callback != nil {
+				callback(chunk)
+			}
+		}
+		if sp, ok := b.Provider.(StreamingProvider); stream && ok {
+			resp, err = sp.CompleteStream(attemptCtx, req, wrapped)
+		} else {
+			resp, err = b.Provider.Complete(attemptCtx, req)
+		}
+		timedOut := errors.Is(err, context.DeadlineExceeded) && attemptCtx.Err() == context.DeadlineExceeded && ctx.Err() == nil
+		cancel()
+		if err == nil || ctx.Err() != nil || (!timedOut && !isRetryable(err)) || visible.Load() || resp.Content != "" || len(resp.ToolCalls) > 0 {
+			break
+		}
 	}
 	resp.LegacyVisibleHandoff = handoff
 	resp.ProfileID = b.Profile.ID

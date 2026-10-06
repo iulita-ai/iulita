@@ -94,9 +94,9 @@ therefore requires verification of the changed mode before activation.
 DeepSeek thinking profiles remain experimental until their durable multi-turn
 reasoning replay contract passes live conformance. GLM preserves reasoning only
 within the current tool loop and clears cross-turn thinking. Automatic paid
-classification remains disabled pending measured quality, latency and cost
-comparison; assigning GLM to the complex/planner role does not require a second
-LLM to classify every message. Unverified cross-model fallbacks are rejected.
+classification is opt-in and requires current quality evidence. Assigning GLM to
+the complex/planner role does not require enabling classification. Unverified
+cross-model fallbacks are rejected.
 
 An emergency key revoke suspends new calls immediately and attempts to cancel
 admitted calls, including old pinned snapshots and legacy clients. Revoked keys
@@ -124,3 +124,13 @@ pre-upgrade database backup; old usage UPSERT statements are not compatible with
 this migration. The local implementation does not deploy or change live provider
 assignments automatically. Live conformance and end-to-end account checks remain
 deployment prerequisites.
+
+## Paid selection and backup profiles
+
+Automatic selection uses a separate profile with at most 1024 output tokens (the GLM Flash Selector preset uses 512). It sends at most 500 Unicode characters of the current ambiguous text request, without conversation history or tools. Simple requests use Everyday; reasoning and creative work use Complex. Explicit roles, profile choices, route hints, attachments and tool continuations skip classification. A failed selector uses Everyday. The classifier deadline defaults to 5000 ms and supports 500–10000 ms.
+
+In **Models → Task roles**, select the classifier profile, save for testing, and run its text and tool checks plus **Evaluate classifier**. Evaluation makes up to 12 paid synthetic calls in English and Russian. Activation requires at least 11 correct routes and all eight complex/creative cases correct. Evidence is server-owned and bound to the model, parameters, credential generation, prompt version and configured deadline; changing them requires another evaluation. A new failed evaluation invalidates the previous quality pass.
+
+Each role can have up to two ordered backup profiles with current text/tool verification; vision backups additionally need a successful image check. Profiles with a smaller context window are skipped. A temporary availability failure (HTTP 429/500/502/503/504/529, recognized transport failure, or the attempt deadline) may switch profiles only before visible text or tool calls. Authentication, balance, input, configuration, context, cancellation and document failures do not switch. Once a profile is pinned or a tool round has started, it remains pinned. Opaque reasoning from a failed attempt is never transferred. Each real attempt is accounted for separately, including potentially billable failed attempts.
+
+The per-attempt deadline applies when backups are configured, defaults to 60000 ms, and supports 1000–120000 ms. All attempts also share the caller deadline. Save and activate a tested policy explicitly; opening this page starts no paid requests.

@@ -27,6 +27,9 @@ const FixtureVersion = "model-probe-v1"
 
 // VisionFixtureVersion identifies the enlarged image probe raster.
 const VisionFixtureVersion = "model-vision-probe-v2"
+
+// ClassifierFixtureVersion binds quality evidence to the prompt and fixtures.
+const ClassifierFixtureVersion = llm.ClassifierPromptVersion + "-eval-v1"
 const maxStateBytes = 4 << 20
 const maxProbeRecords = 128
 
@@ -91,6 +94,12 @@ type Evidence struct {
 	CompatibilityVersion string    `json:"compatibility_version"`
 	Usage                llm.Usage `json:"usage"`
 	ErrorCode            string    `json:"error_code,omitempty"`
+	ClassifierTimeoutMS  int       `json:"classifier_timeout_ms,omitempty"`
+	Cases                int       `json:"cases,omitempty"`
+	Correct              int       `json:"correct,omitempty"`
+	ComplexCases         int       `json:"complex_cases,omitempty"`
+	ComplexCorrect       int       `json:"complex_correct,omitempty"`
+	MaxLatencyMS         int64     `json:"max_latency_ms,omitempty"`
 }
 
 // ProfileView exposes eligibility and evidence for one profile.
