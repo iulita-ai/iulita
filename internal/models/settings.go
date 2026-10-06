@@ -33,8 +33,17 @@ type Profile struct {
 
 // Classifier configures optional model-based task classification.
 type Classifier struct {
-	Enabled bool   `json:"enabled" koanf:"enabled"`
-	Profile string `json:"profile,omitempty" koanf:"profile"`
+	Enabled   bool   `json:"enabled" koanf:"enabled"`
+	Profile   string `json:"profile,omitempty" koanf:"profile"`
+	TimeoutMS int    `json:"timeout_ms,omitempty" koanf:"timeout_ms"`
+}
+
+// Timeout returns the bounded classifier deadline in milliseconds.
+func (c Classifier) Timeout() int {
+	if c.TimeoutMS == 0 {
+		return 5000
+	}
+	return c.TimeoutMS
 }
 
 // Policy assigns profiles to task roles and restricts routing alternatives.
@@ -49,6 +58,7 @@ type Policy struct {
 	// all four task roles. It is not inferred from a raw ProfileID-like hint.
 	LegacyProfileHints map[string]string   `json:"legacy_profile_hints,omitempty" koanf:"legacy_profile_hints"`
 	Fallbacks          map[string][]string `json:"fallbacks,omitempty" koanf:"fallbacks"`
+	FallbackTimeoutMS  int                 `json:"fallback_timeout_ms,omitempty" koanf:"fallback_timeout_ms"`
 	ForbiddenProviders []string            `json:"forbidden_providers,omitempty" koanf:"forbidden_providers"`
 }
 
@@ -213,6 +223,15 @@ func (s Settings) Validate() []FieldError {
 		if p, ok := byID[s.Policy.Classifier.Profile]; ok && p.MaxOutputTokens > 1024 {
 			add("policy.classifier.profile", "invalid_output_limit", "classifier output limit must be at most 1024")
 		}
+		if s.Policy.Complex == "" {
+			add("policy.complex", "invalid_reference", "assign a complex role before enabling automatic selection")
+		}
+	}
+	if s.Policy.Classifier.Timeout() < 500 || s.Policy.Classifier.Timeout() > 10000 {
+		add("policy.classifier.timeout_ms", "invalid_timeout", "classifier timeout must be 500 to 10000 milliseconds")
+	}
+	if s.Policy.FallbackTimeoutMS != 0 && (s.Policy.FallbackTimeoutMS < 1000 || s.Policy.FallbackTimeoutMS > 120000) {
+		add("policy.fallback_timeout_ms", "invalid_timeout", "fallback attempt timeout must be 1000 to 120000 milliseconds")
 	}
 	for hint, role := range s.Policy.LegacyHints {
 		if !validHint.MatchString(hint) {
@@ -232,6 +251,9 @@ func (s Settings) Validate() []FieldError {
 		check("policy.legacy_profile_hints", id, false)
 	}
 	for role, ids := range s.Policy.Fallbacks {
+		if len(ids) > 2 {
+			add("policy.fallbacks."+role, "too_many_fallbacks", "select at most two ordered backup profiles")
+		}
 		if _, ok := s.Policy.Roles()[role]; !ok {
 			add("policy.fallbacks", "invalid_reference", "unknown fallback role")
 		}

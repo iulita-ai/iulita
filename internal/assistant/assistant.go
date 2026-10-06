@@ -266,10 +266,10 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 
 	// Background lightweight analysis for tech facts (tracked for graceful shutdown).
 	a.bgWg.Add(1)
-	go func() {
+	go func(bgCtx context.Context, chatID, userID, text string) {
 		defer a.bgWg.Done()
-		a.techAnalyzer.AnalyzeMessage(context.WithoutCancel(ctx), msg.ChatID, effectiveUserID, msg.Text)
-	}()
+		a.techAnalyzer.AnalyzeMessage(bgCtx, chatID, userID, text)
+	}(context.WithoutCancel(ctx), msg.ChatID, effectiveUserID, msg.Text)
 
 	// Fetch conversation history.
 	history, err := a.store.GetHistory(ctx, msg.ChatID, historyLimit)

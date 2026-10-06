@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { NCollapseItem, NInput, NPopconfirm } from 'naive-ui'
+import { NCollapseItem, NInput, NInputNumber, NPopconfirm, NTabs } from 'naive-ui'
 import Models from './Models.vue'
 import { api } from '../api'
 import { modelsApi, ModelAPIError, type ModelSettingsView } from '../modelApi'
@@ -18,6 +18,47 @@ function fixture(): ModelSettingsView {
 beforeEach(() => { vi.clearAllMocks(); vi.mocked(api.getWizardStatus).mockResolvedValue({ setup_mode: false, wizard_completed: true, encryption_enabled: true, has_llm_provider: true }); sessionStorage.clear(); admin.mockReturnValue(true); vi.mocked(modelsApi.settings).mockResolvedValue(fixture()); vi.mocked(modelsApi.catalog).mockResolvedValue([{ provider: 'deepseek', model: 'deepseek-flash', name: 'Flash', context_tokens: 1000000, max_output_tokens: 384000, images: true, tools: true, streaming: true, thinking_required: false, source_url: '', catalog_version: '' }]) })
 async function openProfile(wrapper: ReturnType<typeof mount>) { await flushPromises(); await wrapper.findComponent(NCollapseItem).find('.n-collapse-item__header-main').trigger('click'); await flushPromises() }
 describe('Models admin controls', () => {
+  it('requires classifier evaluation at the saved deadline and charges only an explicit check', async () => {
+    const data = fixture()
+    data.settings.profiles.push({ ...data.settings.profiles[0]!, id: 'selector', name: 'Selector', max_output_tokens: 512 })
+    data.settings.policy.everyday = 'ds-flash'; data.settings.policy.complex = 'ds-flash'
+    data.settings.policy.classifier = { enabled: true, profile: 'selector', timeout_ms: 5000 }
+    data.stage!.settings = structuredClone(data.settings)
+    data.stage!.effective_profiles = data.settings.profiles.map(p => ({ id: p.id, eligibility: 'production_eligible', fingerprint: p.id, evidence: [] }))
+    vi.mocked(modelsApi.settings).mockResolvedValue(data)
+    const wrapper = mount(Models); await flushPromises()
+    expect(wrapper.find('[data-testid="activate"]').attributes('disabled')).toBeDefined()
+    expect(modelsApi.probe).not.toHaveBeenCalled()
+    wrapper.findComponent(NTabs).vm.$emit('update:value', 'roles'); await flushPromises()
+    expect(wrapper.text()).toContain('one paid call')
+    vi.mocked(modelsApi.probe).mockResolvedValue({ id: 'quality', profile_id: 'selector', kind: 'classifier', status: 'completed', started_at: '', deadline: '' })
+    vi.mocked(modelsApi.probeStatus).mockResolvedValue({ id: 'quality', profile_id: 'selector', kind: 'classifier', status: 'completed', started_at: '', deadline: '' })
+    data.stage!.effective_profiles[1]!.evidence = [{ kind: 'classifier', passed: true, requested_model: 'deepseek-flash', served_model: 'deepseek-flash', checked_at: '', fixture_version: 'bounded-selector-v1-eval-v1', classifier_timeout_ms: 5000, cases: 12, correct: 12, complex_cases: 8, complex_correct: 8, max_latency_ms: 1700 }]
+    vi.mocked(modelsApi.settings).mockResolvedValue(structuredClone(data))
+    await wrapper.find('[data-testid="classifier-evaluate"]').trigger('click'); await flushPromises()
+    expect(modelsApi.probe).toHaveBeenCalledOnce()
+    expect(vi.mocked(modelsApi.probe).mock.calls[0]![0]).toMatchObject({ kind: 'classifier', profile_id: 'selector', stage_id: 'stage-one' })
+    expect(wrapper.find('[data-testid="activate"]').attributes('disabled')).toBeUndefined()
+    wrapper.findAllComponents(NInputNumber).find(input => input.attributes('data-testid') === 'classifier-timeout')!.vm.$emit('update:value', 6000)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="activate"]').attributes('disabled')).toBeDefined()
+    expect(modelsApi.activate).not.toHaveBeenCalled(); wrapper.unmount()
+  })
+  it('preserves backup order and blocks unverified vision backups', async () => {
+    const data = fixture()
+    data.settings.profiles.push({ ...data.settings.profiles[0]!, id: 'backup', name: 'Backup' })
+    data.settings.policy.everyday = 'ds-flash'
+    data.settings.policy.fallbacks = { everyday: ['backup'], vision: ['backup'] }
+    data.stage!.settings = structuredClone(data.settings)
+    data.stage!.effective_profiles = data.settings.profiles.map(p => ({ id: p.id, eligibility: 'production_eligible', fingerprint: p.id, evidence: [] }))
+    vi.mocked(modelsApi.settings).mockResolvedValue(data)
+    vi.mocked(modelsApi.stage).mockResolvedValue(data.stage!)
+    const wrapper = mount(Models); await flushPromises()
+    expect(wrapper.find('[data-testid="activate"]').attributes('disabled')).toBeDefined()
+    await wrapper.find('[data-testid="save-stage"]').trigger('click'); await flushPromises()
+    expect(vi.mocked(modelsApi.stage).mock.calls[0]![1].policy.fallbacks).toEqual({ everyday: ['backup'], vision: ['backup'] })
+    expect(modelsApi.activate).not.toHaveBeenCalled(); expect(modelsApi.probe).not.toHaveBeenCalled(); wrapper.unmount()
+  })
   it('explains an API balance rejection without retrying a paid check', async () => {
     vi.mocked(modelsApi.probe).mockResolvedValue({ id: 'probe-one', profile_id: 'ds-flash', kind: 'text', status: 'failed', error_code: 'insufficient_balance', started_at: '', deadline: '' })
     vi.mocked(modelsApi.probeStatus).mockResolvedValue({ id: 'probe-one', profile_id: 'ds-flash', kind: 'text', status: 'failed', error_code: 'insufficient_balance', started_at: '', deadline: '' })

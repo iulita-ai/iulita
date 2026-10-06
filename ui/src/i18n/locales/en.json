@@ -857,7 +857,8 @@
     "tests": {
       "text": "Test text",
       "tools": "Test tools",
-      "vision": "Test images"
+      "vision": "Test images",
+      "classifier": "Evaluate classifier (12 paid calls)"
     },
     "thinkingValues": {
       "enabled": "On",
@@ -894,7 +895,10 @@
       "authentication_failed": "The provider rejected authentication. Check the key and account access.",
       "model_access_denied": "Your account does not include access to this model. Check model availability for your API product.",
       "credential_product_mismatch": "This key belongs to another provider product. Use a key for the standard model API.",
-      "quota_exhausted": "The provider account quota or plan is unavailable. Check account limits, reset times and subscription status before retrying."
+      "quota_exhausted": "The provider account quota or plan is unavailable. Check account limits, reset times and subscription status before retrying.",
+      "classifier_quality_failed": "Classifier missed a complex or creative task, or overall accuracy was too low. Keep it disabled or test another bounded profile.",
+      "classifier_deadline_or_response_failed": "Classifier exceeded its deadline or failed to produce a verified answer. Activation remains blocked.",
+      "classifier_invalid_label": "Classifier returned an unsupported category. The quality check failed."
     },
     "applyState": "Application state",
     "connectionBlocked": "Connection blocked",
@@ -925,6 +929,15 @@
     "refreshHistory": "Refresh previous settings",
     "noHistory": "Previous settings will appear after you apply a new version.",
     "preparePrevious": "Prepare this version for testing",
-    "legacyPreserved": "Existing configuration preserved"
+    "legacyPreserved": "Existing configuration preserved",
+    "classifierHelp": "A small paid model selects Everyday for simple requests and Complex for reasoning or creative work. Each ambiguous text request adds one paid call (at most 500 characters, no conversation history). Explicit choices and attachments bypass it. On failure, Everyday is used. Save and run the quality check before activation.",
+    "enableClassifier": "Enable paid automatic selection",
+    "classifierProfile": "Classifier profile (output limit ≤ 1024)",
+    "classifierTimeout": "Classifier deadline, milliseconds",
+    "classifierResult": "Quality: {correct}/{total}; complex and creative: {complex}/{complexTotal}; slowest call: {ms} ms",
+    "fallbackTitle": "Backup profiles",
+    "fallbackHelp": "Select up to two backups per role, in the order they should be tried. Only verified profiles with sufficient context are available. Switching occurs only on a temporary failure before any text or tool calls; tool continuations and explicit profile choices keep their model. Failed attempts may incur charges.",
+    "fallbackRole": "{role}: ordered backups",
+    "fallbackTimeout": "Deadline for each attempt with backups, milliseconds"
   }
 }

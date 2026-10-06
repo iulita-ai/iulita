@@ -101,8 +101,28 @@
               </div>
               <n-alert type="info" :show-icon="false">{{ t('models.plannerHint') }}</n-alert>
               <n-h3>{{ t('models.automaticSelection') }}</n-h3>
-              <n-p>{{ t('models.classifierGate') }}</n-p>
-              <n-tag>{{ t(draft.policy.classifier.enabled ? 'models.existingClassifier' : 'models.classifierOff') }}</n-tag>
+              <n-p class="helper">{{ t('models.classifierHelp') }}</n-p>
+              <n-checkbox data-testid="classifier-enabled" v-model:checked="draft.policy.classifier.enabled">{{ t('models.enableClassifier') }}</n-checkbox>
+              <div class="role-grid section-gap">
+                <n-form-item data-field="policy.classifier.profile" :label="t('models.classifierProfile')" :feedback="fieldError('policy.classifier.profile')">
+                  <n-select data-testid="classifier-profile" :value="draft.policy.classifier.profile || null" :options="classifierOptions" clearable @update:value="draft.policy.classifier.profile = $event || ''" />
+                </n-form-item>
+                <n-form-item data-field="policy.classifier.timeout_ms" :label="t('models.classifierTimeout')" :feedback="fieldError('policy.classifier.timeout_ms')">
+                  <n-input-number data-testid="classifier-timeout" :value="draft.policy.classifier.timeout_ms || 5000" :min="500" :max="10000" :step="500" :precision="0" @update:value="draft.policy.classifier.timeout_ms = $event || 5000" />
+                </n-form-item>
+              </div>
+              <n-button data-testid="classifier-evaluate" :disabled="!stage || dirty || busy || operationRunning || !draft.policy.classifier.profile" @click="startProbe(draft.policy.classifier.profile!, 'classifier')">{{ t('models.tests.classifier') }}</n-button>
+              <n-p v-if="classifierEvaluation" class="helper" aria-live="polite">{{ t('models.classifierResult', { correct: classifierEvaluation.correct, total: classifierEvaluation.cases, complex: classifierEvaluation.complex_correct, complexTotal: classifierEvaluation.complex_cases, ms: classifierEvaluation.max_latency_ms }) }} · {{ t(classifierReady ? 'models.passed' : 'models.testsRequired') }}</n-p>
+              <n-h3>{{ t('models.fallbackTitle') }}</n-h3>
+              <n-p class="helper">{{ t('models.fallbackHelp') }}</n-p>
+              <div class="role-grid">
+                <n-form-item v-for="role in roles" :key="`fallback-${role}`" :data-field="`policy.fallbacks.${role}`" :label="t('models.fallbackRole', { role: t(`models.roles.${role}`) })" :feedback="fieldError(`policy.fallbacks.${role}`)">
+                  <n-select :data-testid="`fallback-${role}`" :value="draft.policy.fallbacks?.[role] || []" :options="fallbackOptions(role)" multiple clearable :max="2" @update:value="setFallback(role, $event)" />
+                </n-form-item>
+                <n-form-item data-field="policy.fallback_timeout_ms" :label="t('models.fallbackTimeout')" :feedback="fieldError('policy.fallback_timeout_ms')">
+                  <n-input-number :value="draft.policy.fallback_timeout_ms || 60000" :min="1000" :max="120000" :step="1000" :precision="0" @update:value="draft.policy.fallback_timeout_ms = $event || 60000" />
+                </n-form-item>
+              </div>
               <n-collapse v-if="Object.keys(draft.policy.legacy_hints || {}).length || Object.keys(draft.policy.legacy_profile_hints || {}).length" class="section-gap">
                 <n-collapse-item :title="t('models.existingRoutes')" name="legacy-routes">
                   <n-p class="helper">{{ t('models.existingRoutesHint') }}</n-p>
@@ -208,6 +228,7 @@ const presets: ModelProfile[] = [
   { id: 'ds-pro', name: 'DeepSeek Pro', connection: 'deepseek', model: 'deepseek-v4-pro', max_output_tokens: 16384, thinking: 'disabled', clear_thinking: false },
   { id: 'glm-flash', name: 'GLM Flash', connection: 'zai', model: 'glm-5.3-flash', max_output_tokens: 8192, thinking: 'enabled', reasoning_effort: 'low', clear_thinking: true },
   { id: 'glm-main', name: 'GLM 5.3', connection: 'zai', model: 'glm-5.3', max_output_tokens: 16384, thinking: 'enabled', reasoning_effort: 'high', clear_thinking: true },
+  { id: 'glm-selector', name: 'GLM Flash Selector', connection: 'zai', model: 'glm-5.3-flash', max_output_tokens: 512, thinking: 'enabled', reasoning_effort: 'low', clear_thinking: true },
 ]
 const availablePresets = computed(() => presets.filter(p => !draft.value.profiles.some(existing => existing.id === p.id)))
 const effective = computed(() => stage.value?.effective_profiles || view.value?.effective_profiles || [])
@@ -229,9 +250,28 @@ const referenced = (id: string) => Object.values(draft.value.policy).some(value 
 const readyToActivate = computed(() => !!stage.value && !operationRunning.value && roles.every(role => {
   const id = draft.value.policy[role]
   return !id || (eligible(id) && (role !== 'vision' || isLegacyPreserved(id) || evidence(id).some(e => e.kind === 'vision' && e.passed)))
-}) && !!draft.value.policy.everyday)
+}) && !!draft.value.policy.everyday && (!draft.value.policy.classifier.enabled || (!!draft.value.policy.complex && classifierReady.value)) && roles.every(role => (draft.value.policy.fallbacks?.[role] || []).length <= 2 && (draft.value.policy.fallbacks?.[role] || []).every(id => fallbackOptions(role).some(option => option.value === id && !option.disabled))))
 function roleOptions(role: string) {
   return draft.value.profiles.map(p => ({ value: p.id, label: `${p.name}${isLegacyPreserved(p.id) ? ` (${t('models.legacyPreserved')})` : eligible(p.id) ? '' : ` (${t('models.testsRequired')})`}`, disabled: !eligible(p.id) || (role === 'vision' && (!supportsImages(p) || (!isLegacyPreserved(p.id) && !evidence(p.id).some(e => e.kind === 'vision' && e.passed)))) || draft.value.policy.forbidden_providers?.includes(p.connection) }))
+}
+const classifierOptions = computed(() => draft.value.profiles.filter(p => p.max_output_tokens <= 1024).map(p => ({ value: p.id, label: p.name, disabled: draft.value.policy.forbidden_providers?.includes(p.connection) || connections.value.some(c => c.provider === p.connection && c.availability === 'suspended') })))
+const classifierEvaluation = computed(() => evidence(draft.value.policy.classifier.profile || '').find(e => e.kind === 'classifier'))
+const classifierReady = computed(() => {
+  const id = draft.value.policy.classifier.profile || ''
+  const result = classifierEvaluation.value
+  return eligible(id) && !isLegacyPreserved(id) && draft.value.profiles.some(p => p.id === id && p.max_output_tokens <= 1024) && !!result?.passed && result.fixture_version === 'bounded-selector-v1-eval-v1' && result.classifier_timeout_ms === (draft.value.policy.classifier.timeout_ms || 5000) && result.cases === 12 && (result.correct || 0) >= 11 && result.complex_cases === 8 && result.complex_correct === 8
+})
+function fallbackOptions(role: typeof roles[number]) {
+  const primary = draft.value.profiles.find(p => p.id === draft.value.policy[role])
+  const primaryWindow = primary ? definition(primary)?.context_tokens || 0 : 0
+  return roleOptions(role).map(option => {
+    const profile = draft.value.profiles.find(p => p.id === option.value)!
+    return { ...option, disabled: option.disabled || isLegacyPreserved(option.value) || option.value === draft.value.policy[role] || (definition(profile)?.context_tokens || 0) < primaryWindow }
+  })
+}
+function setFallback(role: typeof roles[number], ids: string[]) {
+  draft.value.policy.fallbacks ||= {}
+  draft.value.policy.fallbacks[role] = ids
 }
 function modelOptions(p: ModelProfile) {
   const definitions = catalog.value.filter(d => d.provider === p.connection)
@@ -268,7 +308,7 @@ function report(err: unknown) {
   fields.value = err instanceof ModelAPIError ? err.fields : []
   const code = err instanceof ModelAPIError ? err.code : 'network'
   const known = ['revision_conflict', 'stage_conflict', 'stage_expired', 'stage_busy', 'password_change_required', 'unauthenticated', 'admin_required', 'invalid_settings', 'network']
-  const aliases: Record<string, string> = { activation_failed: 'activationFailed', stage_owner_required: 'errors.stage_busy', secret_encryption_unavailable: 'encryptionRequired', environment_override: 'environmentOverride', verification_required: 'assignmentGate', vision_verification_required: 'assignmentGate', evaluation_required: 'classifierGate', credential_revoked: 'revokedConnection', forbidden_provider: 'forbiddenProvider', idempotency_key_expired: 'expiredTest' }
+  const aliases: Record<string, string> = { activation_failed: 'activationFailed', stage_owner_required: 'errors.stage_busy', secret_encryption_unavailable: 'encryptionRequired', environment_override: 'environmentOverride', verification_required: 'assignmentGate', vision_verification_required: 'assignmentGate', evaluation_required: 'classifierHelp', credential_revoked: 'revokedConnection', forbidden_provider: 'forbiddenProvider', idempotency_key_expired: 'expiredTest' }
   error.value = t(`models.${aliases[code] || `errors.${known.includes(code) ? code : 'request_failed'}`}`)
   if (err instanceof ModelAPIError && err.status === 410) { pendingProbe.value = undefined; operation.value = undefined; rememberOperation() }
   if (fields.value.length) {

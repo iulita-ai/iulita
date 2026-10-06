@@ -67,8 +67,8 @@ func (m *Manager) Probe(ctx context.Context, actor string, req ProbeRequest) (Pr
 	if err := m.checkRevisionLocked(req.ExpectedRevision); err != nil {
 		return ProbeView{}, err
 	}
-	if req.Kind != "text" && req.Kind != "vision" && req.Kind != "tools" {
-		return ProbeView{}, failure("invalid_probe_kind", "Use a text, image or tool check", 422)
+	if req.Kind != "text" && req.Kind != "vision" && req.Kind != "tools" && req.Kind != "classifier" {
+		return ProbeView{}, failure("invalid_probe_kind", "Use a text, image, tool or classifier check", 422)
 	}
 	settings := m.state.Settings
 	connections := m.state.Connections
@@ -91,6 +91,9 @@ func (m *Manager) Probe(ctx context.Context, actor string, req ProbeRequest) (Pr
 	}
 	if !found {
 		return ProbeView{}, failure("invalid_reference", "Profile does not exist", 422)
+	}
+	if req.Kind == "classifier" && (profile.ID != settings.Policy.Classifier.Profile || profile.MaxOutputTokens > 1024) {
+		return ProbeView{}, failure("invalid_classifier_profile", "Select this bounded profile as classifier before evaluation", 422)
 	}
 	d, known := models.Lookup(profile.Connection, profile.Model)
 	if req.Kind == "vision" && profile.Connection != "claude" && (!known || !d.Images) {
@@ -146,6 +149,7 @@ func (m *Manager) Probe(ctx context.Context, actor string, req ProbeRequest) (Pr
 	// our resolved settings so polling cannot change the probe's identity.
 	view := ProbeView{ID: randomID(), ProfileID: profile.ID, StageID: req.StageID, Kind: req.Kind, Status: "running", StartedAt: now, Deadline: now.Add(ProbeDeadline)}
 	record := probeRecord{Revision: req.ExpectedRevision, View: view, Actor: actor, Key: req.IdempotencyKey, RequestHash: requestHash, Fingerprint: profileFingerprint(profile, c.Connection), Generation: c.Connection.Generation, Provider: profile.Connection, ExpiresAt: now.Add(StageTTL)}
+	record.ClassifierTimeoutMS = settings.Policy.Classifier.Timeout()
 	candidate.Probes[view.ID] = record
 	if err := m.persistLocked(ctx, candidate, actor); err != nil {
 		return ProbeView{}, err
@@ -212,8 +216,8 @@ func (m *Manager) runProbe(ctx context.Context, r probeRecord, profile models.Pr
 	defer m.activity.Done()
 	usage := llm.Usage{}
 	served := ""
-	call := func(req llm.Request) (llm.Response, error) {
-		if err := m.authorizeActor(ctx, r.Actor); err != nil {
+	callWithContext := func(callCtx context.Context, req llm.Request) (llm.Response, error) {
+		if err := m.authorizeActor(callCtx, r.Actor); err != nil {
 			return llm.Response{}, err
 		}
 		req.UserID = r.Actor
@@ -224,7 +228,7 @@ func (m *Manager) runProbe(ctx context.Context, r probeRecord, profile models.Pr
 		if r.View.Kind == "vision" {
 			req.Role = "vision"
 		}
-		response, err := provider.Complete(ctx, req)
+		response, err := provider.Complete(callCtx, req)
 		usage.InputTokens += response.Usage.InputTokens
 		usage.OutputTokens += response.Usage.OutputTokens
 		usage.CacheReadInputTokens += response.Usage.CacheReadInputTokens
@@ -246,9 +250,50 @@ func (m *Manager) runProbe(ctx context.Context, r probeRecord, profile models.Pr
 		served = response.Model
 		return response, nil
 	}
+	call := func(req llm.Request) (llm.Response, error) { return callWithContext(ctx, req) }
 	passed := false
 	errorCode := "probe_failed"
+	var evaluation Evidence
 	switch r.View.Kind {
+	case "classifier":
+		evaluation.ClassifierTimeoutMS = r.ClassifierTimeoutMS
+		for _, fixture := range classifierFixtures {
+			started := time.Now()
+			caseCtx, cancel := context.WithTimeout(ctx, time.Duration(r.ClassifierTimeoutMS)*time.Millisecond)
+			response, err := callWithContext(caseCtx, llm.ClassificationRequest(fixture.Message))
+			expired := caseCtx.Err() != nil
+			cancel()
+			elapsed := time.Since(started).Milliseconds()
+			if elapsed > evaluation.MaxLatencyMS {
+				evaluation.MaxLatencyMS = elapsed
+			}
+			evaluation.Cases++
+			if fixture.Role == "complex" {
+				evaluation.ComplexCases++
+			}
+			if err != nil || expired {
+				errorCode = "classifier_deadline_or_response_failed"
+				if err != nil && !expired {
+					errorCode = probeErrorCode(err)
+				}
+				break
+			}
+			category := llm.ParseClassification(response)
+			if category == "" {
+				errorCode = "classifier_invalid_label"
+				break
+			}
+			if llm.ClassificationRole(category) == fixture.Role {
+				evaluation.Correct++
+				if fixture.Role == "complex" {
+					evaluation.ComplexCorrect++
+				}
+			}
+		}
+		passed = evaluation.Cases == len(classifierFixtures) && evaluation.Correct >= 11 && evaluation.ComplexCases == 8 && evaluation.ComplexCorrect == 8
+		if !passed && evaluation.Cases == len(classifierFixtures) {
+			errorCode = "classifier_quality_failed"
+		}
 	case "text":
 		nonce := randomID()[:12]
 		response, err := call(llm.Request{SystemPrompt: "Return exactly the requested JSON object. Do not add prose or markdown.", Message: "Return {\"nonce\":\"" + nonce + "\"}. This is a synthetic connection check."})
@@ -301,6 +346,13 @@ func (m *Manager) runProbe(ctx context.Context, r probeRecord, profile models.Pr
 	result := Evidence{Kind: r.View.Kind, Passed: passed, CheckedAt: m.now().UTC(), RequestedModel: profile.Model, ServedModel: served, Fingerprint: r.Fingerprint, FixtureVersion: FixtureVersion, CatalogVersion: models.CatalogVersion, CompatibilityVersion: models.CompatibilityVersion(profile.Connection, profile.Model), Usage: usage}
 	if r.View.Kind == "vision" {
 		result.FixtureVersion = VisionFixtureVersion
+	}
+	if r.View.Kind == "classifier" {
+		result.FixtureVersion = ClassifierFixtureVersion
+		result.ClassifierTimeoutMS = evaluation.ClassifierTimeoutMS
+		result.Cases, result.Correct = evaluation.Cases, evaluation.Correct
+		result.ComplexCases, result.ComplexCorrect = evaluation.ComplexCases, evaluation.ComplexCorrect
+		result.MaxLatencyMS = evaluation.MaxLatencyMS
 	}
 	if !passed {
 		result.ErrorCode = errorCode
@@ -362,7 +414,7 @@ func (m *Manager) runProbe(ctx context.Context, r probeRecord, profile models.Pr
 	}
 	current.View.ErrorCode = result.ErrorCode
 	candidate.Probes[r.View.ID] = current
-	if result.Passed {
+	if result.Passed || r.View.Kind == "classifier" && valid {
 		evidence := candidate.Evidence
 		if r.View.StageID != "" {
 			evidence = candidate.Stage.Evidence
