@@ -9,9 +9,12 @@ type TaskProvider struct {
 	hint, operation string
 }
 
+// NewTaskProvider binds background request routing and operation provenance.
 func NewTaskProvider(inner Provider, hint, operation string) *TaskProvider {
 	return &TaskProvider{inner: inner, hint: hint, operation: operation}
 }
+
+// Complete fills missing task routing metadata before invoking the shared provider.
 func (p *TaskProvider) Complete(ctx context.Context, req Request) (Response, error) {
 	if req.RouteHint == "" && req.ProfileID == "" {
 		req.RouteHint = p.hint

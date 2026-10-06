@@ -46,7 +46,10 @@ func NewOfficialModelClient(provider, endpoint string, base *http.Client) (*http
 	if err != nil {
 		return nil, "", err
 	}
-	origin, _ := url.Parse(canonical)
+	origin, err := url.Parse(canonical)
+	if err != nil {
+		return nil, "", fmt.Errorf("untrusted model endpoint")
+	}
 	client := http.Client{}
 	if base != nil {
 		client = *base
@@ -67,6 +70,7 @@ type boundModelTransport struct {
 	origin *url.URL
 }
 
+// RoundTrip submits only allowed methods and paths at the bound official origin.
 func (t *boundModelTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	u := req.URL
 	if u == nil || u.Scheme != t.origin.Scheme || u.Host != t.origin.Host || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" || u.RawPath != "" || req.Host != "" && req.Host != t.origin.Host {

@@ -11,5 +11,7 @@ func (e *UnsentRequestError) Error() string {
 	}
 	return "request rejected before submission: " + e.Cause.Error()
 }
+
+// NoCharge reports that local validation rejected the request before submission.
 func (e *UnsentRequestError) NoCharge() bool { return true }
 func (e *UnsentRequestError) Unwrap() error  { return e.Cause }

@@ -10,10 +10,16 @@ import (
 	"unicode/utf8"
 )
 
+// MaxSettingsBytes bounds the serialized settings document.
 const MaxSettingsBytes = 256 << 10
+
+// MaxProfiles limits the number of profiles in one settings document.
 const MaxProfiles = 32
+
+// MaxDeploymentOutputTokens caps output independently of vendor capacity.
 const MaxDeploymentOutputTokens = 32_768
 
+// Profile identifies a model and its bounded invocation parameters.
 type Profile struct {
 	ID              string `json:"id" koanf:"id"`
 	Name            string `json:"name" koanf:"name"`
@@ -24,10 +30,14 @@ type Profile struct {
 	ReasoningEffort string `json:"reasoning_effort,omitempty" koanf:"reasoning_effort"`
 	ClearThinking   bool   `json:"clear_thinking" koanf:"clear_thinking"`
 }
+
+// Classifier configures optional model-based task classification.
 type Classifier struct {
 	Enabled bool   `json:"enabled" koanf:"enabled"`
 	Profile string `json:"profile,omitempty" koanf:"profile"`
 }
+
+// Policy assigns profiles to task roles and restricts routing alternatives.
 type Policy struct {
 	Everyday    string            `json:"everyday" koanf:"everyday"`
 	Complex     string            `json:"complex" koanf:"complex"`
@@ -41,11 +51,15 @@ type Policy struct {
 	Fallbacks          map[string][]string `json:"fallbacks,omitempty" koanf:"fallbacks"`
 	ForbiddenProviders []string            `json:"forbidden_providers,omitempty" koanf:"forbidden_providers"`
 }
+
+// Settings is the versioned, nonsecret model configuration document.
 type Settings struct {
 	SchemaVersion int       `json:"schema_version" koanf:"schema_version"`
 	Profiles      []Profile `json:"profiles" koanf:"profiles"`
 	Policy        Policy    `json:"policy" koanf:"policy"`
 }
+
+// FieldError identifies a validation failure at a settings field.
 type FieldError struct {
 	Path    string `json:"path"`
 	Code    string `json:"code"`
@@ -57,6 +71,7 @@ func (e FieldError) Error() string { return e.Path + ": " + e.Message }
 var validHint = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
 var validID = regexp.MustCompile(`^[a-z][a-z0-9-]{0,47}$`)
 
+// Parse decodes and validates exactly one bounded settings document.
 func Parse(data []byte) (Settings, error) {
 	if len(data) > MaxSettingsBytes {
 		return Settings{}, fmt.Errorf("model settings exceed size limit")
@@ -76,6 +91,8 @@ func Parse(data []byte) (Settings, error) {
 	}
 	return s, nil
 }
+
+// ValidProvider reports whether the provider has a supported adapter.
 func ValidProvider(p string) bool {
 	switch p {
 	case "claude", "openai", "deepseek", "ollama", "zai":
@@ -83,6 +100,8 @@ func ValidProvider(p string) bool {
 	}
 	return false
 }
+
+// Roles returns the profile assigned to each task role.
 func (p Policy) Roles() map[string]string {
 	return map[string]string{"everyday": p.Everyday, "complex": p.Complex, "vision": p.Vision, "background": p.Background}
 }
@@ -114,7 +133,7 @@ func (s Settings) Validate() []FieldError {
 		if !ValidProvider(p.Connection) {
 			add(path+".connection", "invalid_connection", "unknown provider")
 		}
-		if len(p.Model) == 0 || len(p.Model) > 128 || strings.TrimSpace(p.Model) != p.Model || strings.ContainsAny(p.Model, "\x00\r\n") {
+		if p.Model == "" || len(p.Model) > 128 || strings.TrimSpace(p.Model) != p.Model || strings.ContainsAny(p.Model, "\x00\r\n") {
 			add(path+".model", "invalid_model", "model must be a bounded nonempty identifier")
 		}
 		if p.MaxOutputTokens < 1 || p.MaxOutputTokens > MaxDeploymentOutputTokens {
@@ -130,7 +149,8 @@ func (s Settings) Validate() []FieldError {
 		if p.Connection == "claude" && p.Thinking != "disabled" {
 			add(path+".thinking", "unsupported_parameter", "Claude profiles use visible-only tool history; signed thinking replay is not enabled")
 		}
-		if p.Connection == "zai" {
+		switch {
+		case p.Connection == "zai":
 			if !known {
 				add(path+".model", "unsupported_model", "model is not in the supported Z.ai catalog")
 			}
@@ -142,7 +162,7 @@ func (s Settings) Validate() []FieldError {
 			default:
 				add(path+".reasoning_effort", "unsupported_parameter", "GLM effort must be low, high or max")
 			}
-		} else if p.Connection == "deepseek" {
+		case p.Connection == "deepseek":
 			if !known {
 				add(path+".model", "unsupported_model", "new DeepSeek profiles require a supported catalog model")
 			}
@@ -152,7 +172,7 @@ func (s Settings) Validate() []FieldError {
 			if p.Thinking == "enabled" && p.ReasoningEffort != "high" && p.ReasoningEffort != "max" {
 				add(path+".reasoning_effort", "unsupported_parameter", "DeepSeek thinking effort must be high or max")
 			}
-		} else if p.ReasoningEffort != "" || p.ClearThinking {
+		case p.ReasoningEffort != "" || p.ClearThinking:
 			add(path+".reasoning_effort", "unsupported_parameter", "reasoning options are supported only on DeepSeek and Z.ai profiles")
 		}
 	}

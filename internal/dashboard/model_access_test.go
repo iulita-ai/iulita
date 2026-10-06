@@ -3,6 +3,10 @@ package dashboard
 import (
 	"context"
 	"encoding/json"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/iulita-ai/iulita/internal/auth"
 	"github.com/iulita-ai/iulita/internal/domain"
@@ -11,9 +15,6 @@ import (
 	"github.com/iulita-ai/iulita/internal/models"
 	"github.com/iulita-ai/iulita/internal/storage"
 	"go.uber.org/zap"
-	"net/http/httptest"
-	"strings"
-	"testing"
 )
 
 type accessUserRepo struct {
@@ -81,6 +82,43 @@ func TestModelsRoutesAbsentWithoutAuth(t *testing.T) {
 	for _, route := range s.app.GetRoutes() {
 		if strings.HasPrefix(route.Path, "/api/models/") {
 			t.Fatalf("administrative model route exposed without authentication: %s", route.Path)
+		}
+	}
+}
+
+func TestCredentialWriteGuardRejectsMalformedJSONBeforeManagedConnectionLookup(t *testing.T) {
+	cs := buildConfigStore(t, t.TempDir())
+	cs.SetModelPolicyManaged()
+	s := &Server{configStore: cs}
+	app := fiber.New()
+	admitted := 0
+	app.All("/credentials", s.modelCredentialWrite, func(c *fiber.Ctx) error {
+		admitted++
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+	for _, fixture := range []struct {
+		method, body string
+		want         int
+		allow        bool
+	}{
+		{"POST", `{"name":"models.runtime",`, fiber.StatusBadRequest, false},
+		{"POST", `{"consumer_id":42}`, fiber.StatusBadRequest, false},
+		{"POST", `{"name":"models.runtime"}`, fiber.StatusConflict, false},
+		{"POST", `{"consumer_id":"zai.api_key"}`, fiber.StatusConflict, false},
+		{"POST", `{"name":"unrelated.service"}`, fiber.StatusNoContent, true},
+		{"DELETE", "", fiber.StatusNoContent, true},
+		{"GET", "malformed", fiber.StatusNoContent, true},
+	} {
+		before := admitted
+		res, err := app.Test(httptest.NewRequest(fixture.method, "/credentials", strings.NewReader(fixture.body)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if closeErr := res.Body.Close(); closeErr != nil {
+			t.Fatal(closeErr)
+		}
+		if res.StatusCode != fixture.want || (admitted > before) != fixture.allow {
+			t.Fatalf("%s: got status=%d admitted=%v, want status=%d admitted=%v", fixture.method, res.StatusCode, admitted > before, fixture.want, fixture.allow)
 		}
 	}
 }

@@ -15,7 +15,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	_ "golang.org/x/image/webp"
 	"image"
 	_ "image/gif"
 	_ "image/jpeg"
@@ -25,6 +24,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	_ "golang.org/x/image/webp"
 
 	"go.uber.org/zap"
 
@@ -177,6 +178,7 @@ type contentPart struct {
 	} `json:"image_url,omitempty"`
 }
 
+// MarshalJSON encodes text or multipart content using the provider wire format.
 func (m chatMessage) MarshalJSON() ([]byte, error) {
 	type plain chatMessage
 	if len(m.Parts) == 0 {
@@ -192,6 +194,7 @@ func (m chatMessage) MarshalJSON() ([]byte, error) {
 // returned by compatible GLM endpoints. Marshal always uses a JSON string.
 type arguments string
 
+// UnmarshalJSON accepts JSON strings and objects while rejecting other tool arguments.
 func (a *arguments) UnmarshalJSON(data []byte) error {
 	var value string
 	if err := json.Unmarshal(data, &value); err == nil {
@@ -529,7 +532,7 @@ func (p *Provider) requestBody(req llm.Request, model string, maxTok int, stream
 	if req.ForceTool != "" && !req.RequireToolOutcome && (o.ProviderName == "zai" || o.Thinking == "enabled" || (o.Thinking == "" && isThinkingModel(model))) {
 		return nil, fmt.Errorf("%s model does not support required named tool choice", o.ProviderName)
 	}
-	if o.ReasoningEffort != "" && o.ReasoningEffort != "high" && o.ReasoningEffort != "max" && !(o.ProviderName == "zai" && o.ReasoningEffort == "low") {
+	if o.ReasoningEffort != "" && o.ReasoningEffort != "high" && o.ReasoningEffort != "max" && (o.ProviderName != "zai" || o.ReasoningEffort != "low") {
 		return nil, fmt.Errorf("unsupported reasoning effort")
 	}
 	if o.ProviderName == "zai" && o.Thinking == "disabled" {
@@ -957,8 +960,12 @@ func (e *apiError) Error() string {
 }
 
 // StatusCode satisfies llm.HTTPStatusError so 429/5xx responses are retried.
-func (e *apiError) StatusCode() int        { return e.status }
-func (e *apiError) Permanent() bool        { return e.permanent }
+func (e *apiError) StatusCode() int { return e.status }
+
+// Permanent identifies documented errors that should not be retried.
+func (e *apiError) Permanent() bool { return e.permanent }
+
+// ModelErrorCode returns a sanitized server-selected error category.
 func (e *apiError) ModelErrorCode() string { return e.code }
 
 // errorFromResponse reads a bounded portion of a non-2xx body and returns either

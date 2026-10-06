@@ -37,6 +37,8 @@ func validateProbeKey(key string, now time.Time) error {
 	}
 	return nil
 }
+
+// Probe starts an actor-authorized synthetic check with a durable marker.
 func (m *Manager) Probe(ctx context.Context, actor string, req ProbeRequest) (ProbeView, error) {
 	if err := m.authorizeActor(ctx, actor); err != nil {
 		return ProbeView{}, err
@@ -53,7 +55,8 @@ func (m *Manager) Probe(ctx context.Context, actor string, req ProbeRequest) (Pr
 	requestHash := hashJSON(req)
 	// Markers are checked before quota/CAS so a lost response returns the same
 	// operation even after its work has completed or the stage was activated.
-	for _, r := range m.state.Probes {
+	for id := range m.state.Probes {
+		r := m.state.Probes[id]
 		if r.Actor == actor && r.Key == req.IdempotencyKey {
 			if r.RequestHash != requestHash {
 				return ProbeView{}, failure("idempotency_conflict", "This key belongs to a different check", 409)
@@ -90,7 +93,7 @@ func (m *Manager) Probe(ctx context.Context, actor string, req ProbeRequest) (Pr
 		return ProbeView{}, failure("invalid_reference", "Profile does not exist", 422)
 	}
 	d, known := models.Lookup(profile.Connection, profile.Model)
-	if req.Kind == "vision" && !(known && d.Images || profile.Connection == "claude") {
+	if req.Kind == "vision" && profile.Connection != "claude" && (!known || !d.Images) {
 		return ProbeView{}, failure("unsupported_images", "This documented model cannot accept images", 422)
 	}
 	c, ok := connections[profile.Connection]
@@ -110,7 +113,8 @@ func (m *Manager) Probe(ctx context.Context, actor string, req ProbeRequest) (Pr
 	}
 	var starts []time.Time
 	// Durable starts preserve the per-actor rate window across restart.
-	for _, record := range m.state.Probes {
+	for id := range m.state.Probes {
+		record := m.state.Probes[id]
 		if record.Actor == actor && now.Sub(record.View.StartedAt) < time.Minute {
 			starts = append(starts, record.View.StartedAt)
 		}
@@ -119,7 +123,8 @@ func (m *Manager) Probe(ctx context.Context, actor string, req ProbeRequest) (Pr
 		return ProbeView{}, failure("probe_rate_limit", "At most five checks per administrator per minute are allowed", 429)
 	}
 	candidate := cloneState(m.state)
-	for id, r := range candidate.Probes {
+	for id := range candidate.Probes {
+		r := candidate.Probes[id]
 		if !now.Before(r.ExpiresAt) {
 			delete(candidate.Probes, id)
 		}
@@ -150,7 +155,7 @@ func (m *Manager) Probe(ctx context.Context, actor string, req ProbeRequest) (Pr
 	m.probeCancel[view.ID] = cancel
 	guarded := &guardedProvider{manager: m, inner: inner, provider: profile.Connection, generation: c.Connection.Generation, stageID: req.StageID}
 	m.activity.Add(1)
-	go m.runProbe(probeCtx, record, profile, guarded)
+	go m.runProbe(probeCtx, record, profile, guarded) //nolint:gosec // G118: durable checks outlive the HTTP request; their own deadline, cancellation handle and shutdown guard bound their lifetime.
 	return copyProbeView(view), nil
 }
 func copyProbeView(v ProbeView) ProbeView {
@@ -160,6 +165,8 @@ func copyProbeView(v ProbeView) ProbeView {
 	}
 	return v
 }
+
+// ProbeStatus returns the actor-owned check without rerunning provider calls.
 func (m *Manager) ProbeStatus(ctx context.Context, actor, id string) (ProbeView, error) {
 	if err := m.authorizeActor(ctx, actor); err != nil {
 		return ProbeView{}, err
@@ -172,6 +179,8 @@ func (m *Manager) ProbeStatus(ctx context.Context, actor, id string) (ProbeView,
 	}
 	return copyProbeView(r.View), nil
 }
+
+// CancelProbe persists cancellation intent before canceling admitted work.
 func (m *Manager) CancelProbe(ctx context.Context, actor, id string) (ProbeView, error) {
 	if err := m.authorizeActor(ctx, actor); err != nil {
 		return ProbeView{}, err
@@ -273,8 +282,9 @@ func (m *Manager) runProbe(ctx context.Context, r probeRecord, profile models.Pr
 		request := llm.Request{SystemPrompt: "Use probe_echo with the provided nonce. After receiving its result, return only JSON containing that nonce. Do not invent tool results.", Message: "Call probe_echo with nonce " + nonce, Tools: []llm.ToolDefinition{tool}}
 		response, err := call(request)
 		if err == nil && len(response.ToolCalls) == 1 && response.ToolCalls[0].Name == "probe_echo" && response.ToolCalls[0].ID != "" && matchesNonce(string(response.ToolCalls[0].Input), nonce) {
-			result, _ := json.Marshal(map[string]string{"nonce": nonce})
-			request.ToolExchanges = []llm.ToolExchange{{AssistantText: response.Content, ReasoningContent: response.ReasoningContent, ToolCalls: response.ToolCalls, Results: []llm.ToolResult{{ToolCallID: response.ToolCalls[0].ID, Content: string(result)}}}}
+			// The nonce is hexadecimal, so this fixed JSON needs no escaping.
+			result := `{"nonce":"` + nonce + `"}`
+			request.ToolExchanges = []llm.ToolExchange{{AssistantText: response.Content, ReasoningContent: response.ReasoningContent, ToolCalls: response.ToolCalls, Results: []llm.ToolResult{{ToolCallID: response.ToolCalls[0].ID, Content: result}}}}
 			response, err = call(request)
 			passed = err == nil && len(response.ToolCalls) == 0 && matchesNonce(response.Content, nonce)
 		}
@@ -284,7 +294,7 @@ func (m *Manager) runProbe(ctx context.Context, r probeRecord, profile models.Pr
 	}
 	if ctx.Err() != nil {
 		passed = false
-		errorCode = "cancelled_or_deadline_unknown"
+		errorCode = "cancelled_or_deadline_unknown" //nolint:misspell // Preserve the persisted API error category.
 	}
 	result := Evidence{Kind: r.View.Kind, Passed: passed, CheckedAt: m.now().UTC(), RequestedModel: profile.Model, ServedModel: served, Fingerprint: r.Fingerprint, FixtureVersion: FixtureVersion, CatalogVersion: models.CatalogVersion, CompatibilityVersion: models.CompatibilityVersion(profile.Connection, profile.Model), Usage: usage}
 	if r.View.Kind == "vision" {
@@ -298,7 +308,7 @@ func (m *Manager) runProbe(ctx context.Context, r probeRecord, profile models.Pr
 	authErr := m.authorizeActor(context.Background(), r.Actor)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	cancelled := ctx.Err() != nil
+	canceled := ctx.Err() != nil
 	delete(m.running, r.Provider)
 	if cancel := m.probeCancel[r.View.ID]; cancel != nil {
 		cancel()
@@ -311,7 +321,7 @@ func (m *Manager) runProbe(ctx context.Context, r probeRecord, profile models.Pr
 	if !exists {
 		return
 	}
-	valid := authErr == nil && !cancelled && m.now().Before(r.View.Deadline)
+	valid := authErr == nil && !canceled && m.now().Before(r.View.Deadline)
 	if _, denied := m.state.Denied[r.Generation]; denied {
 		valid = false
 	}
@@ -337,14 +347,15 @@ func (m *Manager) runProbe(ctx context.Context, r probeRecord, profile models.Pr
 	}
 	if !valid {
 		result.Passed = false
-		result.ErrorCode = "stale_or_cancelled_check"
+		result.ErrorCode = "stale_or_cancelled_check" //nolint:misspell // Preserve the persisted API error category.
 	}
 	current.View.Result = &result
-	if result.Passed {
+	switch {
+	case result.Passed:
 		current.View.Status = "completed"
-	} else if cancelled || current.View.Status == "cancel_requested" {
-		current.View.Status = "cancelled"
-	} else {
+	case canceled || current.View.Status == "cancel_requested":
+		current.View.Status = "cancelled" //nolint:misspell // Preserve the persisted API status spelling.
+	default:
 		current.View.Status = "failed"
 	}
 	current.View.ErrorCode = result.ErrorCode
@@ -378,8 +389,9 @@ func probeErrorCode(err error) string {
 			return code
 		}
 	}
-	if e, ok := err.(*Error); ok {
-		return e.Code
+	var coded *Error
+	if errors.As(err, &coded) {
+		return coded.Code
 	}
 	return "provider_check_failed"
 }
@@ -438,6 +450,8 @@ func imageFixture(nonce string, rectangle color.RGBA) []byte {
 		}
 	}
 	var buffer bytes.Buffer
-	_ = png.Encode(&buffer, large)
+	if err := png.Encode(&buffer, large); err != nil {
+		panic("synthetic PNG fixture could not be encoded")
+	}
 	return buffer.Bytes()
 }

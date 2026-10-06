@@ -65,7 +65,7 @@ func (a *Assistant) compressIfNeeded(ctx context.Context, chatID string, history
 	summaryResp, err := a.provider.Complete(ctx, summaryReq)
 	if err != nil {
 		a.logger.Error("compression summarization failed", zap.Error(err))
-		return history, nil // fail gracefully
+		return history, fmt.Errorf("generate conversation summary: %w", err) // Preserve history on failure.
 	}
 
 	prefix := i18n.T(ctx, "AssistantSummaryPrefix")
@@ -84,7 +84,7 @@ func (a *Assistant) compressIfNeeded(ctx context.Context, chatID string, history
 	summaryMsg := &domain.ChatMessage{ChatID: chatID, UserID: oldMessages[0].UserID, Role: domain.RoleAssistant, Content: summary, CreatedAt: oldMessages[0].CreatedAt}
 	if err := replacer.ReplaceMessagesWithSummary(ctx, chatID, oldMessages[len(oldMessages)-1].ID, summaryMsg); err != nil {
 		a.logger.Error("failed to replace compressed history", zap.Error(err))
-		return history, nil
+		return history, fmt.Errorf("replace conversation history with summary: %w", err)
 	}
 
 	// Return compressed history: summary + kept messages.

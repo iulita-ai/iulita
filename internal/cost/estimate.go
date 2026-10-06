@@ -11,6 +11,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/llm"
 )
 
+// PriceVersion identifies the documented rate assumptions used by estimates.
 const PriceVersion = "2026-10-05-conservative-peak-v1"
 
 // Estimate is an indicative USD amount, never a provider invoice. USD remains
@@ -24,6 +25,7 @@ type Estimate struct {
 	At           time.Time `json:"at"`
 }
 
+// Estimate computes an indicative cost only when usage and configured prices are valid.
 func (t *Tracker) Estimate(model string, usage llm.Usage, at time.Time) Estimate {
 	e := Estimate{Status: "price_unknown", At: at.UTC(), PriceVersion: PriceVersion}
 	price, ok := t.prices[model]
@@ -62,13 +64,18 @@ func (t *Tracker) Estimate(model string, usage llm.Usage, at time.Time) Estimate
 		e.Source, e.Status = "compiled_legacy_prices", "legacy_estimate"
 	}
 	if t.customPrices[model] {
-		raw, _ := json.Marshal(price)
+		raw, err := json.Marshal(price)
+		if err != nil {
+			e.USD, e.Known, e.Status, e.Source = nil, false, "price_invalid", ""
+			return e
+		}
 		hash := sha256.Sum256(raw)
 		e.Source, e.Status, e.PriceVersion = "configured_override", "configured_estimate", "configured:"+hex.EncodeToString(hash[:8])
 	}
 	return e
 }
 
+// EstimateAttempt preserves unknown charges and proven local zero-cost outcomes.
 func (t *Tracker) EstimateAttempt(a llm.Attempt) Estimate {
 	if a.Status == "rejected" && !a.ChargeUnknown {
 		zero := 0.0

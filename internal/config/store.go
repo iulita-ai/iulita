@@ -496,18 +496,19 @@ func (s *Store) ListDecrypted() []ConfigEntry {
 			UpdatedAt: o.UpdatedAt,
 			UpdatedBy: o.UpdatedBy,
 		}
-		if s.secretKeys[o.Key] || strings.HasPrefix(o.Key, "models.") {
+		switch {
+		case s.secretKeys[o.Key] || strings.HasPrefix(o.Key, "models."):
 			entry.Value = "***"
-		} else if o.Encrypted && s.encryptor != nil {
+		case o.Encrypted && s.encryptor != nil:
 			val, err := s.encryptor.Decrypt(o.Value)
 			if err != nil {
 				entry.Value = "***decrypt-error***"
 			} else {
 				entry.Value = val
 			}
-		} else if o.Encrypted {
+		case o.Encrypted:
 			entry.Value = "***"
-		} else {
+		default:
 			entry.Value = o.Value
 		}
 		entries = append(entries, entry)
@@ -524,6 +525,8 @@ func (s *Store) SetModelPolicyManaged() {
 	s.modelPolicyManaged = true
 	s.mu.Unlock()
 }
+
+// ModelWriteProtected reports whether a legacy setter would bypass managed model settings.
 func (s *Store) ModelWriteProtected(key string) bool {
 	if key == "routing.max_actions_per_hour" {
 		return false

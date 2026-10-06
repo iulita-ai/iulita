@@ -23,7 +23,7 @@ func (m *Metrics) RegisterSubscribers(bus *eventbus.Bus) {
 		m.LLMTokensOutput.WithLabelValues(provider).Add(positiveTokens(p.OutputTokens))
 		if p.AttemptID != "" {
 			model := boundedModel(p.Model)
-			status := boundedCategory(p.Status, "success", "error", "cancelled", "incomplete", "cache_hit", "rejected")
+			status := boundedCategory(p.Status, "success", "error", "cancelled", "incomplete", "cache_hit", "rejected") //nolint:misspell // Preserve the existing persisted event and metric status contract.
 			m.LLMAttempts.WithLabelValues(provider, model,
 				boundedCategory(p.Role, "everyday", "complex", "vision", "background", "classifier"),
 				boundedCategory(p.Operation, "chat", "conversation", "completion", "classifier", "probe", "compression", "background", "agent", "job", "delegate", "synthesis", "heartbeat", "insight", "techfact", "bookmark_refine", "skill-review"), status).Inc()

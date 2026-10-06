@@ -2,13 +2,14 @@ package eventbus
 
 import (
 	"context"
+	"testing"
+	"time"
+
 	"github.com/iulita-ai/iulita/internal/config"
 	"github.com/iulita-ai/iulita/internal/cost"
 	"github.com/iulita-ai/iulita/internal/llm"
 	"github.com/iulita-ai/iulita/internal/storage"
 	"go.uber.org/zap"
-	"testing"
-	"time"
 )
 
 func TestUsageSubscriberFrozenPriceRequestHourAndDedup(t *testing.T) {

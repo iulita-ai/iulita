@@ -388,8 +388,8 @@ func main() {
 		for _, provider := range []string{"claude", "openai", "deepseek", "zai"} {
 			owners[provider] = modelEnvironmentKey(provider) != ""
 		}
-		if err := modelManager.SyncEnvironmentOwnership(ctx, owners); err != nil {
-			logger.Fatal("model environment ownership could not be synchronized", zap.Error(err))
+		if ownershipErr := modelManager.SyncEnvironmentOwnership(ctx, owners); ownershipErr != nil {
+			logger.Fatal("model environment ownership could not be synchronized", zap.Error(ownershipErr))
 		}
 		seeds := legacyModelConnections(cfg)
 		view := modelManager.Snapshot()
@@ -408,8 +408,8 @@ func main() {
 			}
 			seeds = filtered
 		}
-		if err := modelManager.SeedConnections(ctx, seeds); err != nil {
-			logger.Fatal("model connections could not be initialized", zap.Error(err))
+		if seedErr := modelManager.SeedConnections(ctx, seeds); seedErr != nil {
+			logger.Fatal("model connections could not be initialized", zap.Error(seedErr))
 		}
 	}
 	if encryptor != nil {
@@ -417,8 +417,8 @@ func main() {
 		if legacySettings != nil && view.Settings.Policy.Everyday == "" && view.Stage == nil {
 			mode, _ := cfgStore.GetEffective("claude.thinking")
 			changedLegacy := changedLegacyModelProviders(cfg, mode)
-			if err := modelManager.SeedLegacyProfiles(ctx, *legacySettings, changedLegacy...); err != nil {
-				logger.Warn("legacy routing migration draft is unavailable", zap.Error(err))
+			if seedErr := modelManager.SeedLegacyProfiles(ctx, *legacySettings, changedLegacy...); seedErr != nil {
+				logger.Warn("legacy routing migration draft is unavailable", zap.Error(seedErr))
 			}
 		}
 		if frozen, ok := modelManager.LegacySettings(); ok {
@@ -426,20 +426,20 @@ func main() {
 		}
 		if view.Stage != nil && view.Settings.Policy.Everyday == "" {
 			for provider, target := range map[string]*config.DeepSeekConfig{"deepseek": &cfg.DeepSeek, "zai": &cfg.ZAI} {
-				if connection, err := modelManager.LegacyConnection(provider); err == nil {
+				if connection, connectionErr := modelManager.LegacyConnection(provider); connectionErr == nil {
 					target.APIKey = connection.APIKey
 					target.BaseURL = connection.Endpoint
 				}
 			}
-			if connection, err := modelManager.LegacyConnection("claude"); err == nil {
+			if connection, connectionErr := modelManager.LegacyConnection("claude"); connectionErr == nil {
 				cfg.Claude.APIKey = connection.APIKey
 				cfg.Claude.BaseURL = connection.Endpoint
 			}
-			if connection, err := modelManager.LegacyConnection("openai"); err == nil {
+			if connection, connectionErr := modelManager.LegacyConnection("openai"); connectionErr == nil {
 				cfg.OpenAI.APIKey = connection.APIKey
 				cfg.OpenAI.BaseURL = connection.Endpoint
 			}
-			if connection, err := modelManager.LegacyConnection("ollama"); err == nil {
+			if connection, connectionErr := modelManager.LegacyConnection("ollama"); connectionErr == nil {
 				cfg.Ollama.URL = connection.Endpoint
 			}
 			if legacySettings != nil {
@@ -480,12 +480,12 @@ func main() {
 		logger.Info("starting in setup mode — web wizard required")
 	}
 
-	if err := cfg.ValidateWithModels(validateMode, modelPolicyReady); err != nil {
+	if validationErr := cfg.ValidateWithModels(validateMode, modelPolicyReady); validationErr != nil {
 		if !cfg.HasAnyLLMProvider() && consoleMode {
 			fmt.Println("No LLM provider configured. Run 'iulita init' to set up.")
 			os.Exit(1)
 		}
-		log.Fatalf("invalid config: %v", err)
+		log.Fatalf("invalid config: %v", validationErr)
 	}
 
 	// Auth service — always created so dashboard login works (including setup mode).
@@ -627,9 +627,9 @@ func main() {
 		if encryptor == nil {
 			return observed
 		}
-		guarded, err := modelManager.BindLegacy(provider, observed)
-		if err != nil {
-			logger.Fatal("legacy model admission unavailable", zap.Error(err))
+		guarded, bindingErr := modelManager.BindLegacy(provider, observed)
+		if bindingErr != nil {
+			logger.Fatal("legacy model admission unavailable", zap.Error(bindingErr))
 		}
 		return guarded
 	}
@@ -851,14 +851,14 @@ func main() {
 		routingProvider = llm.NewRoutingProvider(llmProvider, nil)
 		llmProvider = routingProvider
 	}
-	if err := modelManager.SetPublisher(func(snapshot *llm.ProfileSnapshot) error {
-		if err := routingProvider.SetProfileSnapshot(snapshot); err != nil {
-			return err
+	if publicationErr := modelManager.SetPublisher(func(snapshot *llm.ProfileSnapshot) error {
+		if snapshotErr := routingProvider.SetProfileSnapshot(snapshot); snapshotErr != nil {
+			return snapshotErr
 		}
 		cfgStore.SetModelPolicyManaged()
 		return nil
-	}); err != nil {
-		logger.Error("model policy unavailable; use Models settings to restore routing", zap.Error(err))
+	}); publicationErr != nil {
+		logger.Error("model policy unavailable; use Models settings to restore routing", zap.Error(publicationErr))
 	}
 
 	if _, ok := llmProvider.(*llm.ClassifyingProvider); !ok {

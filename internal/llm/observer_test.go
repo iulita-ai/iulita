@@ -36,7 +36,7 @@ func TestObserverKnownFailedUsageCacheAndUnknown(t *testing.T) {
 		{"local rejected", Response{}, &UnsentRequestError{Cause: errors.New("image count exceeds limit")}, "rejected", true, false},
 		{"success missing usage", Response{Content: "ok"}, nil, "success", false, true},
 		{"explicit zero", Response{Content: "ok", UsageReported: true}, nil, "success", true, false},
-		{"cancel known", Response{Usage: Usage{InputTokens: 4}}, context.Canceled, "cancelled", true, false},
+		{"cancel known", Response{Usage: Usage{InputTokens: 4}}, context.Canceled, "cancelled", true, false}, //nolint:misspell // Preserve the existing persisted event and metric status contract.
 		{"cache", Response{Cached: true, Usage: Usage{InputTokens: 20}}, nil, "cache_hit", true, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {

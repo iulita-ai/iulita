@@ -60,19 +60,19 @@ var noncePattern = regexp.MustCompile(`nonce[^a-zA-Z0-9]+([0-9a-f]{8,12})`)
 
 func echoFactory(profile models.Profile, _ Connection) (llm.Provider, error) {
 	return providerFunc(func(ctx context.Context, req llm.Request) (llm.Response, error) {
-		if err := ctx.Err(); err != nil {
-			return llm.Response{}, err
+		if operationErr := ctx.Err(); operationErr != nil {
+			return llm.Response{}, operationErr
 		}
 		response := llm.Response{Model: profile.Model, ModelVerified: true, RequestedModel: profile.Model, Usage: llm.Usage{InputTokens: 4, OutputTokens: 2}, FinishReason: "stop"}
 		if len(req.Images) > 0 {
 			var nonces, colors []string
 			for _, attachment := range req.Images {
-				nonce, color, err := readFixture(attachment.Data)
+				nonce, fixtureColor, err := readFixture(attachment.Data)
 				if err != nil {
 					return llm.Response{}, err
 				}
 				nonces = append(nonces, nonce)
-				colors = append(colors, color)
+				colors = append(colors, fixtureColor)
 			}
 			var raw []byte
 			if len(nonces) == 1 {
@@ -110,7 +110,7 @@ func echoFactory(profile models.Profile, _ Connection) (llm.Provider, error) {
 var fixtureTemplatesOnce sync.Once
 var fixtureTemplates map[rune]image.Image
 
-func readFixture(data []byte) (string, string, error) {
+func readFixture(data []byte) (labelText, colorName string, err error) {
 	decoded, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return "", "", err
@@ -155,8 +155,7 @@ func readFixture(data []byte) (string, string, error) {
 	}
 	return label.String(), name, nil
 }
-func imageColorRed() color.RGBA  { return color.RGBA{R: 255, A: 255} }
-func imageColorBlue() color.RGBA { return color.RGBA{B: 255, A: 255} }
+func imageColorRed() color.RGBA { return color.RGBA{R: 255, A: 255} }
 func newTestManager(t *testing.T, repo *memoryRepo, factory Factory) *Manager {
 	t.Helper()
 	cipher, err := config.NewEncryptor(bytes.Repeat([]byte{42}, 32))
@@ -265,8 +264,8 @@ func TestStageMasksSecretsAndPreservesActiveKeyUntilVerifiedRotation(t *testing.
 	if m.Snapshot().Connections[0].Generation != oldGen {
 		t.Fatal("stage rotated the active key")
 	}
-	if _, err := old.Complete(context.Background(), llm.Request{Message: "nonce deadbeef0123"}); err != nil {
-		t.Fatalf("old key stopped during testing: %v", err)
+	if _, operationErr := old.Complete(context.Background(), llm.Request{Message: "nonce deadbeef0123"}); operationErr != nil {
+		t.Fatalf("old key stopped during testing: %v", operationErr)
 	}
 	safe, _ := json.Marshal(m.Snapshot())
 	if strings.Contains(string(safe), "secret-key") || strings.Contains(repo.row.Value, "secret-key") {
@@ -300,8 +299,8 @@ func TestStageActorRevisionCASAndDiscard(t *testing.T) {
 	assertCode(t, err, "stage_busy")
 	err = m.Discard(context.Background(), "admin", 1, stage.ID)
 	assertCode(t, err, "revision_conflict")
-	if err := m.Discard(context.Background(), "admin", 0, stage.ID); err != nil {
-		t.Fatal(err)
+	if operationErr := m.Discard(context.Background(), "admin", 0, stage.ID); operationErr != nil {
+		t.Fatal(operationErr)
 	}
 	if m.Snapshot().Stage != nil {
 		t.Fatal("discard kept pending identity")
@@ -340,8 +339,8 @@ func TestRevokeCancelsAdmittedAndBlocksOldSnapshotAfterRestart(t *testing.T) {
 	if view.Health != "suspended" || len(view.AffectedRoles) != 1 || view.Revision != 2 {
 		t.Fatalf("revoke health: %+v", view)
 	}
-	if err := <-done; !errors.Is(err, context.Canceled) {
-		t.Fatalf("admitted attempt not cancelled: %v", err)
+	if completionErr := <-done; !errors.Is(completionErr, context.Canceled) {
+		t.Fatalf("admitted attempt not canceled: %v", completionErr)
 	}
 	_, err = old.Complete(context.Background(), llm.Request{})
 	assertCode(t, err, "credential_revoked")
@@ -349,8 +348,8 @@ func TestRevokeCancelsAdmittedAndBlocksOldSnapshotAfterRestart(t *testing.T) {
 	_, bindings, _, _ = restarted.Bindings()
 	_, err = bindings["ds-flash"].Provider.Complete(context.Background(), llm.Request{})
 	assertCode(t, err, "credential_revoked")
-	if err := restarted.SeedConnections(context.Background(), []Connection{{Provider: "deepseek", Endpoint: view.Connections[0].Endpoint, APIKey: "secret-key"}}); err != nil { // Synthetic test credential. gitleaks:allow
-		t.Fatal(err)
+	if operationErr := restarted.SeedConnections(context.Background(), []Connection{{Provider: "deepseek", Endpoint: view.Connections[0].Endpoint, APIKey: "secret-key"}}); operationErr != nil { // Synthetic test credential. gitleaks:allow
+		t.Fatal(operationErr)
 	}
 	if restarted.Snapshot().Health != "suspended" {
 		t.Fatal("startup seeding revived a revoked key")
@@ -389,8 +388,8 @@ func TestProbeIdempotencyExpiredKeysAndRestartMarkers(t *testing.T) {
 	r := candidate.Probes[first.ID]
 	r.View.Status = "running"
 	candidate.Probes[first.ID] = r
-	if err := m.persistLocked(context.Background(), candidate, "test"); err != nil {
-		t.Fatal(err)
+	if operationErr := m.persistLocked(context.Background(), candidate, "test"); operationErr != nil {
+		t.Fatal(operationErr)
 	}
 	m.mu.Unlock()
 	restarted := newTestManager(t, repo, factory)
@@ -415,7 +414,7 @@ func TestVisionOracleAndEligibilityRequireActualImages(t *testing.T) {
 	}
 	checkStage(t, m, stage, "text")
 	checkStage(t, m, stage, "tools")
-	if _, err := m.Activate(context.Background(), "admin", 0, stage.ID); err == nil {
+	if _, activationErr := m.Activate(context.Background(), "admin", 0, stage.ID); activationErr == nil {
 		t.Fatal("vision activated without an image check")
 	}
 	checkStage(t, m, stage, "vision")
@@ -458,8 +457,8 @@ func TestTextOnlyVisionCheckMakesNoCallAndThinkingCannotPromote(t *testing.T) {
 }
 func TestActivationPublisherSerializedAndFailureVisible(t *testing.T) {
 	m := newTestManager(t, &memoryRepo{}, echoFactory)
-	if err := m.SetPublisher(func(*llm.ProfileSnapshot) error { return errors.New("publication failed") }); err != nil {
-		t.Fatal(err)
+	if operationErr := m.SetPublisher(func(*llm.ProfileSnapshot) error { return errors.New("publication failed") }); operationErr != nil {
+		t.Fatal(operationErr)
 	}
 	stage := stageDraft(t, m, 0, "secret-key")
 	checkStage(t, m, stage, "text")
@@ -469,8 +468,8 @@ func TestActivationPublisherSerializedAndFailureVisible(t *testing.T) {
 	if view.Revision != 1 || view.ActiveRevision != 0 || view.ActivationStatus != "failed" {
 		t.Fatalf("desired/active failure hidden: %+v", view)
 	}
-	if err := m.SetPublisher(func(*llm.ProfileSnapshot) error { return nil }); err != nil {
-		t.Fatal(err)
+	if operationErr := m.SetPublisher(func(*llm.ProfileSnapshot) error { return nil }); operationErr != nil {
+		t.Fatal(operationErr)
 	}
 	if m.Snapshot().ActiveRevision != 1 || m.Snapshot().ActivationStatus != "applied" {
 		t.Fatal("publication recovery did not report active revision")
@@ -497,8 +496,8 @@ func TestConcurrentAdmissionRevokeLinearization(t *testing.T) {
 		}()
 	}
 	close(start)
-	if _, err := m.Revoke(context.Background(), "admin", 1, "deepseek", generation); err != nil {
-		t.Fatal(err)
+	if _, operationErr := m.Revoke(context.Background(), "admin", 1, "deepseek", generation); operationErr != nil {
+		t.Fatal(operationErr)
 	}
 	wg.Wait()
 	for i := 0; i < 32; i++ {
@@ -509,26 +508,26 @@ func TestConcurrentAdmissionRevokeLinearization(t *testing.T) {
 
 func TestEnvironmentOwnershipAndSecretDenyCannotBeBypassed(t *testing.T) {
 	m := newTestManager(t, &memoryRepo{}, echoFactory)
-	if err := m.SeedConnections(context.Background(), []Connection{{Provider: "deepseek", APIKey: "environment-key", Source: "environment"}}); err != nil { // Synthetic test credential. gitleaks:allow
-		t.Fatal(err)
+	if operationErr := m.SeedConnections(context.Background(), []Connection{{Provider: "deepseek", APIKey: "environment-key", Source: "environment"}}); operationErr != nil { // Synthetic test credential. gitleaks:allow
+		t.Fatal(operationErr)
 	}
 	_, err := m.Stage(context.Background(), "admin", 0, draftSettings(), []ConnectionMutation{{Provider: "deepseek", APIKeyAction: "replace", APIKey: "replacement-key"}}) // Synthetic test credential. gitleaks:allow
 	var coded *Error
 	if !errors.As(err, &coded) || len(coded.FieldErrors) == 0 || coded.FieldErrors[0].Code != "environment_override" {
 		t.Fatalf("env override accepted: %v", err)
 	}
-	if err := m.SeedConnections(context.Background(), []Connection{{Provider: "deepseek", APIKey: "different-env-key", Source: "environment"}}); err == nil { // Synthetic test credential. gitleaks:allow
+	if seedErr := m.SeedConnections(context.Background(), []Connection{{Provider: "deepseek", APIKey: "different-env-key", Source: "environment"}}); seedErr == nil { // Synthetic test credential. gitleaks:allow
 		t.Fatal("startup mismatch silently changed identity")
 	}
 	// Clearing the actual environment source keeps the generation stable but
 	// permits an explicitly staged replacement.
-	if err := m.SeedConnections(context.Background(), []Connection{{Provider: "deepseek", APIKey: "environment-key", Source: "TOML"}}); err != nil { // Synthetic test credential. gitleaks:allow
-		t.Fatal(err)
+	if operationErr := m.SeedConnections(context.Background(), []Connection{{Provider: "deepseek", APIKey: "environment-key", Source: "TOML"}}); operationErr != nil { // Synthetic test credential. gitleaks:allow
+		t.Fatal(operationErr)
 	}
 	stage := stageDraft(t, m, 0, "replacement-key")
 	view := activateDraft(t, m, stage)
-	if _, err := m.Revoke(context.Background(), "admin", view.Revision, "deepseek", view.Connections[0].Generation); err != nil {
-		t.Fatal(err)
+	if _, operationErr := m.Revoke(context.Background(), "admin", view.Revision, "deepseek", view.Connections[0].Generation); operationErr != nil {
+		t.Fatal(operationErr)
 	}
 	_, err = m.Stage(context.Background(), "admin", 2, draftSettings(), []ConnectionMutation{{Provider: "deepseek", APIKeyAction: "replace", APIKey: "replacement-key"}}) // Synthetic test credential. gitleaks:allow
 	if !errors.As(err, &coded) || len(coded.FieldErrors) == 0 || coded.FieldErrors[0].Code != "credential_revoked" {
@@ -584,13 +583,13 @@ func TestProbeConcurrencyCancellationAndWrongIdentity(t *testing.T) {
 	<-entered
 	_, err = m.Probe(context.Background(), "admin", ProbeRequest{StageID: stage.ID, ProfileID: "ds-flash", Kind: "tools", IdempotencyKey: probeKey()})
 	assertCode(t, err, "probe_busy")
-	cancelled, err := m.CancelProbe(context.Background(), "admin", first.ID)
-	if err != nil || cancelled.Status != "cancel_requested" {
-		t.Fatalf("cancel: %+v %v", cancelled, err)
+	canceled, err := m.CancelProbe(context.Background(), "admin", first.ID)
+	if err != nil || canceled.Status != "cancel_requested" {
+		t.Fatalf("cancel: %+v %v", canceled, err)
 	}
 	finished := waitProbe(t, m, first.ID)
-	if finished.Status != "cancelled" || finished.Result.Passed {
-		t.Fatal("cancelled check promoted a model")
+	if finished.Status != "cancelled" || finished.Result.Passed { //nolint:misspell // Preserve the persisted API status spelling.
+		t.Fatal("canceled check promoted a model")
 	}
 	next, err := m.Probe(context.Background(), "admin", ProbeRequest{StageID: stage.ID, ProfileID: "ds-flash", Kind: "text", IdempotencyKey: probeKey()})
 	if err != nil {
@@ -624,8 +623,8 @@ func TestLateResultAfterDiscardNeverPublishesEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-entered
-	if err := m.Discard(context.Background(), "admin", 0, stage.ID); err != nil {
-		t.Fatal(err)
+	if operationErr := m.Discard(context.Background(), "admin", 0, stage.ID); operationErr != nil {
+		t.Fatal(operationErr)
 	}
 	close(release)
 	finished := waitProbe(t, m, view.ID)
@@ -678,8 +677,8 @@ func TestModelIdentityDoesNotConfuseGLMMainWithFlash(t *testing.T) {
 func TestLegacyAdmissionAndSafeSeedRefresh(t *testing.T) {
 	repo := &memoryRepo{}
 	m := newTestManager(t, repo, echoFactory)
-	if err := m.SeedConnections(context.Background(), []Connection{{Provider: "deepseek", APIKey: "old-key", Source: "TOML"}}); err != nil {
-		t.Fatal(err)
+	if operationErr := m.SeedConnections(context.Background(), []Connection{{Provider: "deepseek", APIKey: "old-key", Source: "TOML"}}); operationErr != nil {
+		t.Fatal(operationErr)
 	}
 	called := atomic.Int32{}
 	inner := providerFunc(func(context.Context, llm.Request) (llm.Response, error) {
@@ -690,12 +689,12 @@ func TestLegacyAdmissionAndSafeSeedRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := old.Complete(context.Background(), llm.Request{}); err != nil {
-		t.Fatal(err)
+	if _, operationErr := old.Complete(context.Background(), llm.Request{}); operationErr != nil {
+		t.Fatal(operationErr)
 	}
 	oldGen := m.Snapshot().Connections[0].Generation
-	if err := m.SeedConnections(context.Background(), []Connection{{Provider: "deepseek", APIKey: "fresh-key", Source: "TOML"}}); err != nil { // Synthetic test credential. gitleaks:allow
-		t.Fatal(err)
+	if operationErr := m.SeedConnections(context.Background(), []Connection{{Provider: "deepseek", APIKey: "fresh-key", Source: "TOML"}}); operationErr != nil { // Synthetic test credential. gitleaks:allow
+		t.Fatal(operationErr)
 	}
 	if m.Snapshot().Connections[0].Generation == oldGen || m.Snapshot().Settings.Policy.Everyday != "" {
 		t.Fatal("legacy seed refresh activated a managed policy or retained old identity")
@@ -708,8 +707,8 @@ func TestLegacyAdmissionAndSafeSeedRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	view := restarted.Snapshot()
-	if _, err := restarted.Revoke(context.Background(), "admin", 0, "deepseek", view.Connections[0].Generation); err != nil {
-		t.Fatal(err)
+	if _, operationErr := restarted.Revoke(context.Background(), "admin", 0, "deepseek", view.Connections[0].Generation); operationErr != nil {
+		t.Fatal(operationErr)
 	}
 	_, err = guarded.Complete(context.Background(), llm.Request{})
 	assertCode(t, err, "credential_revoked")
@@ -833,12 +832,12 @@ func TestRevokedAssignedProfileStartsWithSuspendedBindingsEvenFactoryRefusesDisa
 	}
 	m := newTestManager(t, repo, factory)
 	view := activateDraft(t, m, stageDraft(t, m, 0, "secret-key"))
-	if _, err := m.Revoke(context.Background(), "admin", 1, "deepseek", view.Connections[0].Generation); err != nil {
-		t.Fatal(err)
+	if _, operationErr := m.Revoke(context.Background(), "admin", 1, "deepseek", view.Connections[0].Generation); operationErr != nil {
+		t.Fatal(operationErr)
 	}
 	restarted := newTestManager(t, repo, factory)
-	if err := restarted.SetPublisher(func(*llm.ProfileSnapshot) error { return nil }); err != nil {
-		t.Fatal(err)
+	if operationErr := restarted.SetPublisher(func(*llm.ProfileSnapshot) error { return nil }); operationErr != nil {
+		t.Fatal(operationErr)
 	}
 	_, bindings, _, err := restarted.Bindings()
 	if err != nil {
@@ -868,8 +867,8 @@ func TestClosePreservesUnknownMarkersAndStopsAdmissions(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-entered
-	if err := m.Close(context.Background()); err != nil {
-		t.Fatal(err)
+	if operationErr := m.Close(context.Background()); operationErr != nil {
+		t.Fatal(operationErr)
 	}
 	finished, err := m.ProbeStatus(context.Background(), "admin", view.ID)
 	if err != nil || finished.Status != "interrupted_unknown" {
@@ -913,15 +912,15 @@ func TestFailedRotationCommitRetainsOldKeyAndVerifiedStage(t *testing.T) {
 	if m.Snapshot().Revision != 1 || m.Snapshot().Connections[0].Generation != oldGen || m.Snapshot().Stage == nil {
 		t.Fatal("failed transaction changed active credentials or discarded the tested candidate")
 	}
-	if _, err := old.Complete(context.Background(), llm.Request{Message: "nonce deadbeef0123"}); err != nil {
+	if _, operationErr := old.Complete(context.Background(), llm.Request{Message: "nonce deadbeef0123"}); operationErr != nil {
 		t.Fatal("old credential stopped before a successful commit")
 	}
 }
 
 func TestClaudeVisionCanBeVerifiedThroughTrustedLegacyConnection(t *testing.T) {
 	m := newTestManager(t, &memoryRepo{}, echoFactory)
-	if err := m.SeedConnections(context.Background(), []Connection{{Provider: "claude", Endpoint: "https://api.anthropic.com", APIKey: "claude-key", Source: "TOML"}}); err != nil { // Synthetic test credential. gitleaks:allow
-		t.Fatal(err)
+	if operationErr := m.SeedConnections(context.Background(), []Connection{{Provider: "claude", Endpoint: "https://api.anthropic.com", APIKey: "claude-key", Source: "TOML"}}); operationErr != nil { // Synthetic test credential. gitleaks:allow
+		t.Fatal(operationErr)
 	}
 	profile := models.Profile{ID: "claude-old", Name: "Existing Claude", Connection: "claude", Model: "claude-sonnet-4-6", MaxOutputTokens: 4096, Thinking: "disabled"}
 	settings := models.Settings{SchemaVersion: 1, Profiles: []models.Profile{profile}, Policy: models.Policy{Everyday: profile.ID, Vision: profile.ID}}
@@ -939,8 +938,8 @@ func TestClaudeVisionCanBeVerifiedThroughTrustedLegacyConnection(t *testing.T) {
 			t.Fatalf("Claude %s check failed: %+v", kind, view)
 		}
 	}
-	if _, err := m.Activate(context.Background(), "admin", 0, stage.ID); err != nil {
-		t.Fatal(err)
+	if _, operationErr := m.Activate(context.Background(), "admin", 0, stage.ID); operationErr != nil {
+		t.Fatal(operationErr)
 	}
 	_, bindings, _, _ := m.Bindings()
 	if !bindings[profile.ID].Images {
@@ -959,8 +958,8 @@ func TestPolicyHistoryBoundedAndRestoreIsOnlyAStage(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := m.Activate(context.Background(), "admin", uint64(rev-1), stage.ID); err != nil {
-			t.Fatal(err)
+		if _, operationErr := m.Activate(context.Background(), "admin", uint64(rev-1), stage.ID); operationErr != nil {
+			t.Fatal(operationErr)
 		}
 	}
 	history, err := m.History(context.Background(), "admin")
@@ -989,11 +988,11 @@ func TestPolicyHistoryBoundedAndRestoreIsOnlyAStage(t *testing.T) {
 	if stage.Settings.Profiles[0].Name != "Version 2" || stage.Connections[0].Generation != generation {
 		t.Fatal("restore did not use the requested settings and current credential")
 	}
-	if _, err := m.StageHistory(context.Background(), "admin", 5, 2); err == nil {
+	if _, restoreErr := m.StageHistory(context.Background(), "admin", 5, 2); restoreErr == nil {
 		t.Fatal("history restore replaced a pending draft")
 	}
-	if _, err := m.Activate(context.Background(), "admin", 5, stage.ID); err != nil {
-		t.Fatal(err)
+	if _, operationErr := m.Activate(context.Background(), "admin", 5, stage.ID); operationErr != nil {
+		t.Fatal(operationErr)
 	}
 	restarted := newTestManager(t, repo, echoFactory)
 	retained, err := restarted.History(context.Background(), "admin")
@@ -1018,11 +1017,11 @@ func TestHistoryRestoreCannotReviveCredentialsOrRemoveProviderBan(t *testing.T) 
 	if stage.Connections[0].Generation != newGen || stage.Connections[0].Generation == oldGen {
 		t.Fatal("history restored a previous credential generation")
 	}
-	if err := m.Discard(context.Background(), "admin", 2, stage.ID); err != nil {
-		t.Fatal(err)
+	if operationErr := m.Discard(context.Background(), "admin", 2, stage.ID); operationErr != nil {
+		t.Fatal(operationErr)
 	}
-	if _, err := m.Revoke(context.Background(), "admin", 2, "deepseek", newGen); err != nil {
-		t.Fatal(err)
+	if _, operationErr := m.Revoke(context.Background(), "admin", 2, "deepseek", newGen); operationErr != nil {
+		t.Fatal(operationErr)
 	}
 	_, err = m.StageHistory(context.Background(), "admin", 3, 1)
 	if err == nil {
@@ -1051,8 +1050,8 @@ func TestHistoryRestoreCannotReviveCredentialsOrRemoveProviderBan(t *testing.T) 
 func TestEnvironmentOwnershipSyncPreservesKeyAndAllowsRemovalRecovery(t *testing.T) {
 	repo := &memoryRepo{}
 	m := newTestManager(t, repo, echoFactory)
-	if err := m.SeedConnections(context.Background(), []Connection{{Provider: "deepseek", APIKey: "env-key", Source: "env"}}); err != nil {
-		t.Fatal(err)
+	if operationErr := m.SeedConnections(context.Background(), []Connection{{Provider: "deepseek", APIKey: "env-key", Source: "env"}}); operationErr != nil {
+		t.Fatal(operationErr)
 	}
 	stage, err := m.Stage(context.Background(), "admin", 0, draftSettings(), nil)
 	if err != nil {
@@ -1067,26 +1066,26 @@ func TestEnvironmentOwnershipSyncPreservesKeyAndAllowsRemovalRecovery(t *testing
 	c = m.state.Stage.Connections["deepseek"]
 	c.Connection.Source = "env"
 	m.state.Stage.Connections["deepseek"] = c
-	if err := m.persistLocked(context.Background(), m.state, "test"); err != nil {
-		t.Fatal(err)
+	if operationErr := m.persistLocked(context.Background(), m.state, "test"); operationErr != nil {
+		t.Fatal(operationErr)
 	}
 	m.mu.Unlock()
 	restarted := newTestManager(t, repo, echoFactory)
 	if restarted.Snapshot().Connections[0].Source != "environment" || restarted.Snapshot().Stage.Connections[0].Source != "environment" {
 		t.Fatal("persisted env alias was not normalized")
 	}
-	if err := restarted.SyncEnvironmentOwnership(context.Background(), map[string]bool{"deepseek": false}); err != nil {
-		t.Fatal(err)
+	if operationErr := restarted.SyncEnvironmentOwnership(context.Background(), map[string]bool{"deepseek": false}); operationErr != nil {
+		t.Fatal(operationErr)
 	}
 	view := restarted.Snapshot()
 	if view.Connections[0].Source != "encrypted_store" || view.Connections[0].Generation != generation || view.Stage.Connections[0].Generation != generation {
 		t.Fatal("removing env ownership changed the credential generation")
 	}
-	if err := restarted.Discard(context.Background(), "admin", 0, view.Stage.ID); err != nil {
-		t.Fatal(err)
+	if operationErr := restarted.Discard(context.Background(), "admin", 0, view.Stage.ID); operationErr != nil {
+		t.Fatal(operationErr)
 	}
-	if _, err := restarted.Stage(context.Background(), "admin", 0, draftSettings(), []ConnectionMutation{{Provider: "deepseek", APIKeyAction: "replace", APIKey: "fresh-key"}}); err != nil { // Synthetic test credential. gitleaks:allow
-		t.Fatal("removed environment override still blocked rotation: ", err)
+	if _, operationErr := restarted.Stage(context.Background(), "admin", 0, draftSettings(), []ConnectionMutation{{Provider: "deepseek", APIKeyAction: "replace", APIKey: "fresh-key"}}); operationErr != nil { // Synthetic test credential. gitleaks:allow
+		t.Fatal("removed environment override still blocked rotation: ", operationErr)
 	}
 }
 
@@ -1106,12 +1105,12 @@ func TestWaitAfterCloseIncludesAdmissionsAndProbeFinalization(t *testing.T) {
 		t.Fatal("wait accepted before close")
 	}
 	stage := stageDraft(t, m, 0, "shutdown-probe-key")
-	if _, err := m.Probe(context.Background(), "admin", ProbeRequest{StageID: stage.ID, ProfileID: "ds-flash", Kind: "text", IdempotencyKey: probeKey()}); err != nil {
-		t.Fatal(err)
+	if _, operationErr := m.Probe(context.Background(), "admin", ProbeRequest{StageID: stage.ID, ProfileID: "ds-flash", Kind: "text", IdempotencyKey: probeKey()}); operationErr != nil {
+		t.Fatal(operationErr)
 	}
 	<-entered
-	if err := m.Close(context.Background()); err != nil {
-		t.Fatal(err)
+	if operationErr := m.Close(context.Background()); operationErr != nil {
+		t.Fatal(operationErr)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
@@ -1121,8 +1120,8 @@ func TestWaitAfterCloseIncludesAdmissionsAndProbeFinalization(t *testing.T) {
 	close(released)
 	ctx2, cancel2 := context.WithTimeout(context.Background(), time.Second)
 	defer cancel2()
-	if err := m.Wait(ctx2); err != nil {
-		t.Fatal(err)
+	if operationErr := m.Wait(ctx2); operationErr != nil {
+		t.Fatal(operationErr)
 	}
 	m.mu.Lock()
 	pending := len(m.admissions) + len(m.running)
@@ -1151,8 +1150,8 @@ func TestExactLegacyPreservationAndRestartWithoutFabricatedProof(t *testing.T) {
 		t.Fatal(err)
 	}
 	settings := legacyDraft()
-	if err := m.SeedLegacyProfiles(context.Background(), settings); err != nil {
-		t.Fatal(err)
+	if operationErr := m.SeedLegacyProfiles(context.Background(), settings); operationErr != nil {
+		t.Fatal(operationErr)
 	}
 	baseline, ok := m.LegacySettings()
 	if !ok {
@@ -1172,8 +1171,8 @@ func TestExactLegacyPreservationAndRestartWithoutFabricatedProof(t *testing.T) {
 			t.Fatal("legacy preservation fabricated evidence or lost exact grant")
 		}
 	}
-	if _, err := m.Activate(context.Background(), "admin", 0, stage.ID); err != nil {
-		t.Fatal(err)
+	if _, operationErr := m.Activate(context.Background(), "admin", 0, stage.ID); operationErr != nil {
+		t.Fatal(operationErr)
 	}
 	_, bindings, _, err := m.Bindings()
 	if err != nil {
@@ -1183,8 +1182,8 @@ func TestExactLegacyPreservationAndRestartWithoutFabricatedProof(t *testing.T) {
 		t.Fatal("incorrect legacy image capabilities")
 	}
 	restarted := newTestManager(t, repo, echoFactory)
-	if err := restarted.SyncEnvironmentOwnership(context.Background(), map[string]bool{}); err != nil {
-		t.Fatal(err)
+	if operationErr := restarted.SyncEnvironmentOwnership(context.Background(), map[string]bool{}); operationErr != nil {
+		t.Fatal(operationErr)
 	}
 	for _, p := range restarted.Snapshot().Profiles {
 		if p.Eligibility != "legacy_preserved" {
@@ -1207,8 +1206,8 @@ func TestExactLegacyPreservationAndRestartWithoutFabricatedProof(t *testing.T) {
 	if next.Profiles[0].Eligibility != "legacy_preserved" {
 		t.Fatal("display rename lost identity")
 	}
-	if err := restarted.Discard(context.Background(), "admin", 1, next.ID); err != nil {
-		t.Fatal(err)
+	if operationErr := restarted.Discard(context.Background(), "admin", 1, next.ID); operationErr != nil {
+		t.Fatal(operationErr)
 	}
 	for _, change := range []func(*models.Settings){
 		func(s *models.Settings) { s.Profiles[0].Model = "claude-sonnet-new" },
@@ -1227,16 +1226,16 @@ func TestExactLegacyPreservationAndRestartWithoutFabricatedProof(t *testing.T) {
 		if _, err := restarted.Activate(context.Background(), "admin", 1, stage.ID); err == nil {
 			t.Fatal("changed protocol activated without evidence")
 		}
-		if err := restarted.Discard(context.Background(), "admin", 1, stage.ID); err != nil {
-			t.Fatal(err)
+		if operationErr := restarted.Discard(context.Background(), "admin", 1, stage.ID); operationErr != nil {
+			t.Fatal(operationErr)
 		}
 	}
 	conn, _ := restarted.LegacyConnection("claude")
-	if _, err := restarted.Revoke(context.Background(), "admin", 1, "claude", conn.Generation); err != nil {
-		t.Fatal(err)
+	if _, operationErr := restarted.Revoke(context.Background(), "admin", 1, "claude", conn.Generation); operationErr != nil {
+		t.Fatal(operationErr)
 	}
-	if err := restarted.SeedLegacyProfiles(context.Background(), settings); err != nil {
-		t.Fatal(err)
+	if operationErr := restarted.SeedLegacyProfiles(context.Background(), settings); operationErr != nil {
+		t.Fatal(operationErr)
 	}
 	if restarted.Snapshot().Profiles[0].Eligibility != "suspended" {
 		t.Fatal("seed resurrected revoked grant")
@@ -1245,20 +1244,20 @@ func TestExactLegacyPreservationAndRestartWithoutFabricatedProof(t *testing.T) {
 
 func TestLegacyGrantCannotBeReseededOrAppliedToNewVendors(t *testing.T) {
 	m := newTestManager(t, &memoryRepo{}, echoFactory)
-	if err := m.SeedConnections(context.Background(), []Connection{{Provider: "openai", Endpoint: "https://api.openai.com/v1", APIKey: "initial-key", Source: "legacy_effective"}, {Provider: "deepseek", APIKey: "ds-key", Source: "legacy_effective"}}); err != nil { // Synthetic test credential. gitleaks:allow
-		t.Fatal(err)
+	if operationErr := m.SeedConnections(context.Background(), []Connection{{Provider: "openai", Endpoint: "https://api.openai.com/v1", APIKey: "initial-key", Source: "legacy_effective"}, {Provider: "deepseek", APIKey: "ds-key", Source: "legacy_effective"}}); operationErr != nil { // Synthetic test credential. gitleaks:allow
+		t.Fatal(operationErr)
 	}
 	settings := draftSettings()
 	settings.Profiles = append(settings.Profiles, legacyDraft().Profiles[1])
 	settings.Policy.Everyday = "openai-existing"
-	if err := m.SeedLegacyProfiles(context.Background(), settings); err != nil {
-		t.Fatal(err)
+	if operationErr := m.SeedLegacyProfiles(context.Background(), settings); operationErr != nil {
+		t.Fatal(operationErr)
 	}
-	if err := m.SeedConnections(context.Background(), []Connection{{Provider: "openai", Endpoint: "https://api.openai.com/v1", APIKey: "rotated-key", Source: "legacy_effective"}}); err != nil { // Synthetic test credential. gitleaks:allow
-		t.Fatal(err)
+	if operationErr := m.SeedConnections(context.Background(), []Connection{{Provider: "openai", Endpoint: "https://api.openai.com/v1", APIKey: "rotated-key", Source: "legacy_effective"}}); operationErr != nil { // Synthetic test credential. gitleaks:allow
+		t.Fatal(operationErr)
 	}
-	if err := m.SeedLegacyProfiles(context.Background(), settings); err != nil {
-		t.Fatal(err)
+	if operationErr := m.SeedLegacyProfiles(context.Background(), settings); operationErr != nil {
+		t.Fatal(operationErr)
 	}
 	stage, err := m.Stage(context.Background(), "admin", 0, settings, nil)
 	if err != nil {
@@ -1281,8 +1280,8 @@ func TestChangedLegacyThinkingCannotInheritPreservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	settings := legacyDraft()
-	if err := m.SeedLegacyProfiles(context.Background(), settings, "claude"); err != nil {
-		t.Fatal(err)
+	if operationErr := m.SeedLegacyProfiles(context.Background(), settings, "claude"); operationErr != nil {
+		t.Fatal(operationErr)
 	}
 	stage, err := m.Stage(context.Background(), "admin", 0, settings, nil)
 	if err != nil {
@@ -1296,7 +1295,7 @@ func TestChangedLegacyThinkingCannotInheritPreservation(t *testing.T) {
 			t.Fatal("unrelated legacy provider lost preservation")
 		}
 	}
-	if _, err := m.Activate(context.Background(), "admin", 0, stage.ID); err == nil {
+	if _, activationErr := m.Activate(context.Background(), "admin", 0, stage.ID); activationErr == nil {
 		t.Fatal("changed vision profile activated without checks")
 	}
 }
@@ -1338,8 +1337,8 @@ func TestVisionEvidenceVersionsSurviveRestartWithoutInvalidatingTextAndTools(t *
 			if vision.Result.FixtureVersion != VisionFixtureVersion {
 				t.Fatal("new vision evidence did not identify the enlarged raster")
 			}
-			if _, err := m.Activate(context.Background(), "admin", 0, stage.ID); err != nil {
-				t.Fatal(err)
+			if _, operationErr := m.Activate(context.Background(), "admin", 0, stage.ID); operationErr != nil {
+				t.Fatal(operationErr)
 			}
 			m.mu.Lock()
 			candidate := cloneState(m.state)
@@ -1361,5 +1360,54 @@ func TestVisionEvidenceVersionsSurviveRestartWithoutInvalidatingTextAndTools(t *
 				t.Fatalf("retained proofs/unknown version admission: %+v", binding)
 			}
 		})
+	}
+}
+
+func TestTypedStateClonePreservesEncodingAndIsolatesNestedMetadata(t *testing.T) {
+	settings := draftSettings()
+	settings.Policy.LegacyHints = map[string]string{"light": "background"}
+	settings.Policy.Fallbacks = map[string][]string{"everyday": {"ds-flash"}}
+	proof := Evidence{Kind: "text", Passed: true, Fingerprint: "original"}
+	original := durableState{
+		Settings:       settings,
+		LegacyBaseline: cloneSettings(settings),
+		Connections:    map[string]secretConnection{"deepseek": {Connection: Connection{Provider: "deepseek", APIKey: "fixture"}, Secret: "synthetic-key"}}, // Synthetic test credential. gitleaks:allow
+		Denied:         map[string]time.Time{"retired": time.Unix(1, 0).UTC()},
+		Evidence:       map[string]map[string]Evidence{"ds-flash": {"text": proof}},
+		Stage:          &stageState{Settings: cloneSettings(settings), Connections: map[string]secretConnection{}, Evidence: map[string]map[string]Evidence{"ds-flash": {"text": proof}}},
+		Probes:         map[string]probeRecord{"check": {View: ProbeView{Result: &proof}}},
+		History:        []HistoryView{{Settings: cloneSettings(settings)}},
+	}
+	copied := cloneState(original)
+	if copied.Connections["deepseek"].Connection.APIKey != "" || original.Connections["deepseek"].Connection.APIKey != "fixture" {
+		t.Fatal("clone retained a transient factory key or changed the original handle")
+	}
+	before, err := json.Marshal(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := json.Marshal(copied)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("clone changed persisted metadata or fingerprint encoding")
+	}
+	copied.Settings.Profiles[0].Name = "changed"
+	copied.Settings.Policy.LegacyHints["light"] = "complex"
+	copied.Settings.Policy.Fallbacks["everyday"][0] = "changed"
+	copied.Stage.Settings.Profiles[0].Model = "changed"
+	copied.Stage.Evidence["ds-flash"]["text"] = Evidence{}
+	copied.Evidence["ds-flash"]["text"] = Evidence{}
+	copied.Probes["check"].View.Result.Fingerprint = "changed"
+	copied.History[0].Settings.Profiles[0].Name = "changed"
+	copied.Connections["deepseek"] = secretConnection{}
+	delete(copied.Denied, "retired")
+	unchanged, err := json.Marshal(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, unchanged) {
+		t.Fatal("candidate mutations leaked into the active state")
 	}
 }

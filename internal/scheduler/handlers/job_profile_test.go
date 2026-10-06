@@ -3,11 +3,12 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"testing"
+
 	"github.com/iulita-ai/iulita/internal/domain"
 	"github.com/iulita-ai/iulita/internal/llm"
 	"github.com/iulita-ai/iulita/internal/skill"
 	"go.uber.org/zap"
-	"testing"
 )
 
 type jobCaptureProvider struct{ requests []llm.Request }

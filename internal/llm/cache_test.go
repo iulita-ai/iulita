@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -96,5 +97,54 @@ func TestResponseCacheFullPromptsAndUnambiguousFields(t *testing.T) {
 		if responseCacheKey(base) == responseCacheKey(other) {
 			t.Fatal("distinct request collided")
 		}
+	}
+}
+
+type failingResponseCache struct {
+	memoryResponseCache
+	writeError    error
+	evictionError error
+	evictions     int
+}
+
+func (c *failingResponseCache) SaveCachedResponse(ctx context.Context, hash, model, content, meta string) error {
+	if c.writeError != nil {
+		c.writes++
+		return c.writeError
+	}
+	return c.memoryResponseCache.SaveCachedResponse(ctx, hash, model, content, meta)
+}
+func (c *failingResponseCache) EvictResponseCache(context.Context, int) error {
+	c.evictions++
+	return c.evictionError
+}
+
+func TestResponseCacheWriteFailurePreservesPaidResultAndSkipsEviction(t *testing.T) {
+	cache := &failingResponseCache{memoryResponseCache: memoryResponseCache{entries: map[string]*CachedResponseEntry{}}, writeError: errors.New("cache unavailable")}
+	inner := &countedProvider{}
+	provider := NewCachingProvider(inner, cache, time.Minute, 10)
+	req := Request{CacheScope: "stateless", CacheIdentity: "profile:rev1", Message: "question"}
+	for i := 0; i < 2; i++ {
+		response, err := provider.Complete(context.Background(), req)
+		if err != nil || response.Cached || response.Content != "answer" || response.Usage.InputTokens != 100 || response.Usage.OutputTokens != 10 {
+			t.Fatalf("cache failure corrupted paid result: %+v %v", response, err)
+		}
+	}
+	if cache.evictions != 0 || cache.writes != 2 || inner.calls != 2 {
+		t.Fatal("failed cache write triggered eviction or reused an unsaved result")
+	}
+}
+
+func TestResponseCacheEvictionFailureDoesNotInvalidateSavedResult(t *testing.T) {
+	cache := &failingResponseCache{memoryResponseCache: memoryResponseCache{entries: map[string]*CachedResponseEntry{}}, evictionError: errors.New("eviction unavailable")}
+	inner := &countedProvider{}
+	provider := NewCachingProvider(inner, cache, time.Minute, 10)
+	req := Request{CacheScope: "stateless", CacheIdentity: "profile:rev1", Message: "question"}
+	if response, err := provider.Complete(context.Background(), req); err != nil || response.Cached || response.Usage.InputTokens != 100 {
+		t.Fatal("eviction failure invalidated paid result")
+	}
+	response, err := provider.Complete(context.Background(), req)
+	if err != nil || !response.Cached || response.Usage != (Usage{}) || inner.calls != 1 || cache.evictions != 1 {
+		t.Fatal("eviction failure prevented a valid saved cache hit")
 	}
 }

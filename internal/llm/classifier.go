@@ -77,6 +77,7 @@ type snapshotClassifier struct {
 	origin    Request
 }
 
+// Complete classifies using the pinned profile and originating request identity.
 func (p *snapshotClassifier) Complete(ctx context.Context, req Request) (Response, error) {
 	req.ChatID = p.origin.ChatID
 	req.UserID = p.origin.UserID
@@ -138,6 +139,8 @@ func (p *ClassifyingProvider) shouldClassify(req Request) bool {
 	}
 	return true
 }
+
+// AcquireProfileSnapshot returns the shared router snapshot for request pinning.
 func (p *ClassifyingProvider) AcquireProfileSnapshot() *ProfileSnapshot {
 	return p.router.AcquireProfileSnapshot()
 }
@@ -147,6 +150,7 @@ type classifierMetadata struct {
 	origin Request
 }
 
+// Complete attaches classifier provenance before calling the configured provider.
 func (p *classifierMetadata) Complete(ctx context.Context, req Request) (Response, error) {
 	if p.inner == nil {
 		return Response{}, fmt.Errorf("classifier unavailable")

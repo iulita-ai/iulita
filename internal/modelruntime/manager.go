@@ -8,8 +8,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"maps"
 	"net/url"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -69,6 +71,8 @@ type admission struct {
 	provider, generation string
 	cancel               context.CancelFunc
 }
+
+// Manager serializes encrypted model configuration, probes and credential admission.
 type Manager struct {
 	mu               sync.Mutex
 	activity         sync.WaitGroup
@@ -88,12 +92,13 @@ type Manager struct {
 	closed           bool
 }
 
+// New loads encrypted configuration and restores bounded probe lifecycle state.
 func New(repo Repository, cipher Cipher, factory Factory, authorize Authorize) (*Manager, error) {
 	if repo == nil || factory == nil {
 		return nil, failure("runtime_unavailable", "Model runtime dependencies are unavailable", 503)
 	}
 	// A typed nil encryptor must not appear to provide encryption.
-	if cipher != nil && reflect.ValueOf(cipher).Kind() == reflect.Ptr && reflect.ValueOf(cipher).IsNil() {
+	if cipher != nil && reflect.ValueOf(cipher).Kind() == reflect.Pointer && reflect.ValueOf(cipher).IsNil() {
 		cipher = nil
 	}
 	m := &Manager{repo: repo, cipher: cipher, factory: factory, authorize: authorize, now: time.Now, bindings: map[string]llm.ProfileBinding{}, admissions: map[string]admission{}, probeCancel: map[string]context.CancelFunc{}, running: map[string]string{}}
@@ -153,7 +158,8 @@ func New(repo Repository, cipher Cipher, factory Factory, authorize Authorize) (
 				}
 			}
 		}
-		for id, r := range m.state.Probes {
+		for id := range m.state.Probes {
+			r := m.state.Probes[id]
 			if r.View.Status == "running" || r.View.Status == "cancel_requested" {
 				r.View.Status = "interrupted_unknown"
 				r.View.ErrorCode = "restart_interrupted"
@@ -224,29 +230,69 @@ func secretIdentity(provider, key, salt string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
+// hashJSON is used only with bounded model settings and metadata structs. An
+// unsupported programmer-supplied value must not silently collide with nil JSON.
 func hashJSON(value any) string {
-	raw, _ := json.Marshal(value)
+	raw, err := json.Marshal(value)
+	if err != nil {
+		panic("model fingerprint metadata cannot be encoded")
+	}
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
 }
 func cloneSettings(s models.Settings) models.Settings {
-	raw, _ := json.Marshal(s)
-	var out models.Settings
-	_ = json.Unmarshal(raw, &out)
+	out := s
+	out.Profiles = slices.Clone(s.Profiles)
+	out.Policy.LegacyHints = maps.Clone(s.Policy.LegacyHints)
+	out.Policy.LegacyProfileHints = maps.Clone(s.Policy.LegacyProfileHints)
+	out.Policy.ForbiddenProviders = slices.Clone(s.Policy.ForbiddenProviders)
+	out.Policy.Fallbacks = maps.Clone(s.Policy.Fallbacks)
+	for role := range out.Policy.Fallbacks {
+		out.Policy.Fallbacks[role] = slices.Clone(s.Policy.Fallbacks[role])
+	}
+	return out
+}
+func cloneConnections(connections map[string]secretConnection) map[string]secretConnection {
+	out := maps.Clone(connections)
+	for provider, c := range out {
+		// APIKey is a transient factory handle; durable secrets live in Secret.
+		c.Connection.APIKey = ""
+		out[provider] = c
+	}
 	return out
 }
 func cloneState(s durableState) durableState {
-	raw, _ := json.Marshal(s)
-	var out durableState
-	_ = json.Unmarshal(raw, &out)
+	out := s
+	out.Settings = cloneSettings(s.Settings)
+	out.LegacyBaseline = cloneSettings(s.LegacyBaseline)
+	out.LegacyProfiles = maps.Clone(s.LegacyProfiles)
+	out.Denied = maps.Clone(s.Denied)
+	out.DeniedCredentials = maps.Clone(s.DeniedCredentials)
+	out.Connections = cloneConnections(s.Connections)
+	out.Evidence = cloneEvidence(s.Evidence)
+	out.History = slices.Clone(s.History)
+	for i := range out.History {
+		out.History[i].Settings = cloneSettings(s.History[i].Settings)
+	}
+	out.Probes = maps.Clone(s.Probes)
+	for id := range out.Probes {
+		r := out.Probes[id]
+		r.View = copyProbeView(r.View)
+		out.Probes[id] = r
+	}
+	if s.Stage != nil {
+		stage := *s.Stage
+		stage.Settings = cloneSettings(s.Stage.Settings)
+		stage.Connections = cloneConnections(s.Stage.Connections)
+		stage.Evidence = cloneEvidence(s.Stage.Evidence)
+		out.Stage = &stage
+	}
 	return out
 }
 func cloneEvidence(e map[string]map[string]Evidence) map[string]map[string]Evidence {
-	raw, _ := json.Marshal(e)
-	var out map[string]map[string]Evidence
-	_ = json.Unmarshal(raw, &out)
-	if out == nil {
-		out = map[string]map[string]Evidence{}
+	out := make(map[string]map[string]Evidence, len(e))
+	for id, kinds := range e {
+		out[id] = maps.Clone(kinds)
 	}
 	return out
 }
@@ -382,7 +428,7 @@ func safeConnection(c secretConnection, denied map[string]time.Time) ConnectionV
 	return ConnectionView{c.Connection.Provider, safeEndpoint(c.Connection.Endpoint), c.Connection.Generation, c.Connection.Source, c.Secret != "" || c.Connection.Provider == "ollama", availability}
 }
 func (m *Manager) profileViewsLocked(settings models.Settings, connections map[string]secretConnection, evidence map[string]map[string]Evidence) []ProfileView {
-	var out []ProfileView
+	out := make([]ProfileView, 0, len(settings.Profiles))
 	for _, p := range settings.Profiles {
 		c := connections[p.Connection]
 		fp := profileFingerprint(p, c.Connection)
@@ -464,6 +510,8 @@ func (m *Manager) snapshotLocked() View {
 	}
 	return v
 }
+
+// Snapshot returns an isolated, nonsecret view of the current configuration.
 func (m *Manager) Snapshot() View { m.mu.Lock(); defer m.mu.Unlock(); return m.snapshotLocked() }
 
 func (m *Manager) prepareLocked(settings models.Settings, mutations []ConnectionMutation, bases ...map[string]secretConnection) (map[string]secretConnection, []models.FieldError) {
@@ -471,7 +519,7 @@ func (m *Manager) prepareLocked(settings models.Settings, mutations []Connection
 	add := func(path, code, message string) {
 		errs = append(errs, models.FieldError{Path: path, Code: code, Message: message})
 	}
-	if raw, _ := json.Marshal(settings); len(raw) > models.MaxSettingsBytes {
+	if raw, marshalErr := json.Marshal(settings); marshalErr != nil || len(raw) > models.MaxSettingsBytes {
 		add("settings", "payload_too_large", "Settings exceed the size limit")
 	}
 	errs = append(errs, settings.Validate()...)
@@ -488,8 +536,12 @@ func (m *Manager) prepareLocked(settings models.Settings, mutations []Connection
 	}
 	connections := cloneState(m.state).Connections
 	if len(bases) > 0 {
-		raw, _ := json.Marshal(bases[0])
-		_ = json.Unmarshal(raw, &connections)
+		if bases[0] == nil {
+			connections = nil
+		} else {
+			// Match JSON map decoding: supplied entries override existing entries.
+			maps.Copy(connections, cloneConnections(bases[0]))
+		}
 	}
 	if len(mutations) > 5 {
 		add("connections", "invalid_connection", "Too many connection mutations")
@@ -594,6 +646,8 @@ func (m *Manager) prepareLocked(settings models.Settings, mutations []Connection
 	}
 	return connections, errs
 }
+
+// Validate checks a draft locally without committing or contacting providers.
 func (m *Manager) Validate(ctx context.Context, actor string, settings models.Settings, mutations []ConnectionMutation) []models.FieldError {
 	if err := m.authorizeActor(ctx, actor); err != nil {
 		return []models.FieldError{{Path: "authorization", Code: "admin_required", Message: "Administrator authorization is required"}}
@@ -610,6 +664,8 @@ func (m *Manager) Validate(ctx context.Context, actor string, settings models.Se
 	}
 	return errs
 }
+
+// Stage saves a bounded candidate while preserving active credentials and policy.
 func (m *Manager) Stage(ctx context.Context, actor string, expected uint64, settings models.Settings, mutations []ConnectionMutation) (StageView, error) {
 	if err := m.authorizeActor(ctx, actor); err != nil {
 		return StageView{}, err
@@ -632,7 +688,8 @@ func (m *Manager) createStageLocked(ctx context.Context, actor string, expected 
 		if current.Actor != actor {
 			return StageView{}, failure("stage_busy", "Another administrator has a configuration saved for testing", 409)
 		}
-		for _, record := range m.state.Probes {
+		for id := range m.state.Probes {
+			record := m.state.Probes[id]
 			if record.View.StageID == current.ID && (record.View.Status == "running" || record.View.Status == "cancel_requested") {
 				return StageView{}, failure("stage_busy", "Wait for or cancel the running check before changing its configuration", 409)
 			}
@@ -746,6 +803,8 @@ func (m *Manager) buildBindingsLocked(settings models.Settings, connections map[
 	}
 	return out, nil
 }
+
+// Activate verifies and commits a staged policy at the expected revision.
 func (m *Manager) Activate(ctx context.Context, actor string, expected uint64, stageID string) (View, error) {
 	if err := m.authorizeActor(ctx, actor); err != nil {
 		return View{}, err
@@ -788,7 +847,9 @@ func (m *Manager) Activate(ctx context.Context, actor string, expected uint64, s
 		if role == "vision" {
 			e := s.Evidence[id]["vision"]
 			c := s.Connections[binding.Profile.Connection]
-			if !binding.Images || !(binding.Eligibility == "legacy_preserved" && binding.Profile.Connection == "claude" || e.Passed && e.Fingerprint == profileFingerprint(binding.Profile, c.Connection)) {
+			legacyVision := binding.Eligibility == "legacy_preserved" && binding.Profile.Connection == "claude"
+			verifiedVision := e.Passed && e.Fingerprint == profileFingerprint(binding.Profile, c.Connection)
+			if !binding.Images || !legacyVision && !verifiedVision {
 				return View{}, failure("vision_verification_required", "The vision role requires a successful image check", 422)
 			}
 		}
@@ -812,8 +873,7 @@ func (m *Manager) Activate(ctx context.Context, actor string, expected uint64, s
 	}
 	candidate.Revision++
 	candidate.Settings = cloneSettings(s.Settings)
-	rawConnections, _ := json.Marshal(s.Connections)
-	_ = json.Unmarshal(rawConnections, &candidate.Connections)
+	candidate.Connections = cloneConnections(s.Connections)
 	referenced := map[string]bool{}
 	for _, profile := range s.Settings.Profiles {
 		referenced[profile.Connection] = true
@@ -875,15 +935,18 @@ func (m *Manager) SetPublisher(publish func(*llm.ProfileSnapshot) error) error {
 	return nil
 }
 
-func (m *Manager) Bindings() (models.Settings, map[string]llm.ProfileBinding, uint64, error) {
+// Bindings returns isolated settings and immutable guarded profile clients.
+func (m *Manager) Bindings() (settings models.Settings, bindings map[string]llm.ProfileBinding, revision uint64, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	out := make(map[string]llm.ProfileBinding, len(m.bindings))
-	for k, v := range m.bindings {
-		out[k] = v
+	for k := range m.bindings {
+		out[k] = m.bindings[k]
 	}
 	return cloneSettings(m.state.Settings), out, m.state.Revision, nil
 }
+
+// Discard removes the actor-owned stage and cancels its outstanding checks.
 func (m *Manager) Discard(ctx context.Context, actor string, expected uint64, stageID string) error {
 	if err := m.authorizeActor(ctx, actor); err != nil {
 		return err
@@ -903,7 +966,8 @@ func (m *Manager) Discard(ctx context.Context, actor string, expected uint64, st
 		return err
 	}
 	m.state = candidate
-	for id, r := range m.state.Probes {
+	for id := range m.state.Probes {
+		r := m.state.Probes[id]
 		if r.View.StageID == s.ID {
 			if cancel := m.probeCancel[id]; cancel != nil {
 				cancel()
@@ -912,6 +976,8 @@ func (m *Manager) Discard(ctx context.Context, actor string, expected uint64, st
 	}
 	return nil
 }
+
+// Revoke durably denies a credential generation without requiring a replacement.
 func (m *Manager) Revoke(ctx context.Context, actor string, expected uint64, provider, generation string) (View, error) {
 	if err := m.authorizeActor(ctx, actor); err != nil {
 		return View{}, err
@@ -960,7 +1026,8 @@ func (m *Manager) cancelDeniedLocked() {
 			a.cancel()
 		}
 	}
-	for id, r := range m.state.Probes {
+	for id := range m.state.Probes {
+		r := m.state.Probes[id]
 		if _, denied := m.state.Denied[r.Generation]; denied || forbidden[r.Provider] || r.View.StageID != "" && (m.state.Stage == nil || r.View.StageID != m.state.Stage.ID) {
 			if cancel := m.probeCancel[id]; cancel != nil {
 				cancel()
@@ -975,7 +1042,8 @@ func (m *Manager) cleanupLocked() bool {
 		m.state.Stage = nil
 		changed = true
 	}
-	for id, r := range m.state.Probes {
+	for id := range m.state.Probes {
+		r := m.state.Probes[id]
 		if !now.Before(r.ExpiresAt) {
 			delete(m.state.Probes, id)
 			changed = true
@@ -1026,6 +1094,7 @@ type guardedProvider struct {
 	provider, generation, stageID string
 }
 
+// Complete checks and registers credential admission before invoking the adapter.
 func (p *guardedProvider) Complete(ctx context.Context, req llm.Request) (llm.Response, error) {
 	admitted, release, err := p.manager.admit(ctx, p.provider, p.generation, p.stageID)
 	if err != nil {
@@ -1034,6 +1103,8 @@ func (p *guardedProvider) Complete(ctx context.Context, req llm.Request) (llm.Re
 	defer release()
 	return p.inner.Complete(admitted, req)
 }
+
+// CompleteStream guards streaming admission with the same revocation boundary.
 func (p *guardedProvider) CompleteStream(ctx context.Context, req llm.Request, callback llm.StreamCallback) (llm.Response, error) {
 	admitted, release, err := p.manager.admit(ctx, p.provider, p.generation, p.stageID)
 	if err != nil {
@@ -1072,7 +1143,8 @@ func (m *Manager) Close(ctx context.Context) error {
 	}
 	candidate := cloneState(m.state)
 	changed := false
-	for id, r := range candidate.Probes {
+	for id := range candidate.Probes {
+		r := candidate.Probes[id]
 		if r.View.Status == "running" || r.View.Status == "cancel_requested" {
 			r.View.Status = "interrupted_unknown"
 			r.View.ErrorCode = "shutdown_interrupted"
@@ -1100,6 +1172,7 @@ func (m *Manager) Close(ctx context.Context) error {
 
 type suspendedProvider struct{}
 
+// Complete rejects invocations of a suspended connection.
 func (suspendedProvider) Complete(context.Context, llm.Request) (llm.Response, error) {
 	return llm.Response{}, failure("credential_revoked", "The model connection is suspended", 403)
 }
@@ -1112,7 +1185,8 @@ func (m *Manager) History(ctx context.Context, actor string) ([]HistoryView, err
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	out := make([]HistoryView, len(m.state.History))
-	for i, entry := range m.state.History {
+	for i := range m.state.History {
+		entry := &m.state.History[i]
 		out[i] = HistoryView{Revision: entry.Revision, Settings: cloneSettings(entry.Settings), CreatedAt: entry.CreatedAt}
 	}
 	return out, nil
@@ -1135,7 +1209,8 @@ func (m *Manager) StageHistory(ctx context.Context, actor string, expected, targ
 	}
 	var settings models.Settings
 	found := false
-	for _, entry := range m.state.History {
+	for i := range m.state.History {
+		entry := &m.state.History[i]
 		if entry.Revision == target {
 			settings = cloneSettings(entry.Settings)
 			found = true
@@ -1259,7 +1334,7 @@ func (m *Manager) SeedLegacyProfiles(ctx context.Context, settings models.Settin
 	if errs := settings.Validate(); len(errs) != 0 {
 		return failure("invalid_legacy_settings", "Legacy settings cannot be migrated", 422)
 	}
-	if raw, _ := json.Marshal(settings); len(raw) > models.MaxSettingsBytes {
+	if raw, marshalErr := json.Marshal(settings); marshalErr != nil || len(raw) > models.MaxSettingsBytes {
 		return failure("invalid_legacy_settings", "Legacy settings exceed the limit", 422)
 	}
 	candidate := cloneState(m.state)

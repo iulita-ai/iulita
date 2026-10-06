@@ -4,16 +4,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"github.com/iulita-ai/iulita/internal/config"
-	"github.com/iulita-ai/iulita/internal/llm"
-	"github.com/iulita-ai/iulita/internal/modelruntime"
-	"github.com/iulita-ai/iulita/internal/models"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"regexp"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/iulita-ai/iulita/internal/config"
+	"github.com/iulita-ai/iulita/internal/llm"
+	"github.com/iulita-ai/iulita/internal/modelruntime"
+	"github.com/iulita-ai/iulita/internal/models"
 )
 
 type setupProbeProvider struct{ model string }
@@ -50,16 +52,16 @@ func TestModelsOnlyInstallFinishesSetupAndRequiresRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i, kind := range []string{"text", "tools"} {
-		v, err := manager.Probe(context.Background(), "admin", modelruntime.ProbeRequest{StageID: stage.ID, ProfileID: "ds-flash", Kind: kind, IdempotencyKey: strconv.FormatInt(time.Now().UnixMilli(), 10) + ":setupcheck-fixture-" + strconv.Itoa(i)})
-		if err != nil {
-			t.Fatal(err)
+		v, probeErr := manager.Probe(context.Background(), "admin", modelruntime.ProbeRequest{StageID: stage.ID, ProfileID: "ds-flash", Kind: kind, IdempotencyKey: strconv.FormatInt(time.Now().UnixMilli(), 10) + ":setupcheck-fixture-" + strconv.Itoa(i)})
+		if probeErr != nil {
+			t.Fatal(probeErr)
 		}
 		deadline := time.Now().Add(3 * time.Second)
 		for v.Status == "running" && time.Now().Before(deadline) {
 			time.Sleep(time.Millisecond)
-			v, err = manager.ProbeStatus(context.Background(), "admin", v.ID)
-			if err != nil {
-				t.Fatal(err)
+			v, probeErr = manager.ProbeStatus(context.Background(), "admin", v.ID)
+			if probeErr != nil {
+				t.Fatal(probeErr)
 			}
 		}
 		if v.Result == nil || !v.Result.Passed {
@@ -80,7 +82,7 @@ func TestModelsOnlyInstallFinishesSetupAndRequiresRestart(t *testing.T) {
 	s.modelManager = manager
 	s.setupMode = true
 	cs.SetModelPolicyManaged()
-	res, err := s.app.Test(httptest.NewRequest("GET", "/api/wizard/status", nil))
+	res, err := s.app.Test(httptest.NewRequest("GET", "/api/wizard/status", http.NoBody))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +92,7 @@ func TestModelsOnlyInstallFinishesSetupAndRequiresRestart(t *testing.T) {
 	if status["has_llm_provider"] != true || status["models_ready"] != true || status["model_restart_required"] != true {
 		t.Fatalf("models-only setup not recognized: %+v", status)
 	}
-	res, err = s.app.Test(httptest.NewRequest("POST", "/api/wizard/complete", nil))
+	res, err = s.app.Test(httptest.NewRequest("POST", "/api/wizard/complete", http.NoBody))
 	if err != nil {
 		t.Fatal(err)
 	}

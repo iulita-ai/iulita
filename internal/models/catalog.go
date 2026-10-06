@@ -2,8 +2,10 @@
 // by configuration, routing and the dashboard. It performs no network requests.
 package models
 
+// CatalogVersion identifies the vendor documentation snapshot.
 const CatalogVersion = "2026-10-05"
 
+// Definition describes documented model capabilities and limits.
 type Definition struct {
 	Provider         string `json:"provider"`
 	Model            string `json:"model"`
@@ -28,6 +30,7 @@ func Catalog() []Definition {
 	}
 }
 
+// Lookup finds a documented model by provider and identifier.
 func Lookup(provider, model string) (Definition, bool) {
 	for _, d := range Catalog() {
 		if d.Provider == provider && d.Model == model {

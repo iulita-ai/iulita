@@ -2,10 +2,11 @@ package agent
 
 import (
 	"context"
+	"testing"
+
 	"github.com/iulita-ai/iulita/internal/llm"
 	"github.com/iulita-ai/iulita/internal/models"
 	"go.uber.org/zap"
-	"testing"
 )
 
 type snapshotCapture struct {

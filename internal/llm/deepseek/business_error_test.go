@@ -1,6 +1,7 @@
 package deepseek
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -15,8 +16,8 @@ func TestZaiBusinessCategoriesDoNotChangeDeepSeekAndRejectUntrustedCodes(t *test
 		{"zai completion", `private-provider-payload`},
 	} {
 		err := errorFromResponse(tc.prefix, &http.Response{StatusCode: 429, Body: io.NopCloser(strings.NewReader(tc.body))})
-		typed, ok := err.(*apiError)
-		if !ok || typed.Permanent() || typed.ModelErrorCode() != "" || typed.StatusCode() != 429 {
+		var typed *apiError
+		if !errors.As(err, &typed) || typed.Permanent() || typed.ModelErrorCode() != "" || typed.StatusCode() != 429 {
 			t.Fatalf("incorrect unknown/DS handling: %v", err)
 		}
 		if strings.Contains(err.Error(), "private-provider-payload") || strings.Contains(err.Error(), "unknown-private-value") || strings.Contains(err.Error(), "1113") {

@@ -1,10 +1,11 @@
 package cost
 
 import (
-	"github.com/iulita-ai/iulita/internal/config"
-	"github.com/iulita-ai/iulita/internal/llm"
 	"testing"
 	"time"
+
+	"github.com/iulita-ai/iulita/internal/config"
+	"github.com/iulita-ai/iulita/internal/llm"
 )
 
 func TestEstimateKnownUnknownAndCached(t *testing.T) {

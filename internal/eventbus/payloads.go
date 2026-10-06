@@ -1,9 +1,10 @@
 package eventbus
 
 import (
+	"time"
+
 	"github.com/iulita-ai/iulita/internal/cost"
 	"github.com/iulita-ai/iulita/internal/llm"
-	"time"
 )
 
 // MessageReceivedPayload is published when a user message arrives.
@@ -75,6 +76,7 @@ func UsagePayload(a llm.Attempt, estimate cost.Estimate) LLMUsagePayload {
 		CostEstimate: &estimate}
 }
 
+// NewAttemptUsagePayload creates a payload with the frozen attempt cost estimate.
 func NewAttemptUsagePayload(a llm.Attempt, estimate cost.Estimate) LLMUsagePayload {
 	return UsagePayload(a, estimate)
 }

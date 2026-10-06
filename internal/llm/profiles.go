@@ -27,6 +27,7 @@ type ProfileSnapshot struct {
 	policy   models.Policy
 }
 
+// NewProfileSnapshot validates and freezes profile bindings and routing policy.
 func NewProfileSnapshot(revision uint64, settings models.Settings, bindings map[string]ProfileBinding) (*ProfileSnapshot, error) {
 	if errs := settings.Validate(); len(errs) > 0 {
 		return nil, errs[0]
@@ -86,6 +87,8 @@ func NewProfileSnapshot(revision uint64, settings models.Settings, bindings map[
 	}
 	return s, nil
 }
+
+// Revision returns the immutable policy revision, or zero for a nil snapshot.
 func (s *ProfileSnapshot) Revision() uint64 {
 	if s == nil {
 		return 0
@@ -239,11 +242,14 @@ func (s *ProfileSnapshot) resolve(req Request) (ProfileBinding, Request, string,
 // dispatcher. The existing RoutingProvider owns publication and invocation.
 type ProfileInvoker interface{ AcquireProfileSnapshot() *ProfileSnapshot }
 
+// AcquireProfileSnapshot returns the currently published immutable profile registry.
 func (p *RoutingProvider) AcquireProfileSnapshot() *ProfileSnapshot {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.snapshot
 }
+
+// SetProfileSnapshot publishes a strictly newer profile registry atomically.
 func (p *RoutingProvider) SetProfileSnapshot(s *ProfileSnapshot) error {
 	if s == nil {
 		return fmt.Errorf("nil profile snapshot")

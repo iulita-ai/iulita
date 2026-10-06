@@ -239,7 +239,7 @@ func (h *InsightGenerateHandler) generateForPair(ctx context.Context, chatID, us
 	return h.store.SaveInsight(ctx, insight)
 }
 
-func (h *InsightGenerateHandler) scoreInsight(ctx context.Context, content string, chatID, userID string) int {
+func (h *InsightGenerateHandler) scoreInsight(ctx context.Context, content, chatID, userID string) int {
 	resp, err := h.provider.Complete(ctx, llm.Request{
 		ChatID: chatID, UserID: userID, Operation: "insight",
 		SystemPrompt: "Rate the following insight on a scale of 1-5 for novelty and usefulness. " +

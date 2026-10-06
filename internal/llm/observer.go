@@ -14,6 +14,7 @@ type AttemptMetadata struct {
 	PolicyRevision                            uint64
 }
 
+// Attempt records bounded usage and routing provenance for one adapter invocation.
 type Attempt struct {
 	AttemptMetadata
 	AttemptID, ChatID, UserID, Operation  string
@@ -25,6 +26,7 @@ type Attempt struct {
 	UsageAvailable, ChargeUnknown, Cached bool
 }
 
+// AttemptObserver consumes an attempt without prompts, reasoning or credentials.
 type AttemptObserver func(context.Context, Attempt)
 
 // ObservingProvider wraps one adapter attempt, inside retry and credential
@@ -36,10 +38,12 @@ type ObservingProvider struct {
 	observe  AttemptObserver
 }
 
+// NewObservingProvider wraps one adapter with synchronous attempt observation.
 func NewObservingProvider(inner Provider, metadata AttemptMetadata, observe AttemptObserver) *ObservingProvider {
 	return &ObservingProvider{inner: inner, metadata: metadata, observe: observe}
 }
 
+// Complete records usage and outcome after a single nonstreaming adapter attempt.
 func (p *ObservingProvider) Complete(ctx context.Context, req Request) (Response, error) {
 	start := time.Now().UTC()
 	resp, err := p.inner.Complete(ctx, req)
@@ -47,6 +51,7 @@ func (p *ObservingProvider) Complete(ctx context.Context, req Request) (Response
 	return resp, err
 }
 
+// CompleteStream records streaming usage, including partial and failed attempts.
 func (p *ObservingProvider) CompleteStream(ctx context.Context, req Request, cb StreamCallback) (Response, error) {
 	start := time.Now().UTC()
 	var resp Response
@@ -102,7 +107,7 @@ func (p *ObservingProvider) record(ctx context.Context, req Request, resp *Respo
 	} else if err != nil {
 		a.Status = "error"
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			a.Status = "cancelled"
+			a.Status = "cancelled" //nolint:misspell // Preserve the existing persisted event and metric status contract.
 		}
 		if errors.Is(err, ErrIncompleteResponse) {
 			a.Status = "incomplete"

@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
+	"testing"
+
 	"github.com/iulita-ai/iulita/internal/llm"
 	"github.com/iulita-ai/iulita/internal/skill"
 	"go.uber.org/zap"
-	"strings"
-	"testing"
 )
 
 type requiredFixtureSkill struct {
@@ -62,15 +63,16 @@ func TestRequiredToolMustActuallySucceed(t *testing.T) {
 			a := New(p, newSynthTestStore(t), reg, "test", "", 200000, zap.NewNop())
 			a.SetMemoryTriggers([]string{"remember"})
 			out, err := a.HandleMessage(context.Background(), newTestMsg("chat", "remember this preference"))
-			if !tc.call || tc.failure {
+			switch {
+			case !tc.call || tc.failure:
 				if err == nil || out != "" {
 					t.Fatalf("false success: %q %v", out, err)
 				}
-			} else if tc.pending {
+			case tc.pending:
 				if err != nil || calls != 1 || tool.calls != 0 || strings.Contains(out, "saved successfully") {
 					t.Fatalf("approval treated as completed: %q %v calls%d", out, err, calls)
 				}
-			} else if err != nil || tool.calls != 1 || out != "saved successfully" {
+			case err != nil || tool.calls != 1 || out != "saved successfully":
 				t.Fatalf("success rejected: %q %v", out, err)
 			}
 		})

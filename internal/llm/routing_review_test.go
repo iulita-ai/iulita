@@ -3,10 +3,11 @@ package llm
 import (
 	"context"
 	"errors"
-	"github.com/iulita-ai/iulita/internal/models"
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/iulita-ai/iulita/internal/models"
 )
 
 type routingCapture struct {

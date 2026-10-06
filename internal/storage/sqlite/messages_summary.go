@@ -16,16 +16,16 @@ func (s *Store) ReplaceMessagesWithSummary(ctx context.Context, chatID string, l
 	if summary == nil || summary.ChatID != chatID || summary.Content == "" || lastOldID <= 0 {
 		return fmt.Errorf("invalid conversation summary")
 	}
-	copy := *summary
-	copy.ID = lastOldID
+	summaryCopy := *summary
+	summaryCopy.ID = lastOldID
 	return s.db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
 		if _, err := tx.NewDelete().Model((*domain.ChatMessage)(nil)).Where("chat_id = ?", chatID).Where("id <= ?", lastOldID).Exec(ctx); err != nil {
 			return err
 		}
-		if _, err := tx.NewInsert().Model(&copy).Exec(ctx); err != nil {
+		if _, err := tx.NewInsert().Model(&summaryCopy).Exec(ctx); err != nil {
 			return err
 		}
-		*summary = copy
+		*summary = summaryCopy
 		return nil
 	})
 }

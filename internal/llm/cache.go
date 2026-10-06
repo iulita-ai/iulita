@@ -50,12 +50,15 @@ func NewCachingProvider(inner Provider, cache ResponseCache, ttl time.Duration, 
 func responseCacheKey(req Request) string {
 	// Versioned, unambiguous serialization includes both complete prompts and
 	// the resolved profile/revision. Old, truncated keys are never reused.
-	raw, _ := json.Marshal(struct {
+	raw, err := json.Marshal(struct {
 		Version                                                 int
 		Scope, Identity, Profile, Hint, Static, System, Message string
 		Thinking                                                int64
 	}{2, req.CacheScope, req.CacheIdentity, req.ProfileID, req.RouteHint,
 		req.StaticSystemPrompt, req.SystemPrompt, req.Message, req.ThinkingBudget})
+	if err != nil {
+		return "" // a serialization failure must never create a shared cache key
+	}
 	h := sha256.Sum256(raw)
 	return hex.EncodeToString(h[:])
 }
@@ -71,6 +74,9 @@ func (p *CachingProvider) Complete(ctx context.Context, req Request) (Response, 
 	}
 
 	key := responseCacheKey(req)
+	if key == "" {
+		return p.inner.Complete(ctx, req)
+	}
 
 	// Check cache.
 	entry, err := p.cache.GetCachedResponse(ctx, key, p.ttl)
@@ -93,14 +99,24 @@ func (p *CachingProvider) Complete(ctx context.Context, req Request) (Response, 
 	if len(resp.ToolCalls) != 0 || resp.Content == "" || resp.FinishReason == "length" || resp.Cached {
 		return resp, nil
 	}
-	metaJSON, _ := json.Marshal(cachedResponseMetadata{Version: 2, Model: resp.Model,
-		RequestedModel: resp.RequestedModel, ModelVerified: resp.ModelVerified, Provider: resp.Provider, FinishReason: resp.FinishReason})
-	_ = p.cache.SaveCachedResponse(ctx, key, resp.Model, resp.Content, string(metaJSON))
-
-	// Evict old entries (best effort).
-	_ = p.cache.EvictResponseCache(ctx, p.maxItems)
-
+	p.saveResponse(ctx, key, resp)
 	return resp, nil
+}
+
+// saveResponse treats cache persistence as an optional side effect. Failures
+// never invalidate an already completed, potentially paid provider response.
+func (p *CachingProvider) saveResponse(ctx context.Context, key string, resp Response) {
+	metaJSON, err := json.Marshal(cachedResponseMetadata{Version: 2, Model: resp.Model,
+		RequestedModel: resp.RequestedModel, ModelVerified: resp.ModelVerified, Provider: resp.Provider, FinishReason: resp.FinishReason})
+	if err != nil {
+		return
+	}
+	if err := p.cache.SaveCachedResponse(ctx, key, resp.Model, resp.Content, string(metaJSON)); err != nil {
+		return // do not evict when no new entry was saved
+	}
+	if err := p.cache.EvictResponseCache(ctx, p.maxItems); err != nil {
+		return
+	}
 }
 
 type cachedResponseMetadata struct {

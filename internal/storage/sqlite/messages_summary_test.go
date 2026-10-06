@@ -14,23 +14,23 @@ func TestSummaryReplacementIsAtomicAndChronological(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if err := s.RunMigrations(ctx); err != nil {
+	if err = s.RunMigrations(ctx); err != nil {
 		t.Fatal(err)
 	}
-	var messages []*domain.ChatMessage
+	messages := make([]*domain.ChatMessage, 0, 3)
 	for _, text := range []string{"first", "second", "keep"} {
 		m := &domain.ChatMessage{ChatID: "chat", Role: domain.RoleUser, Content: text}
-		if err := s.SaveMessage(ctx, m); err != nil {
+		if err = s.SaveMessage(ctx, m); err != nil {
 			t.Fatal(err)
 		}
 		messages = append(messages, m)
 	}
 	// Simulate a storage error exactly at insertion, after the deletion statement.
-	if _, err := s.db.ExecContext(ctx, `CREATE TRIGGER reject_summary BEFORE INSERT ON chat_messages WHEN new.content='summary' BEGIN SELECT RAISE(ABORT,'synthetic failure'); END`); err != nil {
+	if _, err = s.db.ExecContext(ctx, `CREATE TRIGGER reject_summary BEFORE INSERT ON chat_messages WHEN new.content='summary' BEGIN SELECT RAISE(ABORT,'synthetic failure'); END`); err != nil {
 		t.Fatal(err)
 	}
 	summary := &domain.ChatMessage{ChatID: "chat", Role: domain.RoleAssistant, Content: "summary"}
-	if err := s.ReplaceMessagesWithSummary(ctx, "chat", messages[1].ID, summary); err == nil {
+	if err = s.ReplaceMessagesWithSummary(ctx, "chat", messages[1].ID, summary); err == nil {
 		t.Fatal("expected insertion failure")
 	}
 	history, _ := s.GetHistory(ctx, "chat", 0)
@@ -38,7 +38,7 @@ func TestSummaryReplacementIsAtomicAndChronological(t *testing.T) {
 		t.Fatal("failed transaction lost history")
 	}
 	_, _ = s.db.ExecContext(ctx, `DROP TRIGGER reject_summary`)
-	if err := s.ReplaceMessagesWithSummary(ctx, "chat", messages[1].ID, summary); err != nil {
+	if err = s.ReplaceMessagesWithSummary(ctx, "chat", messages[1].ID, summary); err != nil {
 		t.Fatal(err)
 	}
 	history, _ = s.GetHistory(ctx, "chat", 0)

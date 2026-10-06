@@ -44,11 +44,11 @@ func TestOfficialClientPreservesTransportAndNeverFollowsRedirect(t *testing.T) {
 	if resp.StatusCode != 307 || calls != 1 {
 		t.Fatal("redirect was followed")
 	}
-	bad, _ := http.NewRequest(http.MethodPost, "https://evil.test/chat/completions", nil)
+	bad, _ := http.NewRequest(http.MethodPost, "https://evil.test/chat/completions", http.NoBody)
 	if _, err := client.Do(bad); err == nil || calls != 1 {
 		t.Fatal("credentials could escape binding")
 	}
-	req, _ = http.NewRequest(http.MethodPost, endpoint+"/models", nil)
+	req, _ = http.NewRequest(http.MethodPost, endpoint+"/models", http.NoBody)
 	if _, err := client.Do(req); err == nil || calls != 1 {
 		t.Fatal("unexpected endpoint method reached transport")
 	}

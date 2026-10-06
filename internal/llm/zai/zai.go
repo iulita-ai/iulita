@@ -13,7 +13,10 @@ import (
 
 const defaultBaseURL = "https://api.z.ai/api/paas/v4"
 
+// Provider implements the bounded shared protocol with Z.ai-specific options.
 type Provider = deepseek.Provider
+
+// Options configures model capabilities, thinking and attachment limits.
 type Options = deepseek.Options
 
 // New selects the documented capability for a GLM 5.3 model and low reasoning

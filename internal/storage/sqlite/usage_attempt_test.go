@@ -33,7 +33,7 @@ func TestUsageAttemptAtomicDedupAndLegacyUncertainty(t *testing.T) {
 	if summary.TotalRequests != 3 || summary.TotalInputTokens != 10 || summary.TotalCostUSD != amount || summary.TotalCostUnknownRequests != 2 {
 		t.Fatalf("summary: %+v", summary)
 	}
-	if err := s.RunMigrations(ctx); err != nil {
+	if err = s.RunMigrations(ctx); err != nil {
 		t.Fatal(err)
 	}
 	days, err := s.GetUsageByDay(ctx, storage.UsageFilter{ChatID: "chat"})
@@ -45,7 +45,7 @@ func TestUsageAttemptAtomicDedupAndLegacyUncertainty(t *testing.T) {
 		t.Fatalf("model summary: %+v %v", models, err)
 	}
 	var stored domain.LLMUsageAttempt
-	if err := s.db.NewSelect().Model(&stored).Where("attempt_id = ?", "unique").Scan(ctx); err != nil {
+	if err = s.db.NewSelect().Model(&stored).Where("attempt_id = ?", "unique").Scan(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if stored.PriceVersion != "frozen" || stored.EstimatedUSD == nil || *stored.EstimatedUSD != amount {

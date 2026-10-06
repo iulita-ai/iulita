@@ -1,9 +1,10 @@
 package main
 
 import (
+	"testing"
+
 	"github.com/iulita-ai/iulita/internal/config"
 	"github.com/iulita-ai/iulita/internal/llm"
-	"testing"
 )
 
 func TestLegacyMigrationPreservesDistinctCustomTargets(t *testing.T) {
