@@ -384,6 +384,8 @@ export interface ModelsResponse {
 }
 
 export interface WizardStatus {
+  models_ready?: boolean
+  model_restart_required?: boolean
   wizard_completed: boolean
   setup_mode: boolean
   encryption_enabled: boolean
@@ -434,6 +436,7 @@ export interface ImportTOMLResponse {
 }
 
 export interface AgentJob {
+  profile_id?: string
   id: number
   user_id?: string
   name: string
@@ -492,6 +495,8 @@ export interface TodoCountsResponse {
 // --- Usage statistics ---
 
 export interface UsageSummaryResponse {
+  total_cost_unknown_requests?: number
+  total_usage_unknown_requests?: number
   total_input_tokens: number
   total_output_tokens: number
   total_cache_read_tokens: number
@@ -501,6 +506,8 @@ export interface UsageSummaryResponse {
 }
 
 export interface UsageRow {
+  cost_unknown_requests?: number
+  usage_unknown_requests?: number
   date: string
   input_tokens: number
   output_tokens: number
@@ -516,6 +523,8 @@ export interface UsageDailyResponse {
 }
 
 export interface ModelUsageRow {
+  cost_unknown_requests?: number
+  usage_unknown_requests?: number
   model: string
   provider: string
   input_tokens: number
@@ -997,9 +1006,9 @@ export const api = {
   // Agent jobs (admin)
   listAgentJobs: () => get<AgentJob[]>('/api/agent-jobs/'),
   getAgentJob: (id: number) => get<AgentJob>(`/api/agent-jobs/${id}`),
-  createAgentJob: (data: { name: string; prompt: string; model?: string; cron_expr?: string; interval?: string; delivery_chat_id?: string; enabled?: boolean }) =>
+  createAgentJob: (data: { name: string; prompt: string; model?: string; profile_id?: string; wake_gate_prompt?: string; cron_expr?: string; interval?: string; delivery_chat_id?: string; enabled?: boolean }) =>
     post<AgentJob>('/api/agent-jobs/', data),
-  updateAgentJob: (id: number, data: { name?: string; prompt?: string; model?: string; cron_expr?: string; interval?: string; delivery_chat_id?: string; enabled?: boolean }) =>
+  updateAgentJob: (id: number, data: { name?: string; prompt?: string; model?: string | null; profile_id?: string | null; wake_gate_prompt?: string; cron_expr?: string; interval?: string; delivery_chat_id?: string; enabled?: boolean }) =>
     put<AgentJob>(`/api/agent-jobs/${id}`, data),
   deleteAgentJob: (id: number) => del<{ status: string }>(`/api/agent-jobs/${id}`),
 

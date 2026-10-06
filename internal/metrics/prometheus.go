@@ -12,6 +12,8 @@ type Metrics struct {
 	LLMTokensOutput *prometheus.CounterVec   // labels: provider
 	LLMLatency      *prometheus.HistogramVec // labels: provider
 	LLMCostUSD      prometheus.Counter
+	LLMAttempts     *prometheus.CounterVec // bounded labels: provider, model, role, operation, status
+	LLMUnknownCost  *prometheus.CounterVec // labels: provider
 	SkillExecutions *prometheus.CounterVec // labels: skill, status
 	TasksTotal      *prometheus.CounterVec // labels: type, status
 	MessagesTotal   *prometheus.CounterVec // labels: direction (inbound/outbound)
@@ -38,6 +40,14 @@ type Metrics struct {
 // New registers all Prometheus metrics and returns a Metrics instance.
 func New() *Metrics {
 	return &Metrics{
+		LLMAttempts: promauto.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "iulita", Subsystem: "llm", Name: "attempts_total",
+			Help: "LLM adapter attempts including failures; labels are bounded catalog categories.",
+		}, []string{"provider", "model", "role", "operation", "status"}),
+		LLMUnknownCost: promauto.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "iulita", Subsystem: "llm", Name: "cost_unknown_attempts_total",
+			Help: "Attempts whose indicative cost is unknown because price or usage is unavailable.",
+		}, []string{"provider"}),
 		LLMRequests: promauto.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "iulita",
 			Subsystem: "llm",

@@ -107,6 +107,7 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 		{(*domain.SkillExecution)(nil), "skill_executions"},
 		{(*domain.SkillProposal)(nil), "skill_proposals"},
 		{(*domain.UsageRecord)(nil), "usage_stats"},
+		{(*domain.LLMUsageAttempt)(nil), "llm_usage_attempts"},
 		{(*domain.ConfigOverride)(nil), "config_overrides"},
 		{(*domain.AgentJob)(nil), "agent_jobs"},
 		{(*domain.GoogleAccount)(nil), "google_accounts"},
@@ -178,6 +179,7 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 	agentJobNewCols := []string{
 		`ALTER TABLE agent_jobs ADD COLUMN user_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE agent_jobs ADD COLUMN wake_gate_prompt TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE agent_jobs ADD COLUMN profile_id TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, stmt := range agentJobNewCols {
 		s.db.ExecContext(ctx, stmt) //nolint:errcheck,gosec // ignore "duplicate column" errors
@@ -196,6 +198,9 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 		`ALTER TABLE usage_stats ADD COLUMN provider TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE usage_stats ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE usage_stats ADD COLUMN cache_creation_tokens INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE usage_stats ADD COLUMN cost_known_requests INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE usage_stats ADD COLUMN cost_unknown_requests INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE usage_stats ADD COLUMN usage_unknown_requests INTEGER NOT NULL DEFAULT 0`,
 	}
 	for _, stmt := range usageNewCols {
 		s.db.ExecContext(ctx, stmt) //nolint:errcheck,gosec // ignore "duplicate column" errors
@@ -203,11 +208,14 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 	// Deduplicate existing rows before rebuilding unique index.
 	//nolint:errcheck,gosec // dedup migration — best-effort, OK to fail on empty table
 	s.db.ExecContext(ctx, `DELETE FROM usage_stats WHERE id NOT IN (
-			SELECT MIN(id) FROM usage_stats GROUP BY chat_id, model, hour)`)
+			SELECT MIN(id) FROM usage_stats GROUP BY chat_id, model, provider, hour)`)
 
 	// Rebuild unique index to include model for per-model tracking.
 	s.db.ExecContext(ctx, `DROP INDEX IF EXISTS idx_usage_stats_chat_hour`) //nolint:errcheck,gosec
-	if _, err := s.db.ExecContext(ctx, `CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_stats_chat_model_hour ON usage_stats(chat_id, model, hour)`); err != nil {
+	if _, err := s.db.ExecContext(ctx, `DROP INDEX IF EXISTS idx_usage_stats_chat_model_hour`); err != nil {
+		return fmt.Errorf("migrating usage_stats provider identity: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, `CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_stats_chat_model_provider_hour ON usage_stats(chat_id, model, provider, hour)`); err != nil {
 		return fmt.Errorf("creating usage_stats unique index: %w", err)
 	}
 	s.db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_usage_stats_hour ON usage_stats(hour)`)          //nolint:errcheck,gosec

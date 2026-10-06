@@ -86,6 +86,7 @@ func (h *SkillReviewHandler) Handle(ctx context.Context, payload string) (string
 	}
 
 	resp, err := h.provider.Complete(ctx, llm.Request{
+		ChatID: p.ChatID, UserID: p.UserID, Operation: "skill-review",
 		SystemPrompt: "You review an assistant's completed conversation that required many tool calls. " +
 			"Extract ONE concise, reusable lesson (1-2 sentences) that would let the assistant handle " +
 			"a similar request faster or more reliably next time — a heuristic, a better tool order, or a " +
@@ -146,6 +147,7 @@ type proposedSkill struct {
 // registered or injected). Returns true if a proposal row was written.
 func (h *SkillReviewHandler) maybeProposeSkill(ctx context.Context, p domain.SkillReviewPayload, transcript, lesson string) bool {
 	resp, err := h.provider.Complete(ctx, llm.Request{
+		ChatID: p.ChatID, UserID: p.UserID, Operation: "skill-review",
 		SystemPrompt: "You decide whether a conversation reveals a reusable, well-scoped PROCEDURE worth saving as a " +
 			"lightweight text-only skill (instructions only, no code). Only propose one if it is genuinely reusable and " +
 			"specific. Respond with EXACTLY " + reviewNoLesson + " if not. Otherwise respond with ONLY a JSON object: " +

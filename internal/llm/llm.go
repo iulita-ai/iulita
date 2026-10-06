@@ -23,9 +23,10 @@ type ToolCall struct {
 
 // ToolResult carries the outcome of a tool execution back to the LLM.
 type ToolResult struct {
-	ToolCallID string
-	Content    string
-	IsError    bool
+	ToolCallID      string
+	Content         string
+	IsError         bool
+	PendingApproval bool // tool has not executed; never treat this as success
 }
 
 // ToolExchange records one round of tool use: the assistant's response
@@ -38,6 +39,8 @@ type ToolExchange struct {
 	// provider-specific (DeepSeek thinking-mode REQUIRES it to be replayed on
 	// assistant tool-call turns); providers that don't use it leave it empty.
 	ReasoningContent string
+	// ProfileID records the origin of an in-memory tool round.
+	ProfileID string
 }
 
 // ImageAttachment holds raw image data to send to the LLM.
@@ -55,6 +58,7 @@ type DocumentAttachment struct {
 
 // Request is the input to an LLM provider.
 type Request struct {
+	PinnedProfile bool // engine-selected profile, never an explicit user override
 	// StaticSystemPrompt contains the stable portion of the system prompt
 	// (base instructions, skill system prompts) that is eligible for
 	// provider-side caching. Claude uses cache_control: ephemeral on this
@@ -69,7 +73,22 @@ type Request struct {
 	ToolExchanges      []ToolExchange       // accumulated tool use rounds in the current turn
 	ThinkingBudget     int64                // extended thinking budget in tokens (0 = disabled)
 	ForceTool          string               // if set, force the LLM to use this specific tool
+	RequireToolOutcome bool                 // caller verifies the required tool's actual outcome
 	RouteHint          string               // optional: routing hint for provider selection
+	// ProfileID is an explicit model profile reference, independent of legacy hints.
+	ProfileID string
+	// CacheScope opts a stateless request into response caching. Private chat,
+	// history, attachments and tool exchanges are never response-cached.
+	CacheScope string
+	// CacheIdentity binds an opt-in cache entry to resolved model settings/revision.
+	CacheIdentity string
+	Role          string
+	// RoutingSnapshot pins the entire policy for one conversational/tool turn.
+	RoutingSnapshot *ProfileSnapshot
+	ChatID          string
+	UserID          string
+	Operation       string
+	PolicyRevision  uint64
 }
 
 // Usage tracks token consumption for a single LLM call.
@@ -80,13 +99,29 @@ type Usage struct {
 	CacheCreationInputTokens int64
 }
 
+// TotalInputTokens includes cached context; discounts affect cost, not context
+// capacity or the amount of work consumed from a shared agent token budget.
+func (u Usage) TotalInputTokens() int64 {
+	return u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens
+}
+
 // Response is the output from an LLM provider.
 type Response struct {
-	Content   string
-	ToolCalls []ToolCall // non-empty when the LLM wants to use tools
-	Usage     Usage
-	Model     string // actual model used (populated by provider)
-	Provider  string // provider name (populated by provider)
+	LegacyVisibleHandoff bool // router-authorized Claude-to-Haiku visible-only transition
+	Content              string
+	ToolCalls            []ToolCall // non-empty when the LLM wants to use tools
+	Usage                Usage
+	Model                string // actual model used (populated by provider)
+	Provider             string // provider name (populated by provider)
+	RequestedModel       string
+	ModelVerified        bool // actual model identity was present in the provider response
+	ProfileID            string
+	Role                 string
+	PolicyRevision       uint64
+	FinishReason         string
+	Cached               bool // local response-cache hit; Usage is zero for this invocation
+	UsageObserved        bool // an attempt observer already published this usage
+	UsageReported        bool // upstream supplied usage, including a legitimate zero
 	// ReasoningContent is the model's chain-of-thought, when the provider
 	// exposes it separately from Content (e.g. DeepSeek thinking mode). It is
 	// never streamed to the user; it is threaded back via ToolExchange so

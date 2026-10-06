@@ -7,6 +7,7 @@
         bordered
         :width="220"
         :collapsed-width="64"
+        :collapsed="siderCollapsed"
         collapse-mode="width"
         show-trigger
         :native-scrollbar="false"
@@ -39,7 +40,7 @@
           </n-button>
         </div>
       </n-layout-sider>
-      <n-layout-content content-style="padding: 24px;" :native-scrollbar="false">
+      <n-layout-content :content-style="siderCollapsed ? 'padding: 16px;' : 'padding: 24px;'" :native-scrollbar="false">
         <div :dir="direction">
           <slot />
         </div>
@@ -84,7 +85,7 @@ import logoUrl from '../assets/logo.svg'
 
 const { t } = useI18n()
 const { direction } = useLocale()
-const siderCollapsed = ref(false)
+const siderCollapsed = ref(window.matchMedia('(max-width: 767px)').matches)
 const router = useRouter()
 const route = useRoute()
 
@@ -113,6 +114,7 @@ const menuOptions = computed<MenuOption[]>(() => {
   )
   if (isAdmin()) {
     items.push({ key: 'admin-divider', type: 'divider' } as any)
+    items.push({ label: t('nav.models'), key: 'models', icon: renderIcon(ConstructOutline) })
     items.push({ label: t('nav.usage'), key: 'usage', icon: renderIcon(BarChartOutline) })
     items.push({ label: t('nav.skillStats'), key: 'skill-stats', icon: renderIcon(PulseOutline) })
     items.push({ label: t('nav.skillProposals'), key: 'skill-proposals', icon: renderIcon(ConstructOutline) })

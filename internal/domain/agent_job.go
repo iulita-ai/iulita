@@ -9,6 +9,7 @@ type AgentJob struct {
 	Name           string    `bun:",notnull" json:"name"`
 	Prompt         string    `bun:",notnull" json:"prompt"`
 	Model          string    `bun:",notnull,default:''" json:"model"`            // "claude", "ollama", "" = default
+	ProfileID      string    `bun:",notnull,default:''" json:"profile_id"`       // explicit model profile; empty = task default
 	CronExpr       string    `bun:",notnull,default:''" json:"cron_expr"`        // cron expression (overrides interval)
 	Interval       string    `bun:",notnull,default:'24h'" json:"interval"`      // Go duration fallback
 	DeliveryChatID string    `bun:",notnull,default:''" json:"delivery_chat_id"` // chat to deliver results to

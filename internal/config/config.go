@@ -33,6 +33,7 @@ type Config struct {
 	Claude        ClaudeConfig        `koanf:"claude"`
 	OpenAI        OpenAIConfig        `koanf:"openai"`
 	DeepSeek      DeepSeekConfig      `koanf:"deepseek"`
+	ZAI           DeepSeekConfig      `koanf:"zai"` // standard metered connection; model roles live in Models settings
 	Ollama        OllamaConfig        `koanf:"ollama"`
 	Storage       StorageConfig       `koanf:"storage"`
 	Server        ServerConfig        `koanf:"server"`
@@ -380,10 +381,16 @@ func (c *Config) HasAnyLLMProvider() bool {
 // - ValidateServer: at least one LLM provider + at least one channel
 // - ValidateSetup: no requirements (web wizard will configure)
 func (c *Config) Validate(mode ValidateMode) error {
+	return c.ValidateWithModels(mode, false)
+}
+
+// ValidateWithModels accepts a separately validated, encrypted model policy
+// without requiring a duplicate legacy vendor key in the flat configuration.
+func (c *Config) ValidateWithModels(mode ValidateMode, modelsConfigured bool) error {
 	if mode == ValidateSetup {
 		return nil
 	}
-	if !c.HasAnyLLMProvider() {
+	if !c.HasAnyLLMProvider() && !modelsConfigured {
 		return fmt.Errorf("at least one LLM provider is required (Claude, OpenAI, DeepSeek, or Ollama). Run 'iulita init' to configure")
 	}
 	if mode == ValidateServer && c.Telegram.Token == "" && !c.Server.Enabled {

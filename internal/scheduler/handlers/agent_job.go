@@ -61,6 +61,7 @@ type agentJobPayload struct {
 	DeliveryChatID string `json:"delivery_chat_id"`
 	UserID         string `json:"user_id"`          // "" = legacy admin-global job
 	Model          string `json:"model"`            // routing hint; "" = default provider
+	ProfileID      string `json:"profile_id"`       // explicit shared model profile
 	WakeGatePrompt string `json:"wake_gate_prompt"` // optional cheap pre-check
 	Timezone       string `json:"timezone"`         // IANA tz for date grounding
 }
@@ -142,11 +143,17 @@ func (h *AgentJobHandler) Handle(ctx context.Context, payload string) (string, e
 // run executes the job prompt. User-scoped jobs use a full agentic loop with the
 // read-only tool allowlist and user context; legacy jobs use a bare completion.
 func (h *AgentJobHandler) run(ctx context.Context, p agentJobPayload, memoryBlock string) (string, error) {
+	role := "background"
+	if p.Model != "" && p.ProfileID == "" {
+		role = ""
+	}
 	if p.UserID == "" || h.registry == nil {
 		// Legacy admin-global job (or no registry wired): bare prompt, no tools.
 		resp, err := h.provider.Complete(ctx, llm.Request{
 			SystemPrompt: "You are a helpful assistant executing a scheduled task. Be concise and actionable.",
 			Message:      p.Prompt,
+			RouteHint:    p.Model, ProfileID: p.ProfileID, Role: role,
+			ChatID: p.DeliveryChatID, UserID: p.UserID, Operation: "job",
 		})
 		if err != nil {
 			return "", fmt.Errorf("agent job LLM call: %w", err)
@@ -170,7 +177,8 @@ func (h *AgentJobHandler) run(ctx context.Context, p agentJobPayload, memoryBloc
 		Task:         task,
 		SystemPrompt: jobSystemPrompt,
 		RouteHint:    p.Model, // "" → default provider
-		Tools:        jobToolAllowlist,
+		ProfileID:    p.ProfileID, Role: role,
+		Tools: jobToolAllowlist,
 	}
 	res := runner.Run(runCtx, spec, agent.Budget{MaxTurns: jobMaxTurns, Timeout: jobTaskTimeout}, nil)
 	if res.Err != nil {
@@ -204,6 +212,7 @@ func (h *AgentJobHandler) wakeGateSkips(ctx context.Context, p agentJobPayload, 
 		SystemPrompt: "Answer with a single word: RUN or SKIP.",
 		Message:      prompt,
 		RouteHint:    llm.RouteHintCheap,
+		Role:         "background", ChatID: p.DeliveryChatID, UserID: p.UserID, Operation: "job",
 	})
 	if err != nil {
 		// Fail open: if the gate errors, run the job rather than silently dropping it.

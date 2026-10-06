@@ -52,7 +52,7 @@ func (p *RetryProvider) Complete(ctx context.Context, req Request) (Response, er
 		if err == nil {
 			return resp, nil
 		}
-		if !isRetryable(err) {
+		if ctx.Err() != nil || len(req.ToolExchanges) > 0 || resp.Content != "" || len(resp.ToolCalls) > 0 || !isRetryable(err) {
 			return resp, err
 		}
 		lastErr = err
@@ -94,6 +94,10 @@ type HTTPStatusError interface {
 }
 
 func isRetryable(err error) bool {
+	var permanent interface{ Permanent() bool }
+	if errors.As(err, &permanent) && permanent.Permanent() {
+		return false
+	}
 	var httpErr HTTPStatusError
 	if errors.As(err, &httpErr) {
 		code := httpErr.StatusCode()

@@ -41,6 +41,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/llm/onnx"
 	openaillm "github.com/iulita-ai/iulita/internal/llm/openai"
 	"github.com/iulita-ai/iulita/internal/metrics"
+	"github.com/iulita-ai/iulita/internal/modelruntime"
 	"github.com/iulita-ai/iulita/internal/notify"
 	"github.com/iulita-ai/iulita/internal/ratelimit"
 	"github.com/iulita-ai/iulita/internal/scheduler"
@@ -356,6 +357,116 @@ func main() {
 		}
 	}
 
+	// HTTP clients (proxy support).
+	transport := buildTransport(cfg.Proxy.URL, logger)
+	httpClient := &http.Client{Transport: transport, Timeout: 30 * time.Second}
+	// LLM HTTP client has no timeout — cancellation is managed by context deadlines
+	// in HandleMessage. This avoids premature kills during extended thinking or
+	// large context requests.
+	llmHTTPClient := &http.Client{Transport: transport}
+	tgHTTPClient := &http.Client{Transport: transport} // no timeout for long polling
+
+	// Shared attempt accounting also covers manual checks during setup.
+	bus := eventbus.New(logger)
+	costEstimator := cost.New(cfg.Cost)
+	eventbus.RegisterUsageSubscriber(bus, store, costEstimator, logger)
+	observeModelAttempt := modelAttemptObserver(bus, costEstimator)
+	var routingProvider *llm.RoutingProvider
+	var modelCipher modelruntime.Cipher
+	if encryptor != nil {
+		modelCipher = encryptor
+	}
+	modelManager, modelErr := modelruntime.New(store, modelCipher, modelClientFactory(llmHTTPClient, logger, observeModelAttempt), modelAuthorization(store))
+	if modelErr != nil {
+		logger.Fatal("model configuration could not be loaded", zap.Error(modelErr))
+	}
+	applyModelEnvironmentKeys(cfg)
+	legacySettings := legacyModelSettings(cfg)
+	legacyClassifierActive := cfg.Routing.ClassificationEnabled && cfg.Ollama.URL != "" && cfg.Ollama.Model != ""
+	if encryptor != nil {
+		owners := map[string]bool{}
+		for _, provider := range []string{"claude", "openai", "deepseek", "zai"} {
+			owners[provider] = modelEnvironmentKey(provider) != ""
+		}
+		if ownershipErr := modelManager.SyncEnvironmentOwnership(ctx, owners); ownershipErr != nil {
+			logger.Fatal("model environment ownership could not be synchronized", zap.Error(ownershipErr))
+		}
+		seeds := legacyModelConnections(cfg)
+		view := modelManager.Snapshot()
+		if view.Settings.Policy.Everyday != "" || view.Stage != nil {
+			filtered := seeds[:0]
+			for _, seed := range seeds {
+				keep := true
+				for _, existing := range view.Connections {
+					if existing.Provider == seed.Provider && seed.Source != "environment" {
+						keep = false
+					}
+				}
+				if keep {
+					filtered = append(filtered, seed)
+				}
+			}
+			seeds = filtered
+		}
+		if seedErr := modelManager.SeedConnections(ctx, seeds); seedErr != nil {
+			logger.Fatal("model connections could not be initialized", zap.Error(seedErr))
+		}
+	}
+	if encryptor != nil {
+		view := modelManager.Snapshot()
+		if legacySettings != nil && view.Settings.Policy.Everyday == "" && view.Stage == nil {
+			mode, _ := cfgStore.GetEffective("claude.thinking")
+			changedLegacy := changedLegacyModelProviders(cfg, mode)
+			if seedErr := modelManager.SeedLegacyProfiles(ctx, *legacySettings, changedLegacy...); seedErr != nil {
+				logger.Warn("legacy routing migration draft is unavailable", zap.Error(seedErr))
+			}
+		}
+		if frozen, ok := modelManager.LegacySettings(); ok {
+			legacySettings = &frozen
+		}
+		if view.Stage != nil && view.Settings.Policy.Everyday == "" {
+			for provider, target := range map[string]*config.DeepSeekConfig{"deepseek": &cfg.DeepSeek, "zai": &cfg.ZAI} {
+				if connection, connectionErr := modelManager.LegacyConnection(provider); connectionErr == nil {
+					target.APIKey = connection.APIKey
+					target.BaseURL = connection.Endpoint
+				}
+			}
+			if connection, connectionErr := modelManager.LegacyConnection("claude"); connectionErr == nil {
+				cfg.Claude.APIKey = connection.APIKey
+				cfg.Claude.BaseURL = connection.Endpoint
+			}
+			if connection, connectionErr := modelManager.LegacyConnection("openai"); connectionErr == nil {
+				cfg.OpenAI.APIKey = connection.APIKey
+				cfg.OpenAI.BaseURL = connection.Endpoint
+			}
+			if connection, connectionErr := modelManager.LegacyConnection("ollama"); connectionErr == nil {
+				cfg.Ollama.URL = connection.Endpoint
+			}
+			if legacySettings != nil {
+				for _, profile := range legacySettings.Profiles {
+					switch profile.ID {
+					case "legacy-claude":
+						cfg.Claude.Model = profile.Model
+						cfg.Claude.MaxTokens = profile.MaxOutputTokens
+					case "legacy-openai":
+						cfg.OpenAI.Model = profile.Model
+						cfg.OpenAI.MaxTokens = profile.MaxOutputTokens
+					case "legacy-deepseek":
+						cfg.DeepSeek.Model = profile.Model
+						cfg.DeepSeek.MaxTokens = profile.MaxOutputTokens
+					case "legacy-ollama":
+						cfg.Ollama.Model = profile.Model
+					}
+				}
+			}
+		}
+	}
+	defer closeModelRuntime(modelManager, logger)
+	modelPolicyReady := modelManager.Snapshot().Settings.Policy.Everyday != ""
+	if modelPolicyReady || modelManager.Snapshot().Stage != nil {
+		cfgStore.SetModelPolicyManaged()
+	}
+
 	validateMode := config.ValidateConsole
 	if serverMode {
 		cfg.Server.Enabled = true
@@ -363,18 +474,18 @@ func main() {
 	}
 
 	// In server mode, allow setup mode if wizard not completed and no LLM configured.
-	if serverMode && !wizardCompleted && !cfg.HasAnyLLMProvider() {
+	if serverMode && !wizardCompleted && !cfg.HasAnyLLMProvider() && !modelPolicyReady {
 		validateMode = config.ValidateSetup
 		setupMode = true
 		logger.Info("starting in setup mode — web wizard required")
 	}
 
-	if err := cfg.Validate(validateMode); err != nil {
+	if validationErr := cfg.ValidateWithModels(validateMode, modelPolicyReady); validationErr != nil {
 		if !cfg.HasAnyLLMProvider() && consoleMode {
 			fmt.Println("No LLM provider configured. Run 'iulita init' to set up.")
 			os.Exit(1)
 		}
-		log.Fatalf("invalid config: %v", err)
+		log.Fatalf("invalid config: %v", validationErr)
 	}
 
 	// Auth service — always created so dashboard login works (including setup mode).
@@ -409,13 +520,14 @@ func main() {
 		}
 
 		dashSrv := dashboard.New(dashboard.Config{
-			Address:     address,
-			Store:       store,
-			StaticFS:    staticFS,
-			Logger:      logger,
-			ConfigStore: cfgStore,
-			AuthService: authService,
-			SetupMode:   true,
+			Address:      address,
+			Store:        store,
+			StaticFS:     staticFS,
+			Logger:       logger,
+			ConfigStore:  cfgStore,
+			AuthService:  authService,
+			SetupMode:    true,
+			ModelManager: modelManager, ModelHTTPClient: llmHTTPClient, LegacyModelSettings: legacySettings, LegacyClassifierActive: legacyClassifierActive,
 		})
 
 		logger.Info("starting in setup mode — complete the wizard at the dashboard",
@@ -429,6 +541,8 @@ func main() {
 
 		<-ctx.Done()
 		logger.Info("shutdown signal received")
+		closeModelRuntime(modelManager, logger)
+		bus.Shutdown()
 		if err := store.Close(); err != nil {
 			logger.Error("failed to close storage", zap.Error(err))
 		}
@@ -508,14 +622,17 @@ func main() {
 	}
 	logger.Info("storage ready", zap.String("path", cfg.Storage.Path))
 
-	// HTTP clients (proxy support).
-	transport := buildTransport(cfg.Proxy.URL, logger)
-	httpClient := &http.Client{Transport: transport, Timeout: 30 * time.Second}
-	// LLM HTTP client has no timeout — cancellation is managed by context deadlines
-	// in HandleMessage. This avoids premature kills during extended thinking or
-	// large context requests.
-	llmHTTPClient := &http.Client{Transport: transport}
-	tgHTTPClient := &http.Client{Transport: transport} // no timeout for long polling
+	bindLegacy := func(provider, model string, inner llm.Provider) llm.Provider {
+		observed := llm.NewObservingProvider(inner, llm.AttemptMetadata{Provider: provider, RequestedModel: model}, observeModelAttempt)
+		if encryptor == nil {
+			return observed
+		}
+		guarded, bindingErr := modelManager.BindLegacy(provider, observed)
+		if bindingErr != nil {
+			logger.Fatal("legacy model admission unavailable", zap.Error(bindingErr))
+		}
+		return guarded
+	}
 
 	// LLM provider chain — build from configured providers.
 	var rawProvider *claude.Provider // may be nil if Claude not configured
@@ -523,20 +640,20 @@ func main() {
 	// Track the actual primary provider/model for usage-tracking fallback labeling.
 	var primaryModel, primaryProvider string
 
-	if cfg.Claude.APIKey != "" {
+	if cfg.Claude.APIKey != "" && !modelPolicyReady {
 		rawProvider = claude.New(cfg.Claude.APIKey, cfg.Claude.Model, cfg.Claude.MaxTokens, cfg.Claude.BaseURL, llmHTTPClient)
-		llmProvider = llm.NewRetryProvider(rawProvider, llm.DefaultRetryConfig())
+		llmProvider = llm.NewRetryProvider(bindLegacy("claude", cfg.Claude.Model, rawProvider), llm.DefaultRetryConfig())
 		primaryModel, primaryProvider = cfg.Claude.Model, "claude"
 		logger.Info("claude provider ready", zap.String("model", cfg.Claude.Model))
 	}
 
 	var openaiProvider llm.Provider
-	if cfg.OpenAI.APIKey != "" && cfg.OpenAI.Model != "" {
+	if cfg.OpenAI.APIKey != "" && cfg.OpenAI.Model != "" && !modelPolicyReady {
 		openaiMaxTokens := cfg.OpenAI.MaxTokens
 		if openaiMaxTokens <= 0 {
 			openaiMaxTokens = 4096
 		}
-		openaiProvider = openaillm.New(cfg.OpenAI.APIKey, cfg.OpenAI.Model, openaiMaxTokens, cfg.OpenAI.BaseURL, httpClient)
+		openaiProvider = bindLegacy("openai", cfg.OpenAI.Model, openaillm.New(cfg.OpenAI.APIKey, cfg.OpenAI.Model, openaiMaxTokens, cfg.OpenAI.BaseURL, httpClient))
 		if llmProvider == nil {
 			// OpenAI is primary provider.
 			llmProvider = llm.NewRetryProvider(openaiProvider, llm.DefaultRetryConfig())
@@ -557,7 +674,7 @@ func main() {
 	var deepseekProvider llm.Provider
 	var rawDeepSeek *deepseekllm.Provider // concrete type for hot-reload; nil if not configured
 	deepseekIsPrimary := false
-	if cfg.DeepSeek.APIKey != "" && cfg.DeepSeek.Model != "" {
+	if cfg.DeepSeek.APIKey != "" && cfg.DeepSeek.Model != "" && !modelPolicyReady {
 		dsMaxTokens := cfg.DeepSeek.MaxTokens
 		if dsMaxTokens <= 0 {
 			dsMaxTokens = 8192
@@ -565,7 +682,7 @@ func main() {
 		// Use llmHTTPClient (no client-level timeout) so long streaming/reasoning
 		// responses aren't cut off; cancellation is context-driven.
 		rawDeepSeek = deepseekllm.New(cfg.DeepSeek.APIKey, cfg.DeepSeek.Model, dsMaxTokens, cfg.DeepSeek.BaseURL, llmHTTPClient, logger)
-		deepseekProvider = llm.NewRetryProvider(rawDeepSeek, llm.DefaultRetryConfig())
+		deepseekProvider = llm.NewRetryProvider(bindLegacy("deepseek", cfg.DeepSeek.Model, rawDeepSeek), llm.DefaultRetryConfig())
 		switch {
 		case llmProvider == nil:
 			llmProvider = deepseekProvider
@@ -583,7 +700,7 @@ func main() {
 	}
 
 	// Wrap with response caching if enabled.
-	if cfg.Cache.ResponseEnabled {
+	if cfg.Cache.ResponseEnabled && llmProvider != nil {
 		responseCache := llm.NewStorageResponseCacheAdapter(store)
 		ttl := 60 * time.Minute
 		if cfg.Cache.ResponseTTL != "" {
@@ -601,9 +718,9 @@ func main() {
 
 	// Build Ollama provider (used for routing, delegation, classification, or as primary).
 	var ollamaProvider llm.Provider
-	if cfg.Ollama.URL != "" && cfg.Ollama.Model != "" {
+	if cfg.Ollama.URL != "" && cfg.Ollama.Model != "" && !modelPolicyReady {
 		raw := ollama.New(cfg.Ollama.URL, cfg.Ollama.Model, httpClient)
-		ollamaProvider = llm.NewXMLToolProvider(raw) // enable tool calling via XML injection
+		ollamaProvider = bindLegacy("ollama", cfg.Ollama.Model, llm.NewXMLToolProvider(raw)) // enable tool calling via XML injection
 		if llmProvider == nil {
 			// Ollama is primary provider.
 			llmProvider = ollamaProvider
@@ -621,7 +738,7 @@ func main() {
 		// Don't create a haiku instance if the primary model is already haiku.
 		if cfg.Claude.Model != haikuModel && cfg.Claude.Model != "claude-haiku-4-5" {
 			haikuRaw := claude.New(cfg.Claude.APIKey, haikuModel, cfg.Claude.MaxTokens, cfg.Claude.BaseURL, llmHTTPClient)
-			claudeHaikuProvider = llm.NewRetryProvider(haikuRaw, llm.DefaultRetryConfig())
+			claudeHaikuProvider = llm.NewRetryProvider(bindLegacy("claude", haikuModel, haikuRaw), llm.DefaultRetryConfig())
 			logger.Info("claude-haiku provider ready (auto-registered)", zap.String("model", haikuModel))
 		}
 	}
@@ -636,13 +753,12 @@ func main() {
 		(ollamaProvider != nil && llmProvider != ollamaProvider)
 	// Hoisted so the runtime config-reload handler can hot-swap the default
 	// provider (routing.default_provider) without a restart.
-	var routingProvider *llm.RoutingProvider
 	var providerMap map[string]llm.Provider
 	if cfg.Routing.DefaultProvider != "" && !cfg.Routing.Enabled && !hasSecondaryProviders {
 		logger.Warn("routing.default_provider is set but routing is inactive (only one provider); setting has no effect until a second provider is configured",
 			zap.String("requested", cfg.Routing.DefaultProvider))
 	}
-	if cfg.Routing.Enabled || hasSecondaryProviders {
+	if cfg.Routing.Enabled || hasSecondaryProviders || modelPolicyReady {
 		routes := make(map[string]llm.Provider)
 		providerMap = make(map[string]llm.Provider)
 		// Only label "claude" when Claude is actually the configured provider —
@@ -730,10 +846,29 @@ func main() {
 		logger.Info("model routing enabled", zap.Int("routes", len(routes)))
 	}
 
+	// The same router receives immutable model-policy revisions from the dashboard.
+	if routingProvider == nil {
+		routingProvider = llm.NewRoutingProvider(llmProvider, nil)
+		llmProvider = routingProvider
+	}
+	if publicationErr := modelManager.SetPublisher(func(snapshot *llm.ProfileSnapshot) error {
+		if snapshotErr := routingProvider.SetProfileSnapshot(snapshot); snapshotErr != nil {
+			return snapshotErr
+		}
+		cfgStore.SetModelPolicyManaged()
+		return nil
+	}); publicationErr != nil {
+		logger.Error("model policy unavailable; use Models settings to restore routing", zap.Error(publicationErr))
+	}
+
+	if _, ok := llmProvider.(*llm.ClassifyingProvider); !ok {
+		llmProvider = llm.NewClassifyingProvider(nil, routingProvider)
+	}
+
 	// Cost tracker.
 	var costTracker *cost.Tracker
 	if cfg.Cost.Enabled {
-		costTracker = cost.New(cfg.Cost)
+		costTracker = costEstimator
 		logger.Info("cost tracking enabled", zap.Float64("daily_limit_usd", cfg.Cost.DailyLimitUSD))
 		// Surface silent $0 billing when a configured DeepSeek model has no price
 		// entry. Check both the configured map AND the compiled-in defaults that
@@ -1038,41 +1173,11 @@ func main() {
 	registry.RegisterWithManifest(unifiedTasks, tasksManifest)
 	logger.Info("unified tasks meta-skill registered")
 
-	// Delegate skill — send subtasks to secondary LLM providers.
-	delegateProviders := make(map[string]llm.Provider)
-	defaultDelegate := ""
-	if ollamaProvider != nil {
-		delegateProviders["ollama"] = ollamaProvider
-		defaultDelegate = "ollama"
+	delegateManifest, err := delegate.LoadManifest()
+	if err != nil {
+		logger.Warn("failed to load delegate manifest", zap.Error(err))
 	}
-	if cfg.OpenAI.APIKey != "" && cfg.OpenAI.Model != "" {
-		openaiMaxTokens := cfg.OpenAI.MaxTokens
-		if openaiMaxTokens <= 0 {
-			openaiMaxTokens = 4096
-		}
-		delegateProviders["openai"] = openaillm.New(cfg.OpenAI.APIKey, cfg.OpenAI.Model, openaiMaxTokens, cfg.OpenAI.BaseURL, httpClient)
-		if defaultDelegate == "" {
-			defaultDelegate = "openai"
-		}
-	}
-	if cfg.DeepSeek.APIKey != "" && cfg.DeepSeek.Model != "" {
-		dsMaxTokens := cfg.DeepSeek.MaxTokens
-		if dsMaxTokens <= 0 {
-			dsMaxTokens = 8192
-		}
-		delegateProviders["deepseek"] = deepseekllm.New(cfg.DeepSeek.APIKey, cfg.DeepSeek.Model, dsMaxTokens, cfg.DeepSeek.BaseURL, llmHTTPClient, logger)
-		if defaultDelegate == "" {
-			defaultDelegate = "deepseek"
-		}
-	}
-	if len(delegateProviders) > 0 {
-		delegateManifest, err := delegate.LoadManifest()
-		if err != nil {
-			logger.Warn("failed to load delegate manifest", zap.Error(err))
-		}
-		registry.RegisterWithManifest(delegate.New(delegateProviders, defaultDelegate), delegateManifest)
-		logger.Info("delegate skill registered", zap.String("default", defaultDelegate))
-	}
+	registry.RegisterWithManifest(delegate.NewRouted(llmProvider), delegateManifest)
 
 	// Orchestrate skill — multi-agent parallel task execution.
 	orchestrateManifest, err := orchestrate.LoadManifest()
@@ -1184,7 +1289,6 @@ func main() {
 	skillReviewHandler := handlers.NewSkillReviewHandler(store, selfImproveProvider, cfg.Skills.SelfImprove, logger)
 
 	// Event bus for decoupled event handling.
-	bus := eventbus.New(logger)
 	asst.SetEventBus(bus)
 
 	// Deferred bus wiring for Slack components constructed before the bus existed.
@@ -1331,13 +1435,6 @@ func main() {
 	eventbus.RegisterAuditSubscriber(bus, store, logger)
 	eventbus.RegisterSkillTelemetrySubscriber(bus, store, logger)
 	eventbus.RegisterConfigAuditSubscriber(bus, store, logger)
-	// Pass costTracker as explicit nil interface when cost tracking is disabled,
-	// to avoid the nil-pointer-in-non-nil-interface trap.
-	var usageCostCalc eventbus.UsageCostCalculator
-	if costTracker != nil {
-		usageCostCalc = costTracker
-	}
-	eventbus.RegisterUsageSubscriber(bus, store, usageCostCalc, logger)
 	eventbus.RegisterFailureAlertSubscriber(bus, mgr, 3, logger)
 
 	// Telegram token hot-reload subscriber — restarts config-sourced Telegram on token change.
@@ -1370,12 +1467,14 @@ func main() {
 			if !ok {
 				return nil
 			}
-			exceeded, current := costTracker.Track(p.Model, llm.Usage{
-				InputTokens:              p.InputTokens,
-				OutputTokens:             p.OutputTokens,
-				CacheReadInputTokens:     p.CacheReadInputTokens,
-				CacheCreationInputTokens: p.CacheCreationInputTokens,
-			})
+			var exceeded bool
+			var current float64
+			if p.CostEstimate != nil {
+				exceeded, current = costTracker.TrackEstimate(*p.CostEstimate)
+			} else {
+				exceeded, current = costTracker.Track(p.Model, llm.Usage{InputTokens: p.InputTokens, OutputTokens: p.OutputTokens, CacheReadInputTokens: p.CacheReadInputTokens, CacheCreationInputTokens: p.CacheCreationInputTokens})
+			}
+
 			if exceeded {
 				logger.Warn("daily cost limit exceeded", zap.Float64("cost_usd", current), zap.Float64("limit", cfg.Cost.DailyLimitUSD))
 			}
@@ -1643,11 +1742,7 @@ func main() {
 	}()
 
 	if cfg.Heartbeat.Enabled {
-		heartbeatProvider := llm.Provider(llmProvider)
-		if cfg.Ollama.URL != "" && cfg.Ollama.Model != "" {
-			heartbeatProvider = ollama.New(cfg.Ollama.URL, cfg.Ollama.Model, httpClient)
-			logger.Info("heartbeat using ollama provider", zap.String("model", cfg.Ollama.Model))
-		}
+		heartbeatProvider := resolveJobProvider("", llmProvider, cfg.Ollama, httpClient, logger, "heartbeat")
 		worker.Register(handlers.NewHeartbeatHandler(store, heartbeatProvider, mgr, logger))
 	}
 
@@ -1708,6 +1803,7 @@ func main() {
 			TodoProviders:     todoProviders,
 			CredentialManager: credStore,
 			Embedder:          embedder,
+			ModelManager:      modelManager, ModelHTTPClient: llmHTTPClient, LegacyModelSettings: legacySettings, LegacyClassifierActive: legacyClassifierActive,
 		})
 		wg.Add(1)
 		go func() {
@@ -1742,6 +1838,8 @@ func main() {
 	if closer, ok := embedder.(interface{ Close() }); ok {
 		closer.Close()
 	}
+
+	closeModelRuntime(modelManager, logger)
 
 	// Phase 5: Wait for async event handlers to finish.
 	logger.Info("shutdown: waiting for event bus")
@@ -1897,11 +1995,7 @@ func buildLogger(cfg config.LogConfig, consoleMode bool, logFile string) (*zap.L
 // resolveJobProvider picks a provider for a background job based on the "model" config field.
 // "ollama" → uses Ollama if configured, otherwise falls back to the default provider.
 func resolveJobProvider(model string, defaultProvider llm.Provider, ollamaCfg config.OllamaConfig, httpClient *http.Client, logger *zap.Logger, jobName string) llm.Provider {
-	if strings.EqualFold(model, "ollama") && ollamaCfg.URL != "" && ollamaCfg.Model != "" {
-		logger.Info(jobName+" job using ollama provider", zap.String("model", ollamaCfg.Model))
-		return ollama.New(ollamaCfg.URL, ollamaCfg.Model, httpClient)
-	}
-	return defaultProvider
+	return llm.NewTaskProvider(defaultProvider, model, jobName)
 }
 
 // backfillEmbeddings generates embeddings for facts/insights that don't have them yet.
@@ -2026,6 +2120,9 @@ func registerConfigReload(bus *eventbus.Bus, cfgStore *config.Store, asst *assis
 			return nil
 		}
 
+		if cfgStore.ModelWriteProtected(p.Key) {
+			return nil
+		}
 		switch p.Key {
 		case "claude.thinking":
 			if val, ok := cfgStore.Get("claude.thinking"); ok {

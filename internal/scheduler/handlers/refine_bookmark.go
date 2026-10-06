@@ -46,6 +46,7 @@ func (h *RefineBookmarkHandler) Handle(ctx context.Context, payload string) (str
 
 	// Call LLM to extract key facts.
 	resp, err := h.provider.Complete(ctx, llm.Request{
+		ChatID: p.ChatID, UserID: p.UserID, Operation: "bookmark_refine",
 		SystemPrompt: refineSystemPrompt,
 		Message:      p.Content,
 		RouteHint:    llm.RouteHintCheap,

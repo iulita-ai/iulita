@@ -100,7 +100,7 @@ func TestGenerateDefaultConfig_IncludesDeepSeek(t *testing.T) {
 	if !strings.Contains(out, "[deepseek]") {
 		t.Error("generated config must include a [deepseek] section")
 	}
-	if !strings.Contains(out, "deepseek-v4-flash") {
+	if !strings.Contains(out, "deepseek-flash") {
 		t.Error("generated [deepseek] section must reference the default model")
 	}
 }
@@ -119,7 +119,7 @@ func TestCoreKeys_IncludeDeepSeek(t *testing.T) {
 }
 
 func TestDefaultConfig_DeepSeekModel(t *testing.T) {
-	if got := DefaultConfig(testPaths(t)).DeepSeek.Model; got != "deepseek-v4-flash" {
-		t.Errorf("default DeepSeek model = %q, want deepseek-v4-flash", got)
+	if got := DefaultConfig(testPaths(t)).DeepSeek.Model; got != "deepseek-flash" {
+		t.Errorf("default DeepSeek model = %q, want deepseek-flash", got)
 	}
 }

@@ -223,9 +223,14 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 		CacheReadInputTokens:     resp.Usage.CacheReadInputTokens,
 		CacheCreationInputTokens: resp.Usage.CacheCreationInputTokens,
 	}
-	p.mu.RLock()
-	response.Model = p.model
-	p.mu.RUnlock()
+	response.UsageReported = true
+	response.RequestedModel = string(params.Model)
+	response.Model = string(resp.Model)
+	response.ModelVerified = response.Model != ""
+	if response.Model == "" {
+		response.Model = response.RequestedModel
+	}
+	response.FinishReason = string(resp.StopReason)
 	response.Provider = "claude"
 
 	return response, nil
@@ -311,7 +316,7 @@ func (p *Provider) CompleteStream(ctx context.Context, req llm.Request, callback
 	stream := p.client.Messages.NewStreaming(ctx, params)
 	defer stream.Close()
 
-	var response llm.Response
+	response := llm.Response{RequestedModel: model, Provider: "claude"}
 	for stream.Next() {
 		evt := stream.Current()
 		switch variant := evt.AsAny().(type) {
@@ -322,7 +327,11 @@ func (p *Provider) CompleteStream(ctx context.Context, req llm.Request, callback
 			}
 		case anthropic.MessageDeltaEvent:
 			response.Usage.OutputTokens = variant.Usage.OutputTokens
+			response.FinishReason = string(variant.Delta.StopReason)
 		case anthropic.MessageStartEvent:
+			response.Model = string(variant.Message.Model)
+			response.ModelVerified = response.Model != ""
+			response.UsageReported = true
 			response.Usage.InputTokens = variant.Message.Usage.InputTokens
 			response.Usage.CacheReadInputTokens = variant.Message.Usage.CacheReadInputTokens
 			response.Usage.CacheCreationInputTokens = variant.Message.Usage.CacheCreationInputTokens
@@ -331,15 +340,14 @@ func (p *Provider) CompleteStream(ctx context.Context, req llm.Request, callback
 
 	if err := stream.Err(); err != nil {
 		if isContextOverflowError(err) {
-			return llm.Response{}, fmt.Errorf("claude stream: %w", llm.ErrContextTooLarge)
+			return response, fmt.Errorf("claude stream: %w", llm.ErrContextTooLarge)
 		}
-		return llm.Response{}, fmt.Errorf("claude stream: %w", err)
+		return response, fmt.Errorf("claude stream: %w", err)
 	}
 
-	p.mu.RLock()
-	response.Model = p.model
-	p.mu.RUnlock()
-	response.Provider = "claude"
+	if response.Model == "" {
+		response.Model = response.RequestedModel
+	}
 
 	return response, nil
 }

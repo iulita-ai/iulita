@@ -10,3 +10,7 @@ var ErrContextTooLarge = errors.New("context too large")
 func IsContextTooLarge(err error) bool {
 	return errors.Is(err, ErrContextTooLarge)
 }
+
+// ErrIncompleteResponse signals truncated or empty output. Known usage may
+// still be present in the returned response and must be accounted for.
+var ErrIncompleteResponse = errors.New("incomplete response")

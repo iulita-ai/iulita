@@ -20,12 +20,13 @@ const (
 
 // compressIfNeeded checks if the context is getting too large and summarizes
 // older messages to make room. Returns the (possibly compressed) history.
-func (a *Assistant) compressIfNeeded(ctx context.Context, chatID string, history []domain.ChatMessage, lastInputTokens int64) ([]domain.ChatMessage, error) {
-	if a.contextWindow <= 0 || lastInputTokens <= 0 {
+func (a *Assistant) compressIfNeeded(ctx context.Context, chatID string, history []domain.ChatMessage, lastInputTokens int64, routing ...llm.Request) ([]domain.ChatMessage, error) {
+	window := a.compressionContextWindow(routing...)
+	if window <= 0 || lastInputTokens <= 0 {
 		return history, nil
 	}
 
-	threshold := int64(float64(a.contextWindow) * compressionThreshold)
+	threshold := int64(float64(window) * compressionThreshold)
 	if lastInputTokens < threshold {
 		return history, nil
 	}
@@ -55,12 +56,16 @@ func (a *Assistant) compressIfNeeded(ctx context.Context, chatID string, history
 		SystemPrompt: i18n.T(ctx, "AssistantCompressionPrompt"),
 		Message:      convText.String(),
 		RouteHint:    llm.RouteHintCheap,
+		ChatID:       chatID, UserID: oldMessages[0].UserID, Operation: "compression",
 	}
 
+	if len(routing) > 0 {
+		summaryReq.RoutingSnapshot = routing[0].RoutingSnapshot
+	}
 	summaryResp, err := a.provider.Complete(ctx, summaryReq)
 	if err != nil {
 		a.logger.Error("compression summarization failed", zap.Error(err))
-		return history, nil // fail gracefully
+		return history, fmt.Errorf("generate conversation summary: %w", err) // Preserve history on failure.
 	}
 
 	prefix := i18n.T(ctx, "AssistantSummaryPrefix")
@@ -69,24 +74,17 @@ func (a *Assistant) compressIfNeeded(ctx context.Context, chatID string, history
 	}
 	summary := prefix + summaryResp.Content
 
-	// Delete old messages from DB and insert summary.
-	if splitIdx > 0 {
-		lastOldID := oldMessages[splitIdx-1].ID
-		if err := a.store.DeleteMessagesBefore(ctx, chatID, lastOldID+1); err != nil {
-			a.logger.Error("failed to delete old messages", zap.Error(err))
-			return history, nil
-		}
-
-		// Insert summary as a system-like user message at the beginning.
-		summaryMsg := &domain.ChatMessage{
-			ChatID:    chatID,
-			Role:      domain.RoleAssistant,
-			Content:   summary,
-			CreatedAt: oldMessages[0].CreatedAt,
-		}
-		if err := a.store.SaveMessage(ctx, summaryMsg); err != nil {
-			a.logger.Error("failed to save summary message", zap.Error(err))
-		}
+	// Summary replacement must be atomic: a failed insert preserves old history.
+	replacer, ok := a.store.(interface {
+		ReplaceMessagesWithSummary(context.Context, string, int64, *domain.ChatMessage) error
+	})
+	if !ok || strings.TrimSpace(summaryResp.Content) == "" {
+		return history, nil
+	}
+	summaryMsg := &domain.ChatMessage{ChatID: chatID, UserID: oldMessages[0].UserID, Role: domain.RoleAssistant, Content: summary, CreatedAt: oldMessages[0].CreatedAt}
+	if err := replacer.ReplaceMessagesWithSummary(ctx, chatID, oldMessages[len(oldMessages)-1].ID, summaryMsg); err != nil {
+		a.logger.Error("failed to replace compressed history", zap.Error(err))
+		return history, fmt.Errorf("replace conversation history with summary: %w", err)
 	}
 
 	// Return compressed history: summary + kept messages.
@@ -108,7 +106,7 @@ func (a *Assistant) compressIfNeeded(ctx context.Context, chatID string, history
 // forceCompressRequest compresses history and updates the LLM request in-place.
 // Used by the overflow recovery path in the agentic loop.
 func (a *Assistant) forceCompressRequest(ctx context.Context, chatID string, req *llm.Request, history []domain.ChatMessage) []domain.ChatMessage {
-	compressed, err := a.compressIfNeeded(ctx, chatID, history, int64(a.contextWindow)*2)
+	compressed, err := a.compressIfNeeded(ctx, chatID, history, int64(a.compressionContextWindow(*req))*2, *req)
 	if err != nil {
 		a.logger.Error("forced compression failed", zap.Error(err))
 		return history
@@ -134,7 +132,7 @@ func (a *Assistant) CompressNow(ctx context.Context, chatID string) (int, error)
 
 	// Force compression by passing a value that always exceeds the threshold.
 	splitIdx := len(history) / 2
-	compressed, err := a.compressIfNeeded(ctx, chatID, history, int64(a.contextWindow)*2)
+	compressed, err := a.compressIfNeeded(ctx, chatID, history, int64(a.compressionContextWindow())*2)
 	if err != nil {
 		return 0, err
 	}
@@ -144,4 +142,21 @@ func (a *Assistant) CompressNow(ctx context.Context, chatID string) (int, error)
 		return 0, nil
 	}
 	return splitIdx, nil
+}
+
+func (a *Assistant) compressionContextWindow(request ...llm.Request) int {
+	req := llm.Request{}
+	if len(request) > 0 {
+		req = request[0]
+	}
+	snapshot := req.RoutingSnapshot
+	if snapshot == nil {
+		if p, ok := a.provider.(llm.ProfileInvoker); ok {
+			snapshot = p.AcquireProfileSnapshot()
+		}
+	}
+	if window := snapshot.ContextWindow(req); window > 0 {
+		return window
+	}
+	return a.contextWindow
 }

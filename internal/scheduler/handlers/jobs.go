@@ -185,6 +185,7 @@ func AgentJobsJob(store storage.Repository, logger *zap.Logger) scheduler.JobDef
 					DeliveryChatID: j.DeliveryChatID,
 					UserID:         j.UserID,
 					Model:          j.Model,
+					ProfileID:      j.ProfileID,
 					WakeGatePrompt: j.WakeGatePrompt,
 					Timezone:       cronTimezone(j.CronExpr),
 				})

@@ -79,7 +79,7 @@ func TestNew_PartialPricesMergesDefaults(t *testing.T) {
 		t.Errorf("custom override = %v, want 99.0", got)
 	}
 	// A model not overridden still uses the compiled-in default.
-	if got := tr.Calculate("deepseek-v4-pro", llm.Usage{InputTokens: 1_000_000}); !approx(got, 0.435) {
-		t.Errorf("default for deepseek-v4-pro = %v, want 0.435", got)
+	if got := tr.Calculate("deepseek-v4-pro", llm.Usage{InputTokens: 1_000_000}); !approx(got, 1.32) {
+		t.Errorf("default for deepseek-v4-pro = %v, want 1.32", got)
 	}
 }

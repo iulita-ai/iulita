@@ -12,3 +12,12 @@ config.toml
 ui/node_modules/
 ui/dist/
 docs/
+docs_ext/
+CLAUDE_IMPORT_PLAN.md
+.agents/
+.codex/
+.env
+.env.*
+.envrc
+*.log
+logs/

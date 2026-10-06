@@ -2,6 +2,9 @@ package metrics
 
 import (
 	"context"
+	"math"
+
+	"github.com/iulita-ai/iulita/internal/config"
 
 	"github.com/iulita-ai/iulita/internal/eventbus"
 )
@@ -14,9 +17,29 @@ func (m *Metrics) RegisterSubscribers(bus *eventbus.Bus) {
 		if !ok {
 			return nil
 		}
-		// We don't have provider info in the payload, use "default" as label.
-		m.LLMTokensInput.WithLabelValues("default").Add(float64(p.InputTokens))
-		m.LLMTokensOutput.WithLabelValues("default").Add(float64(p.OutputTokens))
+		provider := boundedProvider(p.Provider)
+		input := positiveTokens(p.InputTokens) + positiveTokens(p.CacheReadInputTokens) + positiveTokens(p.CacheCreationInputTokens)
+		m.LLMTokensInput.WithLabelValues(provider).Add(input)
+		m.LLMTokensOutput.WithLabelValues(provider).Add(positiveTokens(p.OutputTokens))
+		if p.AttemptID != "" {
+			model := boundedModel(p.Model)
+			status := boundedCategory(p.Status, "success", "error", "cancelled", "incomplete", "cache_hit", "rejected") //nolint:misspell // Preserve the existing persisted event and metric status contract.
+			m.LLMAttempts.WithLabelValues(provider, model,
+				boundedCategory(p.Role, "everyday", "complex", "vision", "background", "classifier"),
+				boundedCategory(p.Operation, "chat", "conversation", "completion", "classifier", "probe", "compression", "background", "agent", "job", "delegate", "synthesis", "heartbeat", "insight", "techfact", "bookmark_refine", "skill-review"), status).Inc()
+			m.LLMRequests.WithLabelValues(provider, model, status).Inc()
+			if d := p.CompletedAt.Sub(p.StartedAt).Seconds(); d >= 0 && !p.StartedAt.IsZero() {
+				m.LLMLatency.WithLabelValues(provider).Observe(d)
+			}
+			if p.CostEstimate == nil || !p.CostEstimate.Known || p.CostEstimate.USD == nil {
+				m.LLMUnknownCost.WithLabelValues(provider).Inc()
+			} else if v := *p.CostEstimate.USD; v >= 0 && !math.IsNaN(v) && !math.IsInf(v, 0) {
+				m.LLMCostUSD.Add(v)
+			}
+			if p.Cached {
+				m.CacheHits.WithLabelValues("response").Inc()
+			}
+		}
 		return nil
 	})
 
@@ -134,4 +157,36 @@ func (m *Metrics) RegisterSubscribers(bus *eventbus.Bus) {
 		}
 		return nil
 	})
+}
+
+func positiveTokens(v int64) float64 {
+	if v < 0 {
+		return 0
+	}
+	return float64(v)
+}
+
+func boundedCategory(value string, allowed ...string) string {
+	for _, candidate := range allowed {
+		if value == candidate {
+			return value
+		}
+	}
+	return "other"
+}
+
+func boundedProvider(provider string) string {
+	if provider == "anthropic" {
+		return "claude"
+	}
+	return boundedCategory(provider, "claude", "openai", "deepseek", "zai", "ollama")
+}
+
+func boundedModel(model string) string {
+	// Configured custom model/profile names and gateway aliases never create
+	// unbounded time series or leak user-controlled names into metric labels.
+	if _, ok := config.DefaultModelPrices()[model]; ok {
+		return model
+	}
+	return "other"
 }

@@ -21,7 +21,7 @@ func (s *Server) handleWizardStatus(c *fiber.Ctx) error {
 		}
 	}
 
-	hasLLM := false
+	hasLLM := s.modelsReady()
 	if s.configStore != nil {
 		if v, ok := s.configStore.GetEffective("claude.api_key"); ok && v != "" {
 			hasLLM = true
@@ -44,10 +44,12 @@ func (s *Server) handleWizardStatus(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"wizard_completed":   wizardCompleted,
-		"setup_mode":         s.setupMode,
-		"encryption_enabled": s.configStore != nil && s.configStore.EncryptionEnabled(),
-		"has_llm_provider":   hasLLM,
+		"wizard_completed":       wizardCompleted,
+		"setup_mode":             s.setupMode,
+		"encryption_enabled":     s.configStore != nil && s.configStore.EncryptionEnabled(),
+		"has_llm_provider":       hasLLM,
+		"models_ready":           s.modelsReady(),
+		"model_restart_required": s.setupMode && s.modelsReady(),
 	})
 }
 
@@ -59,7 +61,7 @@ func (s *Server) handleWizardComplete(c *fiber.Ctx) error {
 	}
 
 	// Verify at least one LLM provider is configured.
-	hasLLM := false
+	hasLLM := s.modelsReady()
 	if v, ok := s.configStore.GetEffective("claude.api_key"); ok && v != "" {
 		hasLLM = true
 	}
@@ -259,4 +261,20 @@ func (s *Server) handleWizardSchema(c *fiber.Ctx) error {
 		"sections":           wizardSections,
 		"encryption_enabled": s.configStore.EncryptionEnabled(),
 	})
+}
+
+func (s *Server) modelsReady() bool {
+	if s.modelManager == nil {
+		return false
+	}
+	v := s.modelManager.Snapshot()
+	if v.Settings.Policy.Everyday == "" || v.Health == "suspended" || v.ActivationStatus == "failed" {
+		return false
+	}
+	for _, profile := range v.Profiles {
+		if profile.ID == v.Settings.Policy.Everyday {
+			return profile.Eligibility == "production_eligible" || profile.Eligibility == "legacy_preserved"
+		}
+	}
+	return false
 }

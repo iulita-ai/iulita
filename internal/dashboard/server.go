@@ -15,6 +15,8 @@ import (
 	"github.com/iulita-ai/iulita/internal/credential"
 	"github.com/iulita-ai/iulita/internal/domain"
 	"github.com/iulita-ai/iulita/internal/llm"
+	"github.com/iulita-ai/iulita/internal/modelruntime"
+	"github.com/iulita-ai/iulita/internal/models"
 	"github.com/iulita-ai/iulita/internal/scheduler"
 	"github.com/iulita-ai/iulita/internal/skill"
 	slackskill "github.com/iulita-ai/iulita/internal/skill/slack"
@@ -135,69 +137,81 @@ type CredentialManager interface {
 
 // Config holds dependencies for the dashboard server.
 type Config struct {
-	Address           string
-	Store             storage.Repository
-	Registry          *skill.Registry
-	StaticFS          fs.FS
-	Logger            *zap.Logger
-	TaskScheduler     *scheduler.Scheduler
-	WorkerToken       string // auth token for remote worker API
-	ConfigStore       *config.Store
-	AuthService       *auth.Service         // nil = auth disabled (backward compat)
-	ChannelManager    ChannelLifecycle      // nil = no runtime channel management
-	WSHub             *WSHub                // nil = WebSocket disabled
-	WebChat           WebChatProvider       // nil = web chat disabled
-	GoogleClient      GoogleOAuthClient     // nil = Google OAuth disabled
-	SlackClient       SlackOAuthClient      // nil = Slack personal OAuth disabled
-	SkillManager      ExternalSkillManager  // nil = external skills disabled
-	TodoProviders     []TodoProvider        // external task providers (Todoist, etc.)
-	CredentialManager CredentialManager     // nil = credential API disabled
-	Embedder          llm.EmbeddingProvider // nil = FTS-only import-archive search
-	SetupMode         bool                  // true = web wizard only, no full app
+	Address                string
+	Store                  storage.Repository
+	Registry               *skill.Registry
+	StaticFS               fs.FS
+	Logger                 *zap.Logger
+	TaskScheduler          *scheduler.Scheduler
+	WorkerToken            string // auth token for remote worker API
+	ConfigStore            *config.Store
+	AuthService            *auth.Service         // nil = auth disabled (backward compat)
+	ChannelManager         ChannelLifecycle      // nil = no runtime channel management
+	WSHub                  *WSHub                // nil = WebSocket disabled
+	WebChat                WebChatProvider       // nil = web chat disabled
+	GoogleClient           GoogleOAuthClient     // nil = Google OAuth disabled
+	SlackClient            SlackOAuthClient      // nil = Slack personal OAuth disabled
+	SkillManager           ExternalSkillManager  // nil = external skills disabled
+	TodoProviders          []TodoProvider        // external task providers (Todoist, etc.)
+	CredentialManager      CredentialManager     // nil = credential API disabled
+	Embedder               llm.EmbeddingProvider // nil = FTS-only import-archive search
+	SetupMode              bool                  // true = web wizard only, no full app
+	ModelManager           *modelruntime.Manager
+	ModelHTTPClient        *http.Client
+	LegacyModelSettings    *models.Settings
+	LegacyClassifierActive bool
 }
 
 // Server serves the dashboard API and embedded SPA.
 type Server struct {
-	app               *fiber.App
-	address           string
-	store             storage.Repository
-	registry          *skill.Registry
-	startedAt         time.Time
-	logger            *zap.Logger
-	taskScheduler     *scheduler.Scheduler
-	workerToken       string
-	configStore       *config.Store
-	authService       *auth.Service
-	channelManager    ChannelLifecycle
-	googleClient      GoogleOAuthClient
-	slackClient       SlackOAuthClient
-	skillManager      ExternalSkillManager
-	todoProviders     []TodoProvider
-	credentialManager CredentialManager
-	embedder          llm.EmbeddingProvider
-	setupMode         bool
+	app                    *fiber.App
+	address                string
+	store                  storage.Repository
+	registry               *skill.Registry
+	startedAt              time.Time
+	logger                 *zap.Logger
+	taskScheduler          *scheduler.Scheduler
+	workerToken            string
+	configStore            *config.Store
+	authService            *auth.Service
+	channelManager         ChannelLifecycle
+	googleClient           GoogleOAuthClient
+	slackClient            SlackOAuthClient
+	skillManager           ExternalSkillManager
+	todoProviders          []TodoProvider
+	credentialManager      CredentialManager
+	embedder               llm.EmbeddingProvider
+	setupMode              bool
+	modelManager           *modelruntime.Manager
+	modelHTTPClient        *http.Client
+	legacyModelSettings    *models.Settings
+	legacyClassifierActive bool
 }
 
 // New creates a new dashboard server.
 func New(cfg Config) *Server {
 	s := &Server{
-		address:           cfg.Address,
-		store:             cfg.Store,
-		registry:          cfg.Registry,
-		startedAt:         time.Now(),
-		logger:            cfg.Logger,
-		taskScheduler:     cfg.TaskScheduler,
-		workerToken:       cfg.WorkerToken,
-		configStore:       cfg.ConfigStore,
-		authService:       cfg.AuthService,
-		channelManager:    cfg.ChannelManager,
-		googleClient:      cfg.GoogleClient,
-		slackClient:       cfg.SlackClient,
-		skillManager:      cfg.SkillManager,
-		todoProviders:     cfg.TodoProviders,
-		credentialManager: cfg.CredentialManager,
-		embedder:          cfg.Embedder,
-		setupMode:         cfg.SetupMode,
+		address:                cfg.Address,
+		store:                  cfg.Store,
+		registry:               cfg.Registry,
+		startedAt:              time.Now(),
+		logger:                 cfg.Logger,
+		taskScheduler:          cfg.TaskScheduler,
+		workerToken:            cfg.WorkerToken,
+		configStore:            cfg.ConfigStore,
+		authService:            cfg.AuthService,
+		channelManager:         cfg.ChannelManager,
+		googleClient:           cfg.GoogleClient,
+		slackClient:            cfg.SlackClient,
+		skillManager:           cfg.SkillManager,
+		todoProviders:          cfg.TodoProviders,
+		credentialManager:      cfg.CredentialManager,
+		embedder:               cfg.Embedder,
+		setupMode:              cfg.SetupMode,
+		modelManager:           cfg.ModelManager,
+		modelHTTPClient:        cfg.ModelHTTPClient,
+		legacyModelSettings:    cfg.LegacyModelSettings,
+		legacyClassifierActive: cfg.LegacyClassifierActive,
 	}
 
 	app := fiber.New(fiber.Config{
@@ -338,6 +352,9 @@ func New(cfg Config) *Server {
 	}
 
 	// Config API (admin only when auth is enabled)
+	if s.authService != nil && s.modelManager != nil {
+		s.registerModelRoutes(api)
+	}
 	if s.configStore != nil {
 		configGroup := api.Group("/config")
 		if s.authService != nil {
@@ -403,7 +420,7 @@ func New(cfg Config) *Server {
 
 	// Credentials API (admin only)
 	if s.authService != nil && s.credentialManager != nil {
-		creds := api.Group("/credentials", auth.AdminOnly())
+		creds := api.Group("/credentials", auth.AdminOnly(), s.modelCredentialWrite)
 		creds.Get("/", s.handleListCredentials)
 		creds.Post("/", s.handleCreateCredential)
 		creds.Get("/:id", s.handleGetCredential)
