@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import {
   setTokens, clearTokens, getAccessToken, getRefreshToken,
-  isLoggedIn, isAdmin, currentUser, parseToken, api,
+  isLoggedIn, isAdmin, currentUser, parseToken, ensureFreshAccessToken, api,
 } from './api'
 
 // Helper: create a fake JWT token with given payload
@@ -318,5 +318,27 @@ describe('API methods (HTTP)', () => {
       expect(resp.imported).toBe(5)
       expect(resp.status).toBe('ok')
     })
+  })
+})
+
+
+describe('WebSocket session refresh', () => {
+  it('allows refresh after credentials become available following an earlier failure', async () => {
+    localStorage.removeItem('iulita_refresh_token')
+    localStorage.setItem('iulita_access_token', expiredToken())
+    expect(await ensureFreshAccessToken()).toBeNull()
+    const refreshed = adminToken()
+    localStorage.setItem('iulita_refresh_token', 'available-refresh-token')
+    localStorage.setItem('iulita_access_token', expiredToken())
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ access_token: refreshed }) })
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      expect(await ensureFreshAccessToken()).toBe(refreshed)
+      expect(fetchMock).toHaveBeenCalledOnce()
+    } finally {
+      localStorage.removeItem('iulita_access_token')
+      localStorage.removeItem('iulita_refresh_token')
+      vi.unstubAllGlobals()
+    }
   })
 })

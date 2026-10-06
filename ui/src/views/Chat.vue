@@ -182,7 +182,7 @@ import { useI18n } from 'vue-i18n'
 import { useLocale } from '../composables/useLocale'
 import { NPageHeader, NTag, NText, NInput, NInputGroup, NButton, NEmpty, NSpin, NSpace, NCard } from 'naive-ui'
 import { useWebSocket } from '../composables/useWebSocket'
-import { currentUser, getAccessToken, api } from '../api'
+import { currentUser, api } from '../api'
 import AgentProgress from '../components/AgentProgress.vue'
 import type { AgentInfo } from '../components/agentTypes'
 
@@ -227,13 +227,11 @@ const allLoaded = ref(false)
 const hoveredMsgId = ref<string | null>(null)
 
 const user = currentUser()
-const token = getAccessToken()
 const userID = user?.user_id ?? 'anonymous'
-const username = user?.username ?? 'anonymous'
 const chatID = `web:${userID}`
 
 const { connected, connect, send, on } = useWebSocket(
-  `/ws/chat?user_id=${encodeURIComponent(userID)}&username=${encodeURIComponent(username)}&token=${encodeURIComponent(token ?? '')}`
+  '/ws/chat'
 )
 
 function scrollToBottom(smooth = false) {

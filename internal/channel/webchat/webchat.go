@@ -12,6 +12,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"go.uber.org/zap"
 
+	"github.com/iulita-ai/iulita/internal/auth"
 	"github.com/iulita-ai/iulita/internal/bookmark"
 	"github.com/iulita-ai/iulita/internal/channel"
 )
@@ -98,42 +99,87 @@ func (c *Channel) FiberUpgradeCheck() fiber.Handler {
 	}
 }
 
-func (c *Channel) handleConnection(conn *websocket.Conn) {
-	// Extract user info from query params (set by frontend from JWT).
-	userID := conn.Query("user_id", "")
-	username := conn.Query("username", "")
-	chatID := conn.Query("chat_id", "")
+func (c *Channel) closeConnection(conn *websocket.Conn) {
+	if err := conn.Close(); err != nil {
+		c.logger.Debug("webchat connection close failed", zap.Error(err))
+	}
+}
 
-	if userID == "" {
-		c.logger.Warn("webchat: connection without user_id")
-		conn.Close()
+func (c *Channel) handleConnection(conn *websocket.Conn) {
+	claims, ok := conn.Locals(auth.ContextKeyUser).(*auth.Claims)
+	if !ok || claims.UserID == "" || claims.ExpiresAt == nil {
+		c.closeConnection(conn)
 		return
 	}
-	if chatID == "" {
-		chatID = "web:" + userID
+	// In-flight messages and stream callbacks can outlive this handler. Keep a
+	// private wrapper so Fiber cannot recycle their connection into another chat.
+	conn = &websocket.Conn{Conn: conn.Conn}
+	if err := conn.SetReadDeadline(claims.ExpiresAt.Time); err != nil {
+		c.closeConnection(conn)
+		return
 	}
+	ctx, cancel := context.WithDeadline(context.Background(), claims.ExpiresAt.Time)
+	defer cancel()
+	// Fiber returns its connection wrapper to a pool as soon as this handler
+	// exits. The asynchronous cancellation callback must hold the raw socket.
+	rawSocket := conn.Conn
+	stopClose := context.AfterFunc(ctx, func() {
+		if err := rawSocket.Close(); err != nil {
+			c.logger.Debug("webchat expired connection close failed", zap.Error(err))
+		}
+	})
+	defer stopClose()
+	if ctx.Err() != nil {
+		c.closeConnection(conn)
+		return
+	}
+	userID, username := claims.UserID, claims.Username
+	chatID := "web:" + userID
+	writeMu := &sync.Mutex{}
 
 	c.mu.Lock()
+	previous := c.clients[chatID]
 	c.clients[chatID] = conn
-	c.writeMu[chatID] = &sync.Mutex{}
+	c.writeMu[chatID] = writeMu
 	c.mu.Unlock()
+	if previous != nil && previous != conn {
+		// fasthttp's hijacked Close may be deferred until the handler returns.
+		// Interrupt its reader now so replacement also cancels pending work.
+		if err := previous.SetReadDeadline(time.Now()); err != nil {
+			c.logger.Debug("webchat replaced connection deadline failed", zap.Error(err))
+		}
+		c.closeConnection(previous)
+	}
 
 	c.logger.Info("webchat client connected",
 		zap.String("user_id", userID),
 		zap.String("chat_id", chatID))
 
 	defer func() {
+		cancel()
 		c.mu.Lock()
-		delete(c.clients, chatID)
-		delete(c.writeMu, chatID)
+		if c.clients[chatID] == conn {
+			delete(c.clients, chatID)
+			delete(c.writeMu, chatID)
+		}
 		c.mu.Unlock()
-		conn.Close()
+		c.closeConnection(conn)
+		// The upgrader recycles its write buffer after this handler returns.
+		// Closing unblocks the current writer; queued writers recheck membership.
+		writeMu.Lock()
+		defer writeMu.Unlock()
 		c.logger.Info("webchat client disconnected", zap.String("chat_id", chatID))
 	}()
 
 	for {
 		_, msgBytes, err := conn.ReadMessage()
-		if err != nil {
+		if err != nil || ctx.Err() != nil {
+			break
+		}
+		c.mu.RLock()
+		active := c.clients[chatID] == conn
+		c.mu.RUnlock()
+		if !active {
 			break
 		}
 
@@ -142,10 +188,15 @@ func (c *Channel) handleConnection(conn *websocket.Conn) {
 			c.logger.Debug("webchat: invalid message", zap.Error(err))
 			continue
 		}
+		if ctx.Err() != nil {
+			break
+		}
 
 		// Handle bookmark requests.
 		if incoming.RememberMessageID != "" && c.bookmarkSvc != nil {
-			go c.handleRemember(conn, chatID, userID, incoming.RememberMessageID)
+			if ctx.Err() == nil {
+				go c.handleRemember(ctx, conn, chatID, userID, incoming.RememberMessageID)
+			}
 			continue
 		}
 
@@ -184,14 +235,23 @@ func (c *Channel) handleConnection(conn *websocket.Conn) {
 			Caps:              channel.CapStreaming | channel.CapHTML | channel.CapButtons,
 		}
 
-		if c.handler != nil {
-			go c.processMessage(conn, msg)
+		c.mu.RLock()
+		handler := c.handler
+		c.mu.RUnlock()
+		if handler != nil && ctx.Err() == nil {
+			go c.processMessage(ctx, conn, msg, handler)
 		}
 	}
 }
 
-func (c *Channel) processMessage(conn *websocket.Conn, msg channel.IncomingMessage) {
-	response, err := c.handler(context.Background(), msg)
+func (c *Channel) processMessage(ctx context.Context, conn *websocket.Conn, msg channel.IncomingMessage, handler channel.MessageHandler) {
+	if ctx.Err() != nil {
+		return
+	}
+	response, err := handler(ctx, msg)
+	if ctx.Err() != nil {
+		return
+	}
 	if err != nil {
 		c.logger.Error("webchat handler error", zap.Error(err), zap.String("chat_id", msg.ChatID))
 		response = "Sorry, something went wrong."
@@ -216,17 +276,29 @@ func (c *Channel) sendToConn(conn *websocket.Conn, msg wsOutgoingMessage) {
 	// Find the per-connection write mutex to serialize writes.
 	c.mu.RLock()
 	var wmu *sync.Mutex
+	var chatID string
 	for cid, cn := range c.clients {
 		if cn == conn {
 			wmu = c.writeMu[cid]
+			chatID = cid
 			break
 		}
 	}
 	c.mu.RUnlock()
 
-	if wmu != nil {
-		wmu.Lock()
-		defer wmu.Unlock()
+	if wmu == nil {
+		return // The connection was replaced or disconnected.
+	}
+	wmu.Lock()
+	defer wmu.Unlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.clients[chatID] != conn || c.writeMu[chatID] != wmu {
+		return
+	}
+	if err := conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		c.logger.Debug("webchat write deadline failed", zap.Error(err))
+		return
 	}
 	if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
 		c.logger.Debug("webchat: failed to write message", zap.Error(err))
@@ -240,7 +312,10 @@ type cachedMsg struct {
 }
 
 // handleRemember processes a bookmark request from the frontend.
-func (c *Channel) handleRemember(conn *websocket.Conn, chatID, userID, messageID string) {
+func (c *Channel) handleRemember(ctx context.Context, conn *websocket.Conn, chatID, userID, messageID string) {
+	if ctx.Err() != nil {
+		return
+	}
 	raw, ok := c.msgCache.LoadAndDelete(messageID)
 	if !ok {
 		c.sendToConn(conn, wsOutgoingMessage{
@@ -266,7 +341,13 @@ func (c *Channel) handleRemember(conn *websocket.Conn, chatID, userID, messageID
 		return
 	}
 
-	factID, err := c.bookmarkSvc.Save(context.Background(), chatID, userID, cached.content)
+	if ctx.Err() != nil {
+		return
+	}
+	factID, err := c.bookmarkSvc.Save(ctx, chatID, userID, cached.content)
+	if ctx.Err() != nil {
+		return
+	}
 	if err != nil {
 		c.logger.Error("bookmark save failed", zap.Error(err), zap.String("chat_id", chatID))
 		c.sendToConn(conn, wsOutgoingMessage{
@@ -295,7 +376,9 @@ func (c *Channel) cacheMessage(messageID, chatID, content string) {
 
 // Start implements channel.InputChannel. It stores the handler and blocks until ctx is done.
 func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) error {
+	c.mu.Lock()
 	c.handler = handler
+	c.mu.Unlock()
 	c.logger.Info("webchat channel started", zap.String("instance_id", c.instanceID))
 	<-ctx.Done()
 	c.logger.Info("webchat channel stopped")

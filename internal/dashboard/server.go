@@ -503,6 +503,9 @@ func New(cfg Config) *Server {
 	tasks.Post("/:id/fail", s.workerAuth, s.handleFailTask)
 
 	// WebSocket endpoint (before SPA catch-all).
+	if cfg.WSHub != nil || cfg.WebChat != nil {
+		app.Use("/ws", s.authenticateWebSocket)
+	}
 	if cfg.WSHub != nil {
 		SetupWebSocket(app, cfg.WSHub)
 	}

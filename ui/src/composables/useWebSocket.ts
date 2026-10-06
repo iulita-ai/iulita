@@ -1,4 +1,5 @@
 import { ref, onUnmounted } from 'vue'
+import { ensureFreshAccessToken, getAccessToken, parseToken } from '../api'
 
 export interface WSMessage {
   type: string
@@ -11,6 +12,7 @@ export function useWebSocket(path: string) {
   let ws: WebSocket | null = null
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let intentionalClose = false
+  let refreshing = false
 
   const listeners = new Map<string, Set<(payload: unknown) => void>>()
 
@@ -19,9 +21,23 @@ export function useWebSocket(path: string) {
       return
     }
 
+    if (intentionalClose || refreshing) return
+    const token = getAccessToken()
+    if (!token) return
+    const claims = parseToken(token)
+    if (!claims || !Number.isFinite(claims.exp) || claims.exp * 1000 <= Date.now() + 30_000) {
+      refreshing = true
+      void ensureFreshAccessToken().then((fresh) => {
+        refreshing = false
+        if (fresh && !intentionalClose) connect()
+      })
+      return
+    }
+
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const url = `${proto}//${location.host}${path}`
-    ws = new WebSocket(url)
+    const url = new URL(`${proto}//${location.host}${path}`)
+    url.searchParams.set('token', token)
+    ws = new WebSocket(url.toString())
 
     ws.onopen = () => {
       connected.value = true
