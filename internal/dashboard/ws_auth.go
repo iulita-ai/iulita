@@ -17,7 +17,16 @@ func (s *Server) authenticateWebSocket(c *fiber.Ctx) error {
 	}
 	if origin := c.Get("Origin"); origin != "" {
 		u, err := url.Parse(origin)
-		if err != nil || u.Scheme != c.Protocol() || !strings.EqualFold(u.Host, c.Hostname()) {
+		// Traefik forwards WebSocket transport schemes, while browsers send
+		// the HTTP(S) page origin. Preserve the secure/insecure distinction.
+		scheme := c.Protocol()
+		switch scheme {
+		case "ws":
+			scheme = "http"
+		case "wss":
+			scheme = "https"
+		}
+		if err != nil || u.Scheme != scheme || !strings.EqualFold(u.Host, c.Hostname()) {
 			return fiber.ErrForbidden
 		}
 	}

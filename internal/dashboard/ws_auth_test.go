@@ -42,10 +42,10 @@ func TestWebSocketAuthorization(t *testing.T) {
 	app.Get("/ws/chat", func(c *fiber.Ctx) error { return c.JSON(auth.GetClaims(c)) })
 	valid := websocketToken(t, jwt.NewNumericDate(time.Now().Add(time.Hour)))
 	for _, tc := range []struct {
-		name, path, token, origin, header string
-		role                              domain.UserRole
-		password                          bool
-		want                              int
+		name, path, token, origin, header, forwardedProto string
+		role                                              domain.UserRole
+		password                                          bool
+		want                                              int
 	}{
 		{name: "missing", path: "/ws/chat", role: domain.RoleAdmin, want: 401},
 		{name: "invalid", path: "/ws/chat", token: "invalid", role: domain.RoleAdmin, want: 401},
@@ -60,6 +60,11 @@ func TestWebSocketAuthorization(t *testing.T) {
 		{name: "initial password", path: "/ws/chat", token: valid, role: domain.RoleAdmin, password: true, want: 403},
 		{name: "foreign origin", path: "/ws/chat", token: valid, origin: "https://attacker.example", role: domain.RoleAdmin, want: 403},
 		{name: "same origin", path: "/ws/chat", token: valid, origin: "http://example.com", role: domain.RoleAdmin, want: 200},
+		{name: "TLS proxy origin", path: "/ws/chat", token: valid, origin: "https://example.com", forwardedProto: "wss", role: domain.RoleAdmin, want: 200},
+		{name: "plain proxy origin", path: "/ws/chat", token: valid, origin: "http://example.com", forwardedProto: "ws", role: domain.RoleAdmin, want: 200},
+		{name: "TLS proxy downgrade", path: "/ws/chat", token: valid, origin: "http://example.com", forwardedProto: "wss", role: domain.RoleAdmin, want: 403},
+		{name: "plain proxy upgrade", path: "/ws/chat", token: valid, origin: "https://example.com", forwardedProto: "ws", role: domain.RoleAdmin, want: 403},
+		{name: "TLS proxy foreign origin", path: "/ws/chat", token: valid, origin: "https://attacker.example", forwardedProto: "wss", role: domain.RoleAdmin, want: 403},
 		{name: "invalid origin", path: "/ws/chat", token: valid, origin: "null", role: domain.RoleAdmin, want: 403},
 		{name: "malformed bearer", path: "/ws/chat", token: valid, header: "Basic invalid", role: domain.RoleAdmin, want: 401},
 		{name: "bearer", path: "/ws/chat", header: "Bearer " + valid, role: domain.RoleAdmin, want: 200},
@@ -78,6 +83,9 @@ func TestWebSocketAuthorization(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, u.String(), http.NoBody)
 			req.Header.Set("Origin", tc.origin)
 			req.Header.Set("Authorization", tc.header)
+			if tc.forwardedProto != "" {
+				req.Header.Set("X-Forwarded-Proto", tc.forwardedProto)
+			}
 			res, err := app.Test(req)
 			if err != nil {
 				t.Fatal(err)
