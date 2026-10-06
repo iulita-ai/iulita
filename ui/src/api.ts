@@ -679,6 +679,17 @@ async function handleResponse<T>(res: Response): Promise<T> {
 
 let refreshPromise: Promise<boolean> | null = null
 
+// WebSocket upgrades do not receive HTTP 401 responses through handleResponse.
+// Refresh before connecting, using the same promise as regular API requests.
+export async function ensureFreshAccessToken(): Promise<string | null> {
+  const token = getAccessToken()
+  const claims = token ? parseToken(token) : null
+  if (claims && Number.isFinite(claims.exp) && claims.exp * 1000 > Date.now() + 30_000) return token
+  if (await tryRefresh()) return getAccessToken()
+  clearTokens()
+  return null
+}
+
 async function tryRefresh(): Promise<boolean> {
   // Deduplicate concurrent refresh attempts
   if (refreshPromise) return refreshPromise
@@ -697,10 +708,8 @@ async function tryRefresh(): Promise<boolean> {
       return true
     } catch {
       return false
-    } finally {
-      refreshPromise = null
     }
-  })()
+  })().finally(() => { refreshPromise = null })
   return refreshPromise
 }
 

@@ -10,6 +10,8 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"go.uber.org/zap"
 
+	"github.com/iulita-ai/iulita/internal/auth"
+	"github.com/iulita-ai/iulita/internal/domain"
 	"github.com/iulita-ai/iulita/internal/eventbus"
 )
 
@@ -22,6 +24,7 @@ type WSMessage struct {
 // WSHub manages WebSocket connections and broadcasts events.
 type WSHub struct {
 	mu          sync.RWMutex
+	writeMu     sync.Mutex
 	connections map[*websocket.Conn]struct{}
 	logger      *zap.Logger
 }
@@ -64,29 +67,57 @@ func (h *WSHub) Broadcast(msg WSMessage) {
 		h.logger.Error("failed to marshal ws message", zap.Error(err))
 		return
 	}
+	h.writeMu.Lock()
+	defer h.writeMu.Unlock()
 
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
 	for conn := range h.connections {
+		if err := conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+			h.logger.Debug("websocket write deadline failed", zap.Error(err))
+			continue
+		}
 		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
 			h.logger.Debug("failed to write to ws client", zap.Error(err))
 		}
 	}
 }
 
+func (h *WSHub) closeConnection(c *websocket.Conn) {
+	if err := c.Close(); err != nil {
+		h.logger.Debug("websocket connection close failed", zap.Error(err))
+	}
+}
+
 // HandleWebSocket is the Fiber websocket handler.
 func (h *WSHub) HandleWebSocket(c *websocket.Conn) {
+	claims, ok := c.Locals(auth.ContextKeyUser).(*auth.Claims)
+	if !ok || claims.Role != domain.RoleAdmin || claims.ExpiresAt == nil {
+		h.closeConnection(c)
+		return
+	}
+	c = &websocket.Conn{Conn: c.Conn}
+	if err := c.SetReadDeadline(claims.ExpiresAt.Time); err != nil {
+		h.closeConnection(c)
+		return
+	}
 	h.Register(c)
 	defer h.Unregister(c)
-	defer c.Close()
+	defer h.closeConnection(c)
 
 	// Send initial connected message.
 	initial := WSMessage{Type: "connected", Payload: map[string]interface{}{
 		"timestamp": time.Now().Format(time.RFC3339),
 	}}
 	if data, err := json.Marshal(initial); err == nil {
-		c.WriteMessage(websocket.TextMessage, data)
+		h.writeMu.Lock()
+		if deadlineErr := c.SetWriteDeadline(time.Now().Add(10 * time.Second)); deadlineErr != nil {
+			h.logger.Debug("websocket initial deadline failed", zap.Error(deadlineErr))
+		} else if writeErr := c.WriteMessage(websocket.TextMessage, data); writeErr != nil {
+			h.logger.Debug("websocket initial message failed", zap.Error(writeErr))
+		}
+		h.writeMu.Unlock()
 	}
 
 	// Read loop — keep connection alive, handle pings/pongs.

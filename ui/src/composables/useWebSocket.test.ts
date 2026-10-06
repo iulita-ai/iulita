@@ -4,6 +4,10 @@ import { mount, config } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { useWebSocket } from './useWebSocket'
 
+function validToken(name: string, expires = Math.floor(Date.now() / 1000) + 3600) {
+  return `${btoa('{}')}.${btoa(JSON.stringify({ name, exp: expires }))}.signature`
+}
+
 // Mock WebSocket
 class MockWebSocket {
   static CONNECTING = 0
@@ -78,12 +82,15 @@ function createWrapper() {
 
 describe('useWebSocket', () => {
   beforeEach(() => {
+    localStorage.setItem('iulita_access_token', validToken('initial'))
+    localStorage.removeItem('iulita_refresh_token')
     vi.useFakeTimers()
     MockWebSocket.reset()
     vi.stubGlobal('WebSocket', MockWebSocket)
   })
 
   afterEach(() => {
+    localStorage.removeItem('iulita_access_token')
     vi.useRealTimers()
     vi.restoreAllMocks()
   })
@@ -110,6 +117,43 @@ describe('useWebSocket', () => {
     ws().connect()
     const instance = MockWebSocket.instances[0]
     expect(instance.url).toContain('/ws/test')
+  })
+
+  it('authenticates every reconnect with the current access token', () => {
+    const first = validToken('first')
+    localStorage.setItem('iulita_access_token', first)
+    const { ws } = createWrapper()
+    ws().connect()
+    expect(new URL(MockWebSocket.instances[0].url).searchParams.get('token')).toBe(first)
+    MockWebSocket.instances[0].simulateOpen()
+    const refreshed = validToken('refreshed')
+    localStorage.setItem('iulita_access_token', refreshed)
+    MockWebSocket.instances[0].close()
+    vi.advanceTimersByTime(3000)
+    expect(new URL(MockWebSocket.instances[1].url).searchParams.get('token')).toBe(refreshed)
+    ws().close()
+  })
+
+  it('refreshes an expired session before opening a WebSocket', async () => {
+    localStorage.setItem('iulita_access_token', validToken('expired', 1))
+    localStorage.setItem('iulita_refresh_token', 'refresh-secret')
+    const refreshed = validToken('new')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ access_token: refreshed }) }))
+    const { ws } = createWrapper()
+    ws().connect()
+    expect(MockWebSocket.instances).toHaveLength(0)
+    await vi.waitFor(() => expect(MockWebSocket.instances).toHaveLength(1))
+    expect(new URL(MockWebSocket.instances[0].url).searchParams.get('token')).toBe(refreshed)
+    expect(fetch).toHaveBeenCalledWith('/api/auth/refresh', expect.any(Object))
+    ws().close()
+    vi.unstubAllGlobals()
+  })
+
+  it('never opens an anonymous WebSocket', () => {
+    localStorage.removeItem('iulita_access_token')
+    const { ws } = createWrapper()
+    ws().connect()
+    expect(MockWebSocket.instances).toHaveLength(0)
   })
 
   it('receives and parses JSON messages', async () => {
