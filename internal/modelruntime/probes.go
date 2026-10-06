@@ -142,7 +142,9 @@ func (m *Manager) Probe(ctx context.Context, actor string, req ProbeRequest) (Pr
 	if err != nil || inner == nil {
 		return ProbeView{}, failure("client_build_failed", "Could not construct a test client", 422)
 	}
-	view := ProbeView{ID: randomID(), ProfileID: req.ProfileID, StageID: req.StageID, Kind: req.Kind, Status: "running", StartedAt: now, Deadline: now.Add(ProbeDeadline)}
+	// The request ID may borrow Fiber's pooled URL buffer. Retain the ID from
+	// our resolved settings so polling cannot change the probe's identity.
+	view := ProbeView{ID: randomID(), ProfileID: profile.ID, StageID: req.StageID, Kind: req.Kind, Status: "running", StartedAt: now, Deadline: now.Add(ProbeDeadline)}
 	record := probeRecord{Revision: req.ExpectedRevision, View: view, Actor: actor, Key: req.IdempotencyKey, RequestHash: requestHash, Fingerprint: profileFingerprint(profile, c.Connection), Generation: c.Connection.Generation, Provider: profile.Connection, ExpiresAt: now.Add(StageTTL)}
 	candidate.Probes[view.ID] = record
 	if err := m.persistLocked(ctx, candidate, actor); err != nil {
