@@ -463,7 +463,7 @@ func (c *Channel) SendMessage(_ context.Context, chatID string, text string) err
 // sendResponse splits long messages into chunks and sends each with Markdown fallback.
 // replyTo is the message ID to reply to (0 = no reply).
 func (c *Channel) sendResponse(chatID int64, text string, replyTo int) {
-	chunks := splitMessage(toTelegramMarkdown(text), maxMessageLen)
+	chunks := telegramHTMLChunks(text)
 	for i, chunk := range chunks {
 		// Only reply-to the first chunk.
 		rt := 0
@@ -474,16 +474,16 @@ func (c *Channel) sendResponse(chatID int64, text string, replyTo int) {
 	}
 }
 
-// sendSingleMessage sends a single message with Markdown, falling back to plain text.
+// sendSingleMessage sends a single message with HTML formatting, falling back to plain text.
 // replyTo is the message ID to reply to (0 = no reply).
 func (c *Channel) sendSingleMessage(chatID int64, text string, replyTo int) {
 	msg := tgbotapi.NewMessage(chatID, text)
-	msg.ParseMode = tgbotapi.ModeMarkdown
+	msg.ParseMode = tgbotapi.ModeHTML
 	if replyTo > 0 {
 		msg.ReplyToMessageID = replyTo
 	}
 	if _, err := c.bot.Send(msg); err != nil {
-		c.logger.Debug("markdown send failed, retrying as plain text", zap.Error(err))
+		c.logger.Debug("html send failed, retrying as plain text", zap.Error(err))
 		msg.ParseMode = ""
 		if _, err := c.bot.Send(msg); err != nil {
 			c.logger.Error("failed to send message",
@@ -540,10 +540,10 @@ func (c *Channel) StartStream(_ context.Context, chatID string, replyTo int) (fu
 	}
 
 	doneFn := func(text string) {
-		edit := tgbotapi.NewEditMessageText(tgChatID, msgID, toTelegramMarkdown(text))
-		edit.ParseMode = tgbotapi.ModeMarkdown
+		edit := tgbotapi.NewEditMessageText(tgChatID, msgID, toTelegramHTML(text))
+		edit.ParseMode = tgbotapi.ModeHTML
 		if _, err := c.bot.Send(edit); err != nil {
-			// Retry without markdown.
+			// Retry without formatting.
 			edit.ParseMode = ""
 			c.bot.Send(edit) //nolint:errcheck,gosec
 		}

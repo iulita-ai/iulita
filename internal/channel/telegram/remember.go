@@ -161,8 +161,8 @@ func (c *Channel) HandleRememberCallback(cq *tgbotapi.CallbackQuery) bool {
 // fullText is the complete response (all chunks) saved as the bookmark content.
 func (c *Channel) sendResponseWithBookmark(chatID int64, text string, replyTo int, chatIDStr, userID, locale string) {
 	// fullContent keeps the original Markdown (bookmark saves raw assistant output);
-	// only the displayed chunks are converted to Telegram's dialect.
-	chunks := splitMessage(toTelegramMarkdown(text), maxMessageLen)
+	// only the displayed chunks are converted to Telegram's HTML dialect.
+	chunks := telegramHTMLChunks(text)
 	for i, chunk := range chunks {
 		rt := 0
 		if i == 0 {
@@ -192,7 +192,7 @@ func (c *Channel) sendSingleMessageWithBookmark(chatID int64, text string, reply
 	)
 
 	msg := tgbotapi.NewMessage(chatID, text)
-	msg.ParseMode = tgbotapi.ModeMarkdown
+	msg.ParseMode = tgbotapi.ModeHTML
 	if replyTo > 0 {
 		msg.ReplyToMessageID = replyTo
 	}
@@ -200,8 +200,8 @@ func (c *Channel) sendSingleMessageWithBookmark(chatID int64, text string, reply
 
 	sent, err := c.bot.Send(msg)
 	if err != nil {
-		// Retry without markdown.
-		c.logger.Debug("markdown send failed, retrying as plain text", zap.Error(err))
+		// Retry without formatting.
+		c.logger.Debug("html send failed, retrying as plain text", zap.Error(err))
 		msg.ParseMode = ""
 		sent, err = c.bot.Send(msg)
 		if err != nil {
@@ -278,10 +278,10 @@ func (c *Channel) StartStreamWithBookmark(ctx context.Context, chatID string, re
 	doneFn := func(text string) {
 		done.Store(true)
 
-		// Display text is converted to Telegram's Markdown dialect;
+		// Display text is converted to Telegram's HTML dialect;
 		// the stored bookmark content keeps the original Markdown.
-		edit := tgbotapi.NewEditMessageText(tgChatID, msgID, toTelegramMarkdown(text))
-		edit.ParseMode = tgbotapi.ModeMarkdown
+		edit := tgbotapi.NewEditMessageText(tgChatID, msgID, toTelegramHTML(text))
+		edit.ParseMode = tgbotapi.ModeHTML
 
 		if c.rememberSvc != nil {
 			nonce := generateNonce()
