@@ -160,7 +160,9 @@ func (c *Channel) HandleRememberCallback(cq *tgbotapi.CallbackQuery) bool {
 // sendResponseWithBookmark sends a response with a 💾 bookmark button on the last chunk.
 // fullText is the complete response (all chunks) saved as the bookmark content.
 func (c *Channel) sendResponseWithBookmark(chatID int64, text string, replyTo int, chatIDStr, userID, locale string) {
-	chunks := splitMessage(text, maxMessageLen)
+	// fullContent keeps the original Markdown (bookmark saves raw assistant output);
+	// only the displayed chunks are converted to Telegram's dialect.
+	chunks := splitMessage(toTelegramMarkdown(text), maxMessageLen)
 	for i, chunk := range chunks {
 		rt := 0
 		if i == 0 {
@@ -276,7 +278,9 @@ func (c *Channel) StartStreamWithBookmark(ctx context.Context, chatID string, re
 	doneFn := func(text string) {
 		done.Store(true)
 
-		edit := tgbotapi.NewEditMessageText(tgChatID, msgID, text)
+		// Display text is converted to Telegram's Markdown dialect;
+		// the stored bookmark content keeps the original Markdown.
+		edit := tgbotapi.NewEditMessageText(tgChatID, msgID, toTelegramMarkdown(text))
 		edit.ParseMode = tgbotapi.ModeMarkdown
 
 		if c.rememberSvc != nil {
