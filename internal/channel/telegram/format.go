@@ -1,106 +1,364 @@
 package telegram
 
 import (
-	"regexp"
-	"strconv"
+	"fmt"
 	"strings"
+
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/extension"
+	extAst "github.com/yuin/goldmark/extension/ast"
+	"github.com/yuin/goldmark/text"
 )
 
-var (
-	// Markdown → Telegram legacy Markdown conversions.
-	reBold       = regexp.MustCompile(`\*\*(.+?)\*\*`)
-	reBoldUnder  = regexp.MustCompile(`__(.+?)__`)
-	reStrike     = regexp.MustCompile(`~~(.+?)~~`)
-	reHeading    = regexp.MustCompile(`(?m)^#{1,6}[ \t]+(.+)$`)
-	reBullet     = regexp.MustCompile(`(?m)^[-*][ \t]+`)
-	reCodeLang   = regexp.MustCompile("(?m)^```\\w*\n")
-	reInlineCode = regexp.MustCompile("`([^`]+)`")
+// maxMessageLen is the Telegram message length limit with headroom for entity markup.
+const maxMessageLen = 4000
+
+var mdParser = goldmark.New(
+	goldmark.WithExtensions(extension.Table, extension.Strikethrough, extension.Linkify),
+).Parser()
+
+// htmlEscaper covers the characters Telegram's HTML mode treats specially in
+// both text content and attribute values.
+var htmlEscaper = strings.NewReplacer(
+	"&", "&amp;",
+	"<", "&lt;",
+	">", "&gt;",
+	`"`, "&quot;",
 )
 
-// toTelegramMarkdown converts standard Markdown (LLM output) to Telegram's
-// legacy Markdown dialect: **bold** → *bold*, # Heading → *Heading*,
-// strikethrough markers are stripped (unsupported), - bullets become • .
-// Code blocks and inline code are preserved as-is.
-//
-// Without conversion, Telegram rejects **bold** pairs ("can't parse entities")
-// and the plain-text fallback sends the raw markers to the user.
-func toTelegramMarkdown(md string) string {
-	// Preserve code blocks from transformation.
-	type codeBlock struct {
-		placeholder string
-		content     string
-	}
-
-	var blocks []codeBlock
-	idx := 0
-	result := md
-
-	// Extract fenced code blocks first.
-	for {
-		start := strings.Index(result, "```")
-		if start == -1 {
-			break
-		}
-		end := strings.Index(result[start+3:], "```")
-		if end == -1 {
-			break
-		}
-		end += start + 3 + 3
-
-		placeholder := "\x00CODEBLOCK" + strconv.Itoa(idx) + "\x00"
-		content := result[start:end]
-		// Strip language hint from opening fence (legacy Markdown has no syntax highlight).
-		content = reCodeLang.ReplaceAllString(content, "```\n")
-
-		blocks = append(blocks, codeBlock{placeholder: placeholder, content: content})
-		result = result[:start] + placeholder + result[end:]
-		idx++
-	}
-
-	// Extract inline code.
-	var inlineBlocks []codeBlock
-	inlineIdx := 0
-	result = reInlineCode.ReplaceAllStringFunc(result, func(m string) string {
-		placeholder := "\x00INLINE" + strconv.Itoa(inlineIdx) + "\x00"
-		inlineBlocks = append(inlineBlocks, codeBlock{placeholder: placeholder, content: m})
-		inlineIdx++
-		return placeholder
-	})
-
-	// Apply conversions. Headings first (with inner bold normalized) so that
-	// "## **Important** notice" doesn't produce broken nested asterisks.
-	result = reHeading.ReplaceAllStringFunc(result, headingToTelegramBold)
-	result = reBold.ReplaceAllString(result, "*$1*")      // **bold** → *bold*
-	result = reBoldUnder.ReplaceAllString(result, "*$1*") // __bold__ → *bold*
-	result = reStrike.ReplaceAllString(result, "$1")      // ~~strike~~ → strike (unsupported)
-	result = reBullet.ReplaceAllString(result, "• ")      // - item / * item → • item
-
-	// Restore inline code.
-	for _, b := range inlineBlocks {
-		result = strings.Replace(result, b.placeholder, b.content, 1)
-	}
-
-	// Restore code blocks.
-	for _, b := range blocks {
-		result = strings.Replace(result, b.placeholder, b.content, 1)
-	}
-
-	return result
+func escapeHTML(s string) string {
+	return htmlEscaper.Replace(s)
 }
 
-// headingToTelegramBold converts one "# Heading" line to Telegram bold.
-// Inner **bold** markers collapse to *bold* first; if the line then already
-// starts or ends with a bold marker, it is returned as-is to avoid broken
-// nested asterisks (legacy Markdown cannot nest entities).
-func headingToTelegramBold(heading string) string {
-	m := reHeading.FindStringSubmatch(heading)
-	if m == nil {
-		return heading
+// skipChildrenKinds are the nodes whose content is fully emitted on enter:
+// their children must not be walked again.
+var skipChildrenKinds = map[ast.NodeKind]struct{}{
+	ast.KindCodeBlock:       {},
+	ast.KindFencedCodeBlock: {},
+	ast.KindCodeSpan:        {},
+	ast.KindRawHTML:         {},
+	ast.KindHTMLBlock:       {},
+	ast.KindAutoLink:        {},
+}
+
+// toTelegramHTML converts standard Markdown (LLM output) to Telegram's HTML
+// dialect using goldmark's AST. Supported entities map to the tags Telegram
+// allows (<b>, <i>, <s>, <code>, <pre>, <a>, <blockquote>); headings become
+// bold lines, list items become "• "/"1. " prefixed lines and tables collapse
+// into a monospace block. Raw HTML in the input is stripped.
+func toTelegramHTML(md string) string {
+	return strings.Join(toTelegramHTMLBlocks(md), "\n\n")
+}
+
+// telegramHTMLChunks converts Markdown to HTML message chunks of at most
+// maxLen bytes. Splitting happens on top-level block boundaries so HTML tags
+// are never cut in half; an oversized block is hard-split at line/word
+// boundaries, re-wrapping <pre> content.
+func telegramHTMLChunks(md string, maxLen int) []string {
+	blocks := toTelegramHTMLBlocks(md)
+	if len(blocks) == 0 {
+		return nil
 	}
-	text := reBold.ReplaceAllString(m[1], "*$1*")
-	text = reBoldUnder.ReplaceAllString(text, "*$1*")
-	if strings.HasPrefix(text, "*") || strings.HasSuffix(text, "*") {
-		return text
+
+	var chunks []string
+	cur := blocks[0]
+	for _, b := range blocks[1:] {
+		if len(cur)+2+len(b) <= maxLen {
+			cur += "\n\n" + b
+		} else {
+			chunks = append(chunks, cur)
+			cur = b
+		}
 	}
-	return "*" + text + "*"
+	chunks = append(chunks, cur)
+
+	var out []string
+	for _, ch := range chunks {
+		if len(ch) <= maxLen {
+			out = append(out, ch)
+			continue
+		}
+		out = append(out, hardSplitHTML(ch, maxLen)...)
+	}
+	return out
+}
+
+// hardSplitHTML splits a single oversized HTML block at line, then word
+// boundaries. A <pre> block is unwrapped first so each piece is a valid
+// fenced block again.
+func hardSplitHTML(block string, maxLen int) []string {
+	trimmed := strings.TrimSuffix(strings.TrimPrefix(block, "<pre>"), "</pre>")
+	wasPre := trimmed != block
+
+	var out []string
+	var cur string
+	flush := func() {
+		if cur != "" {
+			if wasPre {
+				cur = "<pre>" + cur + "\n</pre>"
+			}
+			out = append(out, cur)
+		}
+		cur = ""
+	}
+	for _, part := range strings.Split(trimmed, "\n") {
+		candidate := part
+		if cur != "" {
+			candidate = cur + "\n" + part
+		}
+		if len(candidate) > maxLen && cur != "" {
+			flush()
+			candidate = part
+		}
+		// Single line still too long: split on word boundaries.
+		for len(candidate) > maxLen {
+			cut := strings.LastIndex(candidate[:maxLen], " ")
+			if cut <= 0 {
+				cut = maxLen
+			}
+			piece := candidate[:cut]
+			if wasPre {
+				piece = "<pre>" + piece + "\n</pre>"
+			}
+			out = append(out, piece)
+			candidate = strings.TrimPrefix(candidate[cut:], " ")
+		}
+		cur = candidate
+	}
+	flush()
+	return out
+}
+
+// toTelegramHTMLBlocks renders each top-level Markdown block as a standalone
+// HTML fragment.
+func toTelegramHTMLBlocks(md string) []string {
+	source := []byte(md)
+	doc := mdParser.Parse(text.NewReader(source))
+
+	e := &htmlEmitter{source: source, blocks: make([]string, 0, 8)}
+	//nolint:errcheck // the emitter's walk never returns an error
+	ast.Walk(doc, e.walk)
+	e.finishBlock()
+
+	var out []string
+	for _, b := range e.blocks {
+		if strings.TrimSpace(b) != "" {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+type listContext struct {
+	ordered bool
+	start   int
+	counter int
+	prefix  string // indentation for nested lists ("", "  ", ...)
+}
+
+// htmlEmitter walks a goldmark AST and writes Telegram-flavoured HTML,
+// one fragment per top-level block.
+type htmlEmitter struct {
+	source   []byte
+	blocks   []string
+	cur      strings.Builder // current block being written
+	sep      string          // separator to emit before the next block
+	lists    []listContext
+	plain    int // >0 while tags are suppressed (table cells render inside <pre>)
+	cellIdx  int // cells written in the current table row
+	cellText strings.Builder
+	rowFirst bool // first row of the current table (no leading newline)
+}
+
+// block starts a new block, emitting the pending inline separator. Top-level
+// blocks get their spacing from the join in toTelegramHTML instead.
+func (e *htmlEmitter) block(n ast.Node) {
+	if n.Parent() != nil && n.Parent().Kind() == ast.KindDocument {
+		e.sep = ""
+		return
+	}
+	e.cur.WriteString(e.sep)
+	e.sep = ""
+}
+
+// finishBlock closes the current top-level block fragment.
+func (e *htmlEmitter) finishBlock() {
+	e.blocks = append(e.blocks, e.cur.String())
+	e.cur.Reset()
+	e.sep = ""
+}
+
+// write emits text into the current target (table cells buffer their text
+// until the cell closes).
+func (e *htmlEmitter) write(s string) {
+	if e.plain > 0 {
+		e.cellText.WriteString(s)
+		return
+	}
+	e.cur.WriteString(s)
+}
+
+// tag writes an HTML tag unless suppressed (inside table cells).
+func (e *htmlEmitter) tag(s string) {
+	if e.plain == 0 {
+		e.cur.WriteString(s)
+	}
+}
+
+func (e *htmlEmitter) walk(n ast.Node, entering bool) (ast.WalkStatus, error) {
+	if entering {
+		e.enter(n)
+		if _, ok := skipChildrenKinds[n.Kind()]; ok {
+			return ast.WalkSkipChildren, nil
+		}
+	} else {
+		e.exit(n)
+	}
+	return ast.WalkContinue, nil
+}
+
+func (e *htmlEmitter) enter(n ast.Node) {
+	switch n.Kind() {
+	case ast.KindParagraph:
+		if len(e.lists) == 0 {
+			e.block(n)
+		}
+	case ast.KindHeading:
+		e.block(n)
+		e.tag("<b>")
+	case ast.KindThematicBreak:
+		e.block(n)
+		e.write("───────")
+		e.sep = "\n\n"
+	case ast.KindCodeBlock, ast.KindFencedCodeBlock:
+		e.block(n)
+		e.tag("<pre>")
+		lines := n.Lines()
+		for i := 0; i < lines.Len(); i++ {
+			seg := lines.At(i)
+			e.write(escapeHTML(string(seg.Value(e.source))))
+		}
+		e.tag("</pre>")
+		e.sep = "\n\n"
+	case ast.KindBlockquote:
+		e.block(n)
+		e.tag("<blockquote>")
+		e.sep = ""
+	case ast.KindList:
+		if len(e.lists) > 0 {
+			e.write("\n")
+		}
+		e.sep = ""
+		l := n.(*ast.List)
+		prefix := ""
+		if len(e.lists) > 0 {
+			prefix = e.lists[len(e.lists)-1].prefix + "  "
+		}
+		e.lists = append(e.lists, listContext{
+			ordered: l.IsOrdered(),
+			start:   l.Start,
+			prefix:  prefix,
+		})
+	case ast.KindListItem:
+		e.block(n)
+		lc := &e.lists[len(e.lists)-1]
+		lc.counter++
+		marker := "• "
+		if lc.ordered {
+			marker = fmt.Sprintf("%d. ", lc.start+lc.counter-1)
+		}
+		e.write(lc.prefix + marker)
+		e.sep = ""
+	case ast.KindText:
+		t := n.(*ast.Text)
+		e.write(escapeHTML(string(t.Segment.Value(e.source))))
+		if t.SoftLineBreak() || t.HardLineBreak() {
+			e.write("\n")
+		}
+	case ast.KindCodeSpan:
+		code := escapeHTML(string(n.Text(e.source)))
+		if e.plain == 0 {
+			code = "<code>" + code + "</code>"
+		}
+		e.write(code)
+	case ast.KindEmphasis:
+		if n.(*ast.Emphasis).Level == 2 {
+			e.tag("<b>")
+		} else {
+			e.tag("<i>")
+		}
+	case extAst.KindStrikethrough:
+		e.tag("<s>")
+	case ast.KindLink:
+		l := n.(*ast.Link)
+		e.tag(`<a href="` + escapeHTML(string(l.Destination)) + `">`)
+	case ast.KindAutoLink:
+		l := n.(*ast.AutoLink)
+		url := escapeHTML(string(l.Text(e.source)))
+		e.tag(`<a href="` + url + `">`)
+		e.write(url)
+	case ast.KindImage:
+		img := n.(*ast.Image)
+		e.tag(`<a href="` + escapeHTML(string(img.Destination)) + `">🖼 `)
+	case extAst.KindTable:
+		e.block(n)
+		e.tag("<pre>")
+		e.rowFirst = true
+		e.sep = ""
+	case extAst.KindTableHeader, extAst.KindTableRow:
+		if !e.rowFirst {
+			e.write("\n")
+		}
+		e.rowFirst = false
+		e.cellIdx = 0
+	case extAst.KindTableCell:
+		if e.cellIdx > 0 {
+			e.write(" | ")
+		}
+		e.cellIdx++
+		e.plain++
+	}
+}
+
+func (e *htmlEmitter) exit(n ast.Node) {
+	switch n.Kind() {
+	case ast.KindParagraph:
+		if len(e.lists) == 0 {
+			e.sep = "\n\n"
+		}
+	case ast.KindHeading:
+		e.tag("</b>")
+		e.sep = "\n\n"
+	case ast.KindBlockquote:
+		e.tag("</blockquote>")
+		e.sep = "\n\n"
+	case ast.KindList:
+		e.lists = e.lists[:len(e.lists)-1]
+		e.sep = "\n\n"
+	case ast.KindListItem:
+		e.sep = "\n"
+	case ast.KindEmphasis:
+		if n.(*ast.Emphasis).Level == 2 {
+			e.tag("</b>")
+		} else {
+			e.tag("</i>")
+		}
+	case extAst.KindStrikethrough:
+		e.tag("</s>")
+	case ast.KindLink, ast.KindAutoLink, ast.KindImage:
+		e.tag("</a>")
+	case extAst.KindTableCell:
+		e.plain--
+		e.cur.WriteString(e.cellText.String())
+		e.cellText.Reset()
+	case extAst.KindTable:
+		e.tag("</pre>")
+		e.sep = "\n\n"
+	}
+
+	// A block that is a direct child of the document becomes its own fragment.
+	if n.Parent() != nil && n.Parent().Kind() == ast.KindDocument {
+		e.finishBlock()
+	}
 }
