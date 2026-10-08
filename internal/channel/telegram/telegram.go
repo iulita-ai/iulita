@@ -463,7 +463,7 @@ func (c *Channel) SendMessage(_ context.Context, chatID string, text string) err
 // sendResponse splits long messages into chunks and sends each with Markdown fallback.
 // replyTo is the message ID to reply to (0 = no reply).
 func (c *Channel) sendResponse(chatID int64, text string, replyTo int) {
-	chunks := splitMessage(text, maxMessageLen)
+	chunks := splitMessage(toTelegramMarkdown(text), maxMessageLen)
 	for i, chunk := range chunks {
 		// Only reply-to the first chunk.
 		rt := 0
@@ -540,7 +540,7 @@ func (c *Channel) StartStream(_ context.Context, chatID string, replyTo int) (fu
 	}
 
 	doneFn := func(text string) {
-		edit := tgbotapi.NewEditMessageText(tgChatID, msgID, text)
+		edit := tgbotapi.NewEditMessageText(tgChatID, msgID, toTelegramMarkdown(text))
 		edit.ParseMode = tgbotapi.ModeMarkdown
 		if _, err := c.bot.Send(edit); err != nil {
 			// Retry without markdown.
