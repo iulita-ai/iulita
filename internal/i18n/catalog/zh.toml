@@ -58,6 +58,20 @@ other = "要清除频道对话，请在其话题串内回复 /clear。"
 [TelegramVoicePrefix]
 other = "[语音消息]: "
 
+[TelegramLocationPrefix]
+other = "[Location]: {{.Coords}}"
+[TelegramLocationAccuracySuffix]
+other = " (±{{.Meters}} 米)"
+[TelegramLocationLiveSuffix]
+other = " (实时位置——不追踪更新)"
+[TelegramVenuePrefix]
+other = "[Place]: {{.Title}}"
+[TelegramVenueAddressSuffix]
+other = " — {{.Address}}"
+
+[TelegramVoiceUnavailable]
+other = "[无法转写]"
+
 [TelegramClearCommand]
 other = "清除对话历史"
 

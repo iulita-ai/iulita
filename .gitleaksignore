@@ -15,3 +15,5 @@ internal/skill/google/credentials_test.go:private-key:94
 
 # Dummy JWT secret in external skill handler tests (not a real secret)
 internal/dashboard/external_skill_handlers_test.go:toml-secret-value:99
+internal/skill/sharelocation/skill_test.go:generic-api-key:223
+internal/skill/sharelocation/skill_test.go:generic-api-key:275

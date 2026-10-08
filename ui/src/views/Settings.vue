@@ -517,8 +517,13 @@
             <!-- Regular field -->
             <template v-else>
               <n-space vertical :size="8">
+                <n-switch
+                  v-if="isSkillBoolKey(field.key)"
+                  :value="skillBoolValue(field)"
+                  @update:value="(val: boolean) => fieldEdits[field.key] = val ? 'true' : 'false'"
+                />
                 <n-input
-                  v-if="field.key.endsWith('.system_prompt')"
+                  v-else-if="field.key.endsWith('.system_prompt')"
                   v-model:value="fieldEdits[field.key]"
                   type="textarea"
                   :autosize="{ minRows: 2, maxRows: 10 }"
@@ -564,6 +569,7 @@
 import { ref, reactive, computed, onMounted, watch, h } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
+import { isSkillBoolKey, skillBoolValue as skillBoolValueOf } from '../utils/skillBool'
 import {
   NH2, NSpace, NCard, NDescriptions, NDescriptionsItem, NList, NListItem,
   NThing, NTag, NSelect, NCode, NEmpty, NButton, NDataTable, NInput,
@@ -889,6 +895,12 @@ async function loadSchema() {
 function schemaBoolValue(field: ConfigSchemaField): boolean {
   const val = schemaEdits[field.key] ?? field.value ?? field.default ?? 'false'
   return val === 'true'
+}
+
+// Boolean-ish skill config keys (*.enabled / *_enabled) render as a switch;
+// the normalization lives in ../utils/skillBool (pure, unit-tested there).
+function skillBoolValue(field: SkillConfigField): boolean {
+  return skillBoolValueOf(field.key, fieldEdits[field.key], field.value)
 }
 
 function schemaSelectOptions(field: ConfigSchemaField) {

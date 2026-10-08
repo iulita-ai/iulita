@@ -58,6 +58,20 @@ other = "Pour effacer une conversation de canal, tapez /clear en réponse dans s
 [TelegramVoicePrefix]
 other = "[Message vocal] : "
 
+[TelegramLocationPrefix]
+other = "[Location]: {{.Coords}}"
+[TelegramLocationAccuracySuffix]
+other = " (±{{.Meters}} m)"
+[TelegramLocationLiveSuffix]
+other = " (position en direct — mises à jour non suivies)"
+[TelegramVenuePrefix]
+other = "[Place]: {{.Title}}"
+[TelegramVenueAddressSuffix]
+other = " — {{.Address}}"
+
+[TelegramVoiceUnavailable]
+other = "[transcription indisponible]"
+
 [TelegramClearCommand]
 other = "Effacer l'historique de conversation"
 

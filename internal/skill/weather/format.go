@@ -61,7 +61,7 @@ func WMODescription(code int, ctx ...context.Context) string {
 func formatForecast(result *WeatherResult, caps channel.ChannelCaps) string {
 	var b strings.Builder
 
-	if result.Location != "" {
+	if result.Location != "" && result.Location != sharedPinDescriptor {
 		fmt.Fprintf(&b, "Weather for %s\n\n", result.Location)
 	}
 
@@ -73,7 +73,11 @@ func formatForecast(result *WeatherResult, caps channel.ChannelCaps) string {
 
 func formatMarkdown(b *strings.Builder, result *WeatherResult) string {
 	// Emphasize the resolved location to prevent LLM from substituting a different city.
-	if result.Location != "" {
+	if result.Location == sharedPinDescriptor {
+		// A shared pin has no city name: refer to it descriptively in the
+		// user's language instead of demanding verbatim English.
+		fmt.Fprintf(b, "[Location: shared pin — refer to it descriptively in the user's language (the place/pin they shared); never substitute a different place]\n\n")
+	} else if result.Location != "" {
 		fmt.Fprintf(b, "[Location: %s — present this exact city name to the user]\n\n", result.Location)
 	}
 	if len(result.Days) == 1 {
@@ -113,7 +117,11 @@ func formatMarkdown(b *strings.Builder, result *WeatherResult) string {
 
 func formatPlainText(b *strings.Builder, result *WeatherResult) string {
 	// Emphasize the resolved location to prevent LLM from substituting a different city.
-	if result.Location != "" {
+	if result.Location == sharedPinDescriptor {
+		// A shared pin has no city name: refer to it descriptively in the
+		// user's language instead of demanding verbatim English.
+		fmt.Fprintf(b, "IMPORTANT: This weather data is for the place/pin the user shared — refer to it descriptively in the user's language; never substitute a different place.\n\n")
+	} else if result.Location != "" {
 		fmt.Fprintf(b, "IMPORTANT: This weather data is for %s. Do NOT change or substitute the city name.\n\n", result.Location)
 	}
 	for i, d := range result.Days {

@@ -83,3 +83,36 @@ func TestSkillTelemetrySubscriberPersists(t *testing.T) {
 		t.Errorf("expected both rows under main origin, got %d", len(mainStats))
 	}
 }
+
+// TestLocationPayloadRoundTrip verifies the location observability payloads
+// survive a publish/capture cycle with their type intact.
+func TestLocationPayloadRoundTrip(t *testing.T) {
+	bus := New(zap.NewNop()) //nolint:dupl // fixture mirrors siblings
+	var gotLoc, gotGeo Event
+	bus.Subscribe(LocationSent, func(_ context.Context, evt Event) error {
+		gotLoc = evt
+		return nil
+	})
+	bus.Subscribe(GeocodeExecuted, func(_ context.Context, evt Event) error {
+		gotGeo = evt
+		return nil
+	})
+
+	bus.Publish(context.Background(), Event{
+		Type:    LocationSent,
+		Payload: LocationSentPayload{Kind: "venue", Outcome: "fallback"},
+	})
+	bus.Publish(context.Background(), Event{
+		Type:    GeocodeExecuted,
+		Payload: GeocodePayload{Direction: "forward", Outcome: "throttled"},
+	})
+
+	p, ok := gotLoc.Payload.(LocationSentPayload)
+	if !ok || p.Kind != "venue" || p.Outcome != "fallback" {
+		t.Fatalf("LocationSentPayload round-trip broken: %+v", gotLoc.Payload)
+	}
+	g, ok := gotGeo.Payload.(GeocodePayload)
+	if !ok || g.Direction != "forward" || g.Outcome != "throttled" {
+		t.Fatalf("GeocodePayload round-trip broken: %+v", gotGeo.Payload)
+	}
+}

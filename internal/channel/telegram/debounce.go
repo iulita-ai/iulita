@@ -93,12 +93,19 @@ func mergeMessages(msgs []channel.IncomingMessage) channel.IncomingMessage {
 		return msgs[0]
 	}
 
+	// Identity fields take the first message's values (consistent with the
+	// existing msgs[0].UserID behavior). Locale, Caps and ResolvedUserID used
+	// to be dropped here, which mis-scoped facts and degraded response
+	// language on merged bursts.
 	merged := channel.IncomingMessage{
 		ChatID:            msgs[0].ChatID,
 		UserID:            msgs[0].UserID,
 		ChannelInstanceID: msgs[0].ChannelInstanceID,
 		UserName:          msgs[0].UserName,
 		LanguageCode:      msgs[0].LanguageCode,
+		Locale:            msgs[0].Locale,
+		Caps:              msgs[0].Caps,
+		ResolvedUserID:    msgs[0].ResolvedUserID,
 		MessageID:         msgs[0].MessageID,
 	}
 
@@ -109,6 +116,8 @@ func mergeMessages(msgs []channel.IncomingMessage) channel.IncomingMessage {
 		}
 		merged.Images = append(merged.Images, m.Images...)
 		merged.Documents = append(merged.Documents, m.Documents...)
+		merged.Audio = append(merged.Audio, m.Audio...)
+		merged.Locations = append(merged.Locations, m.Locations...)
 	}
 
 	merged.Text = strings.Join(texts, "\n")

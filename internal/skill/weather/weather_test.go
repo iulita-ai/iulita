@@ -443,3 +443,83 @@ func (wr *weatherRewriter) RoundTrip(req *http.Request) (*http.Response, error) 
 	}
 	return http.DefaultTransport.RoundTrip(newReq)
 }
+
+// TestParseCoordinatePair covers the shared-pin chain: plain pairs, RTL LRM
+// marks riding along from Hebrew injection, and non-numeric garbage.
+func TestParseCoordinatePair(t *testing.T) {
+	la, lo, ok := parseCoordinatePair("52.516270, 13.377750")
+	if !ok || la != 52.51627 || lo != 13.37775 {
+		t.Fatalf("plain pair failed: %v %v %v", la, lo, ok)
+	}
+
+	// A decoy decimal pair inside the venue title must NOT hijack the parse —
+	// the true coordinates sit at the END of the marker line.
+	la, lo, ok = parseCoordinatePair("[Place]: Room 4.5, 6.2 Hostel Berlin (52.516270, 13.377750)")
+	if !ok || la != 52.51627 || lo != 13.37775 {
+		t.Fatalf("decoy pair hijacked the parse: %v %v %v", la, lo, ok)
+	}
+	la, lo, ok = parseCoordinatePair("[Place]: Cafe — Price 5.99, 3.50 (48.858400, 2.294500)")
+	if !ok || la != 48.8584 || lo != 2.2945 {
+		t.Fatalf("price decoy hijacked the parse: %v %v %v", la, lo, ok)
+	}
+
+	// The full venue-marker form — model copies the whole line — must parse.
+	la, lo, ok = parseCoordinatePair("[Place]: Brandenburg Gate — Pariser Platz 1 (52.516270, 13.377750)")
+	if !ok || la != 52.51627 || lo != 13.37775 {
+		t.Fatalf("venue-marker form failed: %v %v %v", la, lo, ok)
+	}
+
+	// Parenthetical suffixes from the injected marker line (accuracy/live)
+	// that a model copying the line can include must be tolerated.
+	la, lo, ok = parseCoordinatePair("52.516270, 13.377750 (±35 m)")
+	if !ok || la != 52.51627 || lo != 13.37775 {
+		t.Fatalf("accuracy-suffixed pair failed: %v %v %v", la, lo, ok)
+	}
+	la, lo, ok = parseCoordinatePair("52.516270, 13.377750 (live location — updates not tracked)")
+	if !ok || la != 52.51627 || lo != 13.37775 {
+		t.Fatalf("live-suffixed pair failed: %v %v %v", la, lo, ok)
+	}
+
+	// Hebrew-locale injection wraps coords in U+200E LRM marks (Cf category);
+	// they are invisible but must not break parsing.
+	la, lo, ok = parseCoordinatePair("\u200e52.516270\u200e, \u200e13.377750\u200e")
+	if !ok || la != 52.51627 || lo != 13.37775 {
+		t.Fatalf("LRM-wrapped pair failed: %v %v %v", la, lo, ok)
+	}
+
+	for _, bad := range []string{"Berlin", "52.5", "NaN, NaN", "1,2,3", "91, 0", "0, 181"} {
+		if _, _, ok := parseCoordinatePair(bad); ok {
+			t.Fatalf("pair %q must not parse", bad)
+		}
+	}
+}
+
+// TestSharedPinDescriptorFormatting pins the sentinel handling on BOTH render
+// paths plus the prologue: no verbatim-English city-name demand anywhere.
+func TestSharedPinDescriptorFormatting(t *testing.T) {
+	result := &WeatherResult{Location: sharedPinDescriptor}
+	for _, caps := range []channel.ChannelCaps{0, channel.CapMarkdown} {
+		out := formatForecast(result, caps)
+		if strings.Contains(out, "Do NOT change or substitute the city name") {
+			t.Fatalf("caps=%d: sentinel got the verbatim city-name demand: %s", caps, out)
+		}
+		if strings.Contains(out, "present this exact city name") {
+			t.Fatalf("caps=%d: sentinel got the verbatim city-name demand: %s", caps, out)
+		}
+		if strings.Contains(out, "Weather for the location you shared") {
+			t.Fatalf("caps=%d: raw descriptor leaked into the prologue: %s", caps, out)
+		}
+		if !strings.Contains(out, "user's language") {
+			t.Fatalf("caps=%d: descriptive localized instruction missing: %s", caps, out)
+		}
+	}
+
+	// Real city names keep the exact-name instruction on both paths.
+	city := &WeatherResult{Location: "Berlin, Germany"}
+	if out := formatForecast(city, 0); !strings.Contains(out, "Do NOT change or substitute the city name") {
+		t.Fatalf("plain-text real city lost exact-name instruction: %s", out)
+	}
+	if out := formatForecast(city, channel.CapMarkdown); !strings.Contains(out, "present this exact city name") {
+		t.Fatalf("markdown real city lost exact-name instruction: %s", out)
+	}
+}

@@ -12,6 +12,7 @@ const (
 	CapButtons                           // can render inline buttons (confirmation prompts)
 	CapTyping                            // shows typing indicator
 	CapHTML                              // renders HTML (webchat)
+	CapLocations                         // can send/receive native location messages
 )
 
 // CapabilityProvider is an optional interface channels implement to declare their features.

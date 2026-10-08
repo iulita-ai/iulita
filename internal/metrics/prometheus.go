@@ -35,6 +35,10 @@ type Metrics struct {
 	SlackAutoposts        *prometheus.CounterVec // labels: mode (draft/auto)
 	SlackPostFailures     *prometheus.CounterVec // labels: kind (denied/blocked_guardrail/blocked_secret/error/discarded/approval_failed)
 	SlackSocketReconnects *prometheus.CounterVec // labels: instance_id
+
+	// Locations (share_location skill).
+	LocationOutbound *prometheus.CounterVec // labels: kind (pin/venue), outcome (sent/fallback/invalid/error)
+	LocationGeocode  *prometheus.CounterVec // labels: direction (forward), outcome (ok/error/throttled)
 }
 
 // New registers all Prometheus metrics and returns a Metrics instance.
@@ -181,5 +185,13 @@ func New() *Metrics {
 			Namespace: "iulita", Subsystem: "slack", Name: "socketmode_reconnects_total",
 			Help: "Total Socket Mode reconnects by instance.",
 		}, []string{"instance_id"}),
+		LocationOutbound: promauto.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "iulita", Subsystem: "location", Name: "outbound_total",
+			Help: "Native location/venue sends via share_location, by kind and outcome.",
+		}, []string{"kind", "outcome"}),
+		LocationGeocode: promauto.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "iulita", Subsystem: "location", Name: "geocode_total",
+			Help: "Geocode lookups via the geolocation skill, by direction and outcome.",
+		}, []string{"direction", "outcome"}),
 	}
 }

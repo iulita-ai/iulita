@@ -54,7 +54,7 @@ func (s *Skill) InputSchema() json.RawMessage {
 	"properties": {
 		"location": {
 			"type": "string",
-			"description": "City name or address. Pass ONLY if the user explicitly mentioned a specific city in their message. If the user just says 'weather' or 'погода' without naming a city, leave this empty — the skill will ask the user interactively."
+			"description": "City name or address — or the exact \"lat, lon\" coordinates of a place the user shared in this message or in a recent previous message (pass those as-is even if no city was named). Otherwise pass ONLY if the user explicitly mentioned a specific city; if the user just says 'weather' or 'погода' without a city and shared no location, leave this empty — the skill will ask the user interactively."
 		},
 		"days": {
 			"type": "integer",
