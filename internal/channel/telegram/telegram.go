@@ -463,7 +463,7 @@ func (c *Channel) SendMessage(_ context.Context, chatID string, text string) err
 // sendResponse splits long messages into chunks and sends each with Markdown fallback.
 // replyTo is the message ID to reply to (0 = no reply).
 func (c *Channel) sendResponse(chatID int64, text string, replyTo int) {
-	chunks := telegramHTMLChunks(text, maxMessageLen)
+	chunks := telegramHTMLChunks(text)
 	for i, chunk := range chunks {
 		// Only reply-to the first chunk.
 		rt := 0

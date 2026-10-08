@@ -52,10 +52,11 @@ func toTelegramHTML(md string) string {
 }
 
 // telegramHTMLChunks converts Markdown to HTML message chunks of at most
-// maxLen bytes. Splitting happens on top-level block boundaries so HTML tags
-// are never cut in half; an oversized block is hard-split at line/word
-// boundaries, re-wrapping <pre> content.
-func telegramHTMLChunks(md string, maxLen int) []string {
+// maxMessageLen bytes. Splitting happens on top-level block boundaries so
+// HTML tags are never cut in half; an oversized block is hard-split at
+// line/word boundaries, re-wrapping <pre> content.
+func telegramHTMLChunks(md string) []string {
+	const maxLen = maxMessageLen
 	blocks := toTelegramHTMLBlocks(md)
 	if len(blocks) == 0 {
 		return nil
@@ -137,7 +138,7 @@ func toTelegramHTMLBlocks(md string) []string {
 	doc := mdParser.Parse(text.NewReader(source))
 
 	e := &htmlEmitter{source: source, blocks: make([]string, 0, 8)}
-	//nolint:errcheck // the emitter's walk never returns an error
+	//nolint:errcheck,gosec // the emitter's walk never returns an error
 	ast.Walk(doc, e.walk)
 	e.finishBlock()
 
@@ -157,7 +158,21 @@ type listContext struct {
 	prefix  string // indentation for nested lists ("", "  ", ...)
 }
 
-// htmlEmitter walks a goldmark AST and writes Telegram-flavoured HTML,
+// writeString appends s to the builder; strings.Builder never returns an error.
+func writeString(b *strings.Builder, s string) {
+	b.WriteString(s)
+}
+
+// nodeAs asserts n to T. The kind switch at the call site guarantees the match.
+func nodeAs[T ast.Node](n ast.Node) T {
+	if v, ok := n.(T); ok {
+		return v
+	}
+	var zero T
+	return zero
+}
+
+// htmlEmitter walks a goldmark AST and writes Telegram-flavored HTML,
 // one fragment per top-level block.
 type htmlEmitter struct {
 	source   []byte
@@ -178,7 +193,7 @@ func (e *htmlEmitter) block(n ast.Node) {
 		e.sep = ""
 		return
 	}
-	e.cur.WriteString(e.sep)
+	writeString(&e.cur, e.sep)
 	e.sep = ""
 }
 
@@ -193,16 +208,16 @@ func (e *htmlEmitter) finishBlock() {
 // until the cell closes).
 func (e *htmlEmitter) write(s string) {
 	if e.plain > 0 {
-		e.cellText.WriteString(s)
+		writeString(&e.cellText, s)
 		return
 	}
-	e.cur.WriteString(s)
+	writeString(&e.cur, s)
 }
 
 // tag writes an HTML tag unless suppressed (inside table cells).
 func (e *htmlEmitter) tag(s string) {
 	if e.plain == 0 {
-		e.cur.WriteString(s)
+		writeString(&e.cur, s)
 	}
 }
 
@@ -250,7 +265,7 @@ func (e *htmlEmitter) enter(n ast.Node) {
 			e.write("\n")
 		}
 		e.sep = ""
-		l := n.(*ast.List)
+		l := nodeAs[*ast.List](n)
 		prefix := ""
 		if len(e.lists) > 0 {
 			prefix = e.lists[len(e.lists)-1].prefix + "  "
@@ -271,19 +286,25 @@ func (e *htmlEmitter) enter(n ast.Node) {
 		e.write(lc.prefix + marker)
 		e.sep = ""
 	case ast.KindText:
-		t := n.(*ast.Text)
+		t := nodeAs[*ast.Text](n)
 		e.write(escapeHTML(string(t.Segment.Value(e.source))))
 		if t.SoftLineBreak() || t.HardLineBreak() {
 			e.write("\n")
 		}
 	case ast.KindCodeSpan:
-		code := escapeHTML(string(n.Text(e.source)))
+		var raw []byte
+		for c := n.FirstChild(); c != nil; c = c.NextSibling() {
+			if t, ok := c.(*ast.Text); ok {
+				raw = append(raw, t.Segment.Value(e.source)...)
+			}
+		}
+		code := escapeHTML(string(raw))
 		if e.plain == 0 {
 			code = "<code>" + code + "</code>"
 		}
 		e.write(code)
 	case ast.KindEmphasis:
-		if n.(*ast.Emphasis).Level == 2 {
+		if nodeAs[*ast.Emphasis](n).Level == 2 {
 			e.tag("<b>")
 		} else {
 			e.tag("<i>")
@@ -291,15 +312,15 @@ func (e *htmlEmitter) enter(n ast.Node) {
 	case extAst.KindStrikethrough:
 		e.tag("<s>")
 	case ast.KindLink:
-		l := n.(*ast.Link)
+		l := nodeAs[*ast.Link](n)
 		e.tag(`<a href="` + escapeHTML(string(l.Destination)) + `">`)
 	case ast.KindAutoLink:
-		l := n.(*ast.AutoLink)
-		url := escapeHTML(string(l.Text(e.source)))
+		l := nodeAs[*ast.AutoLink](n)
+		url := escapeHTML(string(l.URL(e.source)))
 		e.tag(`<a href="` + url + `">`)
-		e.write(url)
+		e.write(escapeHTML(string(l.Label(e.source))))
 	case ast.KindImage:
-		img := n.(*ast.Image)
+		img := nodeAs[*ast.Image](n)
 		e.tag(`<a href="` + escapeHTML(string(img.Destination)) + `">🖼 `)
 	case extAst.KindTable:
 		e.block(n)
@@ -339,7 +360,7 @@ func (e *htmlEmitter) exit(n ast.Node) {
 	case ast.KindListItem:
 		e.sep = "\n"
 	case ast.KindEmphasis:
-		if n.(*ast.Emphasis).Level == 2 {
+		if nodeAs[*ast.Emphasis](n).Level == 2 {
 			e.tag("</b>")
 		} else {
 			e.tag("</i>")
@@ -350,7 +371,7 @@ func (e *htmlEmitter) exit(n ast.Node) {
 		e.tag("</a>")
 	case extAst.KindTableCell:
 		e.plain--
-		e.cur.WriteString(e.cellText.String())
+		writeString(&e.cur, e.cellText.String())
 		e.cellText.Reset()
 	case extAst.KindTable:
 		e.tag("</pre>")

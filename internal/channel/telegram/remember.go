@@ -162,7 +162,7 @@ func (c *Channel) HandleRememberCallback(cq *tgbotapi.CallbackQuery) bool {
 func (c *Channel) sendResponseWithBookmark(chatID int64, text string, replyTo int, chatIDStr, userID, locale string) {
 	// fullContent keeps the original Markdown (bookmark saves raw assistant output);
 	// only the displayed chunks are converted to Telegram's HTML dialect.
-	chunks := telegramHTMLChunks(text, maxMessageLen)
+	chunks := telegramHTMLChunks(text)
 	for i, chunk := range chunks {
 		rt := 0
 		if i == 0 {

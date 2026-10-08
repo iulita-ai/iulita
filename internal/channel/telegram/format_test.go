@@ -134,7 +134,7 @@ func TestToTelegramHTML(t *testing.T) {
 
 func TestTelegramHTMLChunks(t *testing.T) {
 	t.Run("short text is a single chunk", func(t *testing.T) {
-		got := telegramHTMLChunks("**hi** there", maxMessageLen)
+		got := telegramHTMLChunks("**hi** there")
 		if len(got) != 1 || got[0] != "<b>hi</b> there" {
 			t.Errorf("got %q, want single chunk %q", got, "<b>hi</b> there")
 		}
@@ -158,7 +158,7 @@ func TestTelegramHTMLChunks(t *testing.T) {
 				md.WriteString("\n\n")
 			}
 		}
-		got := telegramHTMLChunks(md.String(), maxMessageLen)
+		got := telegramHTMLChunks(md.String())
 		if len(got) < 2 {
 			t.Fatalf("expected multiple chunks, got %d", len(got))
 		}
@@ -179,7 +179,7 @@ func TestTelegramHTMLChunks(t *testing.T) {
 			md.WriteString(strings.Repeat("y", 60) + "\n")
 		}
 		md.WriteString("```")
-		got := telegramHTMLChunks(md.String(), maxMessageLen)
+		got := telegramHTMLChunks(md.String())
 		if len(got) < 2 {
 			t.Fatalf("expected multiple chunks, got %d", len(got))
 		}
@@ -194,7 +194,7 @@ func TestTelegramHTMLChunks(t *testing.T) {
 	})
 
 	t.Run("empty input returns nil", func(t *testing.T) {
-		if got := telegramHTMLChunks("", maxMessageLen); got != nil {
+		if got := telegramHTMLChunks(""); got != nil {
 			t.Errorf("got %q, want nil", got)
 		}
 	})
