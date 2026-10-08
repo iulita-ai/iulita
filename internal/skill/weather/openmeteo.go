@@ -7,7 +7,13 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strconv"
+	"strings"
 	"time"
+	"unicode"
+
+	"github.com/iulita-ai/iulita/internal/channel"
 )
 
 const (
@@ -40,6 +46,15 @@ func (b *OpenMeteoBackend) Fetch(ctx context.Context, location string, days int)
 }
 
 func (b *OpenMeteoBackend) geocode(ctx context.Context, location string) (lat, lon float64, name string, err error) {
+	// Coordinate strings ("52.516270, 13.377750" — e.g. a shared map pin) are
+	// already resolved: skip the name-search API, which cannot geocode numbers.
+	if la, lo, ok := parseCoordinatePair(location); ok {
+		// Coordinate-free display name: formatMarkdown special-cases this
+		// sentinel so it is never demanded verbatim (it is not a city name,
+		// and verbatim English would leak into localized replies).
+		return la, lo, sharedPinDescriptor, nil
+	}
+
 	// Detect language: use "ru" for Cyrillic input, "en" otherwise.
 	lang := "en"
 	for _, r := range location {
@@ -87,6 +102,43 @@ func (b *OpenMeteoBackend) geocode(ctx context.Context, location string) (lat, l
 		resolvedName += ", " + r.Country
 	}
 	return r.Latitude, r.Longitude, resolvedName, nil
+}
+
+// sharedPinDescriptor is the display name used for coordinate lookups (a
+// shared map pin) — never demanded verbatim by the formatter.
+const sharedPinDescriptor = "the location you shared"
+
+// coordPairRe matches a decimal coordinate pair wherever it sits — plain
+// ("52.516270, 13.377750"), parenthesized in a venue marker ("[Place]: Title —
+// Address (52.516270, 13.377750)"), or followed by a suffix ("(±35 m)").
+var coordPairRe = regexp.MustCompile(`(-?\d{1,3}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)`)
+
+// parseCoordinatePair extracts a "lat, lon" pair from a string the model may
+// have copied from a shared-pin/venue marker line, and validates it through
+// the shared typed boundary (channel.ValidateCoords). Unicode format
+// characters (LRM/RLM marks injected for RTL locales) are stripped first —
+// they are invisible but break strconv.ParseFloat.
+func parseCoordinatePair(s string) (lat, lon float64, ok bool) {
+	clean := strings.Map(func(r rune) rune {
+		if unicode.Is(unicode.Cf, r) {
+			return -1 // drop format chars (LRM U+200E, RLM U+200F, …)
+		}
+		return r
+	}, s)
+	// Take the LAST match: the marker grammar always places the true
+	// coordinates at the end of the line, while a decoy decimal pair (e.g. a
+	// venue title "Room 4.5, 6.2 Hostel") can only appear earlier.
+	matches := coordPairRe.FindAllStringSubmatch(strings.TrimSpace(clean), -1)
+	if len(matches) == 0 {
+		return 0, 0, false
+	}
+	m := matches[len(matches)-1]
+	la, err1 := strconv.ParseFloat(m[1], 64)
+	lo, err2 := strconv.ParseFloat(m[2], 64)
+	if err1 != nil || err2 != nil || channel.ValidateCoords(la, lo) != nil {
+		return 0, 0, false
+	}
+	return la, lo, true
 }
 
 func (b *OpenMeteoBackend) fetchForecast(ctx context.Context, lat, lon float64, location string, days int) (*WeatherResult, error) {

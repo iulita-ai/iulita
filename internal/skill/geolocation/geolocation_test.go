@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeServers creates test servers for IP detection and geolocation.
@@ -463,5 +464,282 @@ func TestFormatResult_MinimalFields(t *testing.T) {
 	// Should not have empty lines for missing fields.
 	if strings.Contains(out, "Region:") {
 		t.Error("should not contain Region when empty")
+	}
+}
+
+// --- Forward geocoding (Nominatim) tests ---
+
+// nominatimTransport redirects Nominatim requests to a test server and
+// records the User-Agent (urlRewriter pattern).
+type nominatimTransport struct {
+	target string
+	lastUA string
+	hits   int
+}
+
+func (nt *nominatimTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	nt.hits++
+	nt.lastUA = req.Header.Get("User-Agent")
+	newReq := req.Clone(req.Context())
+	parsed := strings.Split(strings.TrimPrefix(nt.target, "http://"), "/")
+	newReq.URL.Scheme = "http"
+	newReq.URL.Host = parsed[0]
+	return http.DefaultTransport.RoundTrip(newReq)
+}
+
+func newGeocodeSkill(t *testing.T, srvURL string) (*Skill, *nominatimTransport) {
+	t.Helper()
+	tr := &nominatimTransport{target: srvURL}
+	return New(&http.Client{Transport: tr}), tr
+}
+
+func resetGeocodeThrottle() {
+	geocodeMu.Lock()
+	lastGeocodeAt = time.Time{}
+	geocodeMu.Unlock()
+}
+
+func TestGeocode_OK(t *testing.T) {
+	resetGeocodeThrottle()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("format") != "jsonv2" {
+			t.Errorf("unexpected format param: %s", r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `[{"lat":"52.5162719","lon":"13.3777254","display_name":"Brandenburg Gate, Pariser Platz 1, 10117 Berlin"}]`)
+	}))
+	defer srv.Close()
+
+	s, _ := newGeocodeSkill(t, srv.URL)
+	out, err := s.Execute(context.Background(), json.RawMessage(`{"action":"geocode","query":"Brandenburg Gate"}`))
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	for _, want := range []string{"Brandenburg Gate, Pariser Platz 1", "52.516272, 13.377725", "© OpenStreetMap"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("geocode output missing %q: %s", want, out)
+		}
+	}
+}
+
+func TestGeocode_NoResult(t *testing.T) {
+	resetGeocodeThrottle()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `[]`)
+	}))
+	defer srv.Close()
+
+	s, _ := newGeocodeSkill(t, srv.URL)
+	out, err := s.Execute(context.Background(), json.RawMessage(`{"action":"geocode","query":"zzz nonexistent place"}`))
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	if !strings.Contains(out, "No coordinates found") {
+		t.Fatalf("unexpected no-result output: %s", out)
+	}
+}
+
+func TestGeocode_Disabled(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("server must not be hit when geocoding is disabled")
+	}))
+	defer srv.Close()
+
+	s, _ := newGeocodeSkill(t, srv.URL)
+	s.OnConfigChanged("skills.geolocation.geocode_enabled", "false") // no cfgStore → uses value
+	out, err := s.Execute(context.Background(), json.RawMessage(`{"action":"geocode","query":"Brandenburg Gate"}`))
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	if !strings.Contains(out, "turned off on this server") {
+		t.Fatalf("unexpected disabled output: %s", out)
+	}
+}
+
+func TestGeocode_Throttle(t *testing.T) {
+	resetGeocodeThrottle()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `[{"lat":"1","lon":"2","display_name":"x"}]`)
+	}))
+	defer srv.Close()
+
+	s, tr := newGeocodeSkill(t, srv.URL)
+	if _, err := s.Execute(context.Background(), json.RawMessage(`{"action":"geocode","query":"first"}`)); err != nil {
+		t.Fatalf("first call error: %v", err)
+	}
+	if tr.hits != 1 {
+		t.Fatalf("hits after first = %d", tr.hits)
+	}
+	// Immediate second call must short-circuit without HTTP (lastGeocodeAt ≈ now).
+	out, err := s.Execute(context.Background(), json.RawMessage(`{"action":"geocode","query":"second"}`))
+	if err != nil {
+		t.Fatalf("second call error: %v", err)
+	}
+	if !strings.Contains(out, "busy") {
+		t.Fatalf("expected busy refusal, got: %s", out)
+	}
+	if tr.hits != 1 {
+		t.Fatalf("throttle did not prevent HTTP: hits = %d", tr.hits)
+	}
+}
+
+func TestGeocode_UserAgent(t *testing.T) {
+	resetGeocodeThrottle()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `[]`)
+	}))
+	defer srv.Close()
+
+	s, tr := newGeocodeSkill(t, srv.URL)
+	if _, err := s.Execute(context.Background(), json.RawMessage(`{"action":"geocode","query":"x"}`)); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	if tr.lastUA != nominatimUA {
+		t.Fatalf("User-Agent = %q, want %q", tr.lastUA, nominatimUA)
+	}
+}
+
+// fakeCfgStore satisfies the geolocation configReader interface.
+type fakeCfgStore struct {
+	val    string
+	exists bool
+}
+
+func (f fakeCfgStore) GetEffective(string) (string, bool) { return f.val, f.exists }
+
+func TestOnConfigChanged_GeocodeEnabled(t *testing.T) {
+	s := New(nil)
+
+	// Explicit false via store → disabled.
+	s.SetReloader(fakeCfgStore{val: "false", exists: true})
+	s.OnConfigChanged("skills.geolocation.geocode_enabled", "")
+	s.mu.RLock()
+	enabled := s.geocodeEnabled
+	s.mu.RUnlock()
+	if enabled {
+		t.Fatal("explicit false must disable geocoding")
+	}
+
+	// Deletion (key absent) → re-enables (registry quirk: deletion = enabled).
+	s.SetReloader(fakeCfgStore{exists: false})
+	s.OnConfigChanged("skills.geolocation.geocode_enabled", "")
+	s.mu.RLock()
+	enabled = s.geocodeEnabled
+	s.mu.RUnlock()
+	if !enabled {
+		t.Fatal("deletion must re-enable geocoding")
+	}
+}
+
+func TestInputSchemaIncludesGeocode(t *testing.T) {
+	s := New(nil)
+	schema := string(s.InputSchema())
+	for _, want := range []string{`"ip"`, `"action"`, `"query"`, `"geocode"`} {
+		if !strings.Contains(schema, want) {
+			t.Fatalf("schema missing %s: %s", want, schema)
+		}
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal(s.InputSchema(), &parsed); err != nil {
+		t.Fatalf("schema not valid JSON: %v", err)
+	}
+	if parsed["type"] != "object" {
+		t.Fatal("schema top-level type must stay object")
+	}
+	if _, required := parsed["required"]; required {
+		t.Fatal("ip must stay optional (required array must not appear)")
+	}
+}
+
+// TestGeocodeDisabledNormalization covers free-text kill-switch values that
+// must disable geocoding (UI free-text input like "False"/"off").
+func TestGeocodeDisabledNormalization(t *testing.T) {
+	for _, v := range []string{"false", "False", "0", "no", "off", "OFF"} {
+		s := New(nil)
+		s.OnConfigChanged("skills.geolocation.geocode_enabled", v)
+		s.mu.RLock()
+		enabled := s.geocodeEnabled
+		s.mu.RUnlock()
+		if enabled {
+			t.Fatalf("value %q must disable geocoding", v)
+		}
+	}
+	for _, v := range []string{"true", "1", "yes"} {
+		s := New(nil)
+		s.OnConfigChanged("skills.geolocation.geocode_enabled", v)
+		s.mu.RLock()
+		enabled := s.geocodeEnabled
+		s.mu.RUnlock()
+		if !enabled {
+			t.Fatalf("value %q must keep geocoding enabled", v)
+		}
+	}
+}
+
+// TestSetReloaderSeedsKillSwitch verifies base-config values are honored at
+// wiring time, not only on runtime changes.
+func TestSetReloaderSeedsKillSwitch(t *testing.T) {
+	s := New(nil)
+	s.SetReloader(fakeCfgStore{val: "false", exists: true})
+	s.mu.RLock()
+	enabled := s.geocodeEnabled
+	s.mu.RUnlock()
+	if enabled {
+		t.Fatal("SetReloader must seed geocodeEnabled=false from effective config")
+	}
+}
+
+func TestGeocodeActionNormalization(t *testing.T) {
+	resetGeocodeThrottle()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `[{"lat":"1.5","lon":"2.5","display_name":"x"}]`)
+	}))
+	defer srv.Close()
+
+	for _, action := range []string{"geocode", "Geocode", " geocode "} {
+		resetGeocodeThrottle()
+		s, _ := newGeocodeSkill(t, srv.URL)
+		out, err := s.Execute(context.Background(), json.RawMessage(
+			fmt.Sprintf(`{"action":%q,"query":"Brandenburg Gate"}`, action)))
+		if err != nil {
+			t.Fatalf("action %q: Execute error: %v", action, err)
+		}
+		if strings.Contains(out, "IP") || !strings.Contains(out, "1.500000") {
+			t.Fatalf("action %q did not reach the geocode branch: %s", action, out)
+		}
+	}
+
+	// Unknown non-empty action must not silently run the IP path.
+	s, _ := newGeocodeSkill(t, srv.URL)
+	out, err := s.Execute(context.Background(), json.RawMessage(`{"action":"geo","query":"x"}`))
+	if err != nil {
+		t.Fatalf("unknown action: Execute error: %v", err)
+	}
+	if !strings.Contains(out, "Unknown action") {
+		t.Fatalf("unknown action fell through to IP path: %s", out)
+	}
+}
+
+// TestGeocodeQueryWithoutAction covers the misformed-call guard: query with no
+// action must reach the geocode branch, never the server-IP lookup.
+func TestGeocodeQueryWithoutAction(t *testing.T) {
+	resetGeocodeThrottle()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `[{"lat":"48.8584","lon":"2.2945","display_name":"Eiffel Tower"}]`)
+	}))
+	defer srv.Close()
+
+	s, _ := newGeocodeSkill(t, srv.URL)
+	out, err := s.Execute(context.Background(), json.RawMessage(`{"query":"Eiffel Tower"}`))
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	if !strings.Contains(out, "Eiffel Tower") || strings.Contains(out, "IP") {
+		t.Fatalf("query-without-action did not reach geocode: %s", out)
 	}
 }

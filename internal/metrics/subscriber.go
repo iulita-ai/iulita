@@ -157,6 +157,28 @@ func (m *Metrics) RegisterSubscribers(bus *eventbus.Bus) {
 		}
 		return nil
 	})
+
+	// Location observability.
+	bus.Subscribe(eventbus.LocationSent, func(_ context.Context, evt eventbus.Event) error {
+		p, ok := evt.Payload.(eventbus.LocationSentPayload)
+		if !ok {
+			return nil
+		}
+		m.LocationOutbound.WithLabelValues(
+			boundedCategory(p.Kind, "pin", "venue"),
+			boundedCategory(p.Outcome, "sent", "fallback", "invalid", "error")).Inc()
+		return nil
+	})
+	bus.Subscribe(eventbus.GeocodeExecuted, func(_ context.Context, evt eventbus.Event) error {
+		p, ok := evt.Payload.(eventbus.GeocodePayload)
+		if !ok {
+			return nil
+		}
+		m.LocationGeocode.WithLabelValues(
+			boundedCategory(p.Direction, "forward", "reverse"),
+			boundedCategory(p.Outcome, "ok", "error", "throttled")).Inc()
+		return nil
+	})
 }
 
 func positiveTokens(v int64) float64 {

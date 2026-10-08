@@ -113,8 +113,9 @@ func (a *Assistant) staticSystemPrompt() string {
 }
 
 // dynamicSystemPrompt builds the per-message portion of the system prompt:
-// current time, directives, facts, insights, user profile, language directive.
-func (a *Assistant) dynamicSystemPrompt(directive, facts, insights, techFacts, currentTime string, localeTag ...language.Tag) string {
+// current time, directives, shared locations, facts, insights, user profile,
+// language directive.
+func (a *Assistant) dynamicSystemPrompt(directive, facts, insights, techFacts, currentTime, sharedLocations string, localeTag ...language.Tag) string {
 	var b strings.Builder
 
 	// Always inject current time so the model never guesses the date.
@@ -127,6 +128,11 @@ func (a *Assistant) dynamicSystemPrompt(directive, facts, insights, techFacts, c
 	if directive != "" {
 		b.WriteString("\n\n## User Directives\n")
 		b.WriteString(directive)
+	}
+
+	if sharedLocations != "" {
+		b.WriteString("\n\n## Shared Locations\n")
+		b.WriteString(sharedLocations)
 	}
 
 	if techFacts != "" {
@@ -463,8 +469,20 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 	// Create exploration ledger for this request.
 	ledger := NewExplorationLedger()
 
+	// Whether a shared pin/venue sits in recent history — computed BEFORE the
+	// prompt build so the ## Shared Locations directive (with its §12
+	// coordinate-privacy guidance) is also injected on FOLLOW-UP turns (the
+	// designed funnel: bare pin → ack → "yes, remember it" in a new turn would
+	// otherwise persist full-precision coordinates into facts unguided), and
+	// reused below for force-trigger suppression.
+	pinInHistory := recentSharedLocation(historyForLLM)
+
 	staticPrompt := a.staticSystemPrompt()
-	dynamicPrompt := a.dynamicSystemPrompt(directiveText, factsText, insightsText, techFactsText, currentTime, localeTag)
+	var sharedLocations string
+	if len(msg.Locations) > 0 || pinInHistory {
+		sharedLocations = sharedLocationsDirective()
+	}
+	dynamicPrompt := a.dynamicSystemPrompt(directiveText, factsText, insightsText, techFactsText, currentTime, sharedLocations, localeTag)
 
 	req := llm.Request{
 		StaticSystemPrompt: staticPrompt,
@@ -489,12 +507,22 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 	}
 
 	// Force external proxy tools when message matches their trigger keywords.
+	// Skip the geolocation force-match while a shared location is relevant AND
+	// the trigger is location-referencing: location phrases ("where am i", "my
+	// location") substring-match injected marker text and would answer from
+	// the server IP instead of the user's pin. IP-scoped triggers ("my ip",
+	// "ip lookup") stay forced — a shared pin is irrelevant to an IP question.
 	if req.ForceTool == "" && len(tools) > 0 {
-		if forceTool := a.registry.MatchForceTool(messageText); forceTool != "" {
-			req.ForceTool = forceTool
-			a.logger.Info("force tool trigger matched",
-				zap.String("tool", forceTool),
-				zap.String("chat_id", msg.ChatID))
+		if forceTool, trigger := a.registry.MatchForceTrigger(messageText); forceTool != "" {
+			suppressGeo := forceTool == "geolocation" &&
+				(len(msg.Locations) > 0 || pinInHistory) &&
+				!skill.IsIPScopedTrigger(trigger)
+			if !suppressGeo {
+				req.ForceTool = forceTool
+				a.logger.Info("force tool trigger matched",
+					zap.String("tool", forceTool),
+					zap.String("chat_id", msg.ChatID))
+			}
 		}
 	}
 
@@ -840,8 +868,10 @@ func (a *Assistant) executeSkill(ctx context.Context, chatID string, tc llm.Tool
 		}
 	}
 
-	// Log tool result preview for debugging.
-	preview := output
+	// Log tool result preview for debugging. Coordinate-shaped substrings are
+	// scrubbed first: geocode results and OSM map links embed full-precision
+	// coordinates, and no coordinate may reach INFO+ logs (plan §12/§13).
+	preview := scrubPreview(output)
 	if len(preview) > 500 {
 		preview = preview[:500] + "..."
 	}

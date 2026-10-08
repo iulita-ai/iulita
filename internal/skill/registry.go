@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"regexp"
 	"strings"
 	"sync"
 )
@@ -321,28 +322,43 @@ func (r *Registry) isGroupDisabled(manifestName string) bool {
 	return true // all members disabled
 }
 
-// MatchForceTool checks if a message matches any manifest's ForceTriggers.
-// Returns the skill name to force (not manifest name), or empty string if no match.
-func (r *Registry) MatchForceTool(message string) string {
+// ipWordRe matches the standalone word "ip" — the letter pair alone would
+// misclassify future triggers like "zip code" or "snippet" as IP-scoped.
+var ipWordRe = regexp.MustCompile(`\bip\b`)
+
+// IsIPScopedTrigger reports whether a force-trigger phrase refers to the
+// user's IP (as opposed to a location-reference phrase).
+func IsIPScopedTrigger(trigger string) bool { return ipWordRe.MatchString(trigger) }
+
+// MatchForceTrigger checks if a message matches any manifest's ForceTriggers.
+// Returns the skill name to force (not manifest name) and the matched trigger
+// phrase, so callers can scope decisions to specific triggers (e.g. suppress
+// a location-phrase force while keeping IP-phrase forces active). IP-scoped
+// triggers (containing "ip") are matched first, so a message matching both an
+// IP phrase and a bare tool name reports the IP-scoped trigger.
+func (r *Registry) MatchForceTrigger(message string) (tool, trigger string) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	lower := strings.ToLower(message)
-	for _, m := range r.manifests {
-		if len(m.ForceTriggers) == 0 || r.isGroupDisabled(m.Name) {
-			continue
-		}
-		for _, trigger := range m.ForceTriggers {
-			if strings.Contains(lower, trigger) {
-				// Return the skill name (used in tool definitions), not the manifest name.
-				// The configHandler maps manifest → skill name.
-				if sName, ok := r.configHandler[m.Name]; ok {
-					return sName
+	// Two passes: IP-scoped triggers first (more specific intent).
+	for _, ipScoped := range []bool{true, false} {
+		for _, m := range r.manifests {
+			if len(m.ForceTriggers) == 0 || r.isGroupDisabled(m.Name) {
+				continue
+			}
+			for _, t := range m.ForceTriggers {
+				if strings.Contains(lower, t) && IsIPScopedTrigger(t) == ipScoped {
+					// Return the skill name (used in tool definitions), not the
+					// manifest name. The configHandler maps manifest → skill name.
+					if sName, ok := r.configHandler[m.Name]; ok {
+						return sName, t
+					}
+					return m.Name, t // fallback if no handler registered
 				}
-				return m.Name // fallback if no handler registered
 			}
 		}
 	}
-	return ""
+	return "", ""
 }
 
 // Manifests returns all registered manifests.

@@ -62,6 +62,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/skill/reminders"
 	scheduleskill "github.com/iulita-ai/iulita/internal/skill/schedule"
 	"github.com/iulita-ai/iulita/internal/skill/sessionsearch"
+	"github.com/iulita-ai/iulita/internal/skill/sharelocation"
 	"github.com/iulita-ai/iulita/internal/skill/shellexec"
 	"github.com/iulita-ai/iulita/internal/skill/skillinfo"
 	slackskill "github.com/iulita-ai/iulita/internal/skill/slack"
@@ -908,12 +909,15 @@ func main() {
 	}
 	registry.RegisterWithManifest(exchange.New(httpClient), exchangeManifest)
 
-	// Geolocation skill (no auth needed for primary path, free APIs).
+	// Geolocation skill (no auth needed for primary path, free APIs). The safe
+	// (SSRF-guarded) client also covers the Nominatim forward-geocode action.
 	geoManifest, err := geolocation.LoadManifest()
 	if err != nil {
 		logger.Warn("failed to load geolocation manifest", zap.Error(err))
 	}
-	geoSkill := geolocation.New(httpClient)
+	geoSkill := geolocation.New(web.NewSafeHTTPClient(30*time.Second, httpClient))
+	geoSkill.SetReloader(cfgStore)
+	geoSkill.SetLogger(logger)
 	registry.RegisterWithManifest(geoSkill, geoManifest)
 
 	// Weather skill (uses geolocation via registry for auto-detect, free APIs).
@@ -1136,6 +1140,16 @@ func main() {
 	}
 	slackPostSkill := slackpost.NewPostSkill(store, logger)
 	registry.RegisterWithManifest(slackPostSkill, slackPostManifest)
+
+	// share_location skill — native Telegram map pins/venue cards. Registered
+	// unconditionally (hot-reload rule); self-falls-back to a map link on channels
+	// without native support, so there is no capability gate.
+	shareLocManifest, err := sharelocation.LoadManifest()
+	if err != nil {
+		logger.Warn("failed to load share_location manifest", zap.Error(err))
+	}
+	shareLocSkill := sharelocation.New(logger)
+	registry.RegisterWithManifest(shareLocSkill, shareLocManifest)
 
 	// Todoist skill — API token-based task management.
 	todoistClient := todoist.NewClient(cfg.Skills.Todoist.APIToken, httpClient, logger)
@@ -1523,6 +1537,11 @@ func main() {
 
 	// Wire the bot-posting seam + capability toggle (mgr exists now).
 	slackPostSkill.SetChannelPoster(mgr)
+
+	// Wire the native location-send seam + observability (mgr exists now).
+	shareLocSkill.SetLocationSender(mgr)
+	shareLocSkill.SetBus(bus)
+	geoSkill.SetBus(bus)
 	mgr.SetSlackWriteCapability(func(enabled bool) {
 		if enabled {
 			registry.AddCapability("slack_write")

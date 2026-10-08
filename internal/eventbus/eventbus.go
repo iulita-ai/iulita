@@ -32,6 +32,10 @@ const (
 	SlackReconnect    = "slack.reconnect"     // Socket Mode reconnected
 	SlackTokenRefresh = "slack.token_refresh" //nolint:gosec // G101 false positive: event name, not a credential
 
+	// Location observability events.
+	LocationSent    = "location.sent"    // share_location resolved a send attempt
+	GeocodeExecuted = "geocode.executed" // forward geocode via the geolocation skill
+
 	// Credential management events.
 	CredentialChanged = "credential.changed" //nolint:gosec // G101 false positive: event type constant, not a credential
 

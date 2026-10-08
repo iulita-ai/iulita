@@ -202,3 +202,16 @@ type SlackReconnectPayload struct {
 type SlackTokenRefreshPayload struct {
 	Outcome string // "ok" | "error"
 }
+
+// LocationSentPayload is published after share_location resolves a send attempt.
+// It deliberately carries no coordinates (payloads may be logged).
+type LocationSentPayload struct {
+	Kind    string // "pin" | "venue"
+	Outcome string // "sent" | "fallback" | "invalid" | "error"
+}
+
+// GeocodePayload is published after a geolocation geocode action resolves.
+type GeocodePayload struct {
+	Direction string // "forward" (reverse reserved for v1.1)
+	Outcome   string // "ok" | "error" | "throttled"
+}

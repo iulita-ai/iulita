@@ -3,13 +3,21 @@ package geolocation
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/netip"
+	"net/url"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
+	"go.uber.org/zap"
+
+	"github.com/iulita-ai/iulita/internal/channel"
+	"github.com/iulita-ai/iulita/internal/eventbus"
 	"github.com/iulita-ai/iulita/internal/llm"
 )
 
@@ -26,15 +34,40 @@ const (
 	ipapiURL  = "https://ipapi.co/"       // fallback
 	ipinfoURL = "https://ipinfo.io/"      // paid/free-tier with token
 
+	// Forward geocoding (place name → coordinates) via the public Nominatim
+	// instance. Compiled-in on purpose (D20): the only operator escape hatch is
+	// the skills.geolocation.geocode_enabled kill-switch.
+	nominatimSearchURL = "https://nominatim.openstreetmap.org/search"
+	nominatimUA        = "iulita-bot/1.0 (https://iulita.ai)" // descriptive UA with contact, per Nominatim policy
+	geocodeTimeout     = 5 * time.Second
+	geocodeMinInterval = time.Second // public instance policy: max 1 req/s
+
 	maxResponseSize = 64 * 1024 // 64 KB
 	userAgent       = "iulita-bot/1.0"
 )
 
+// geocodeMu + lastGeocodeAt throttle Nominatim calls to ≥1s apart (package
+// level: one budget across all Skill instances and goroutines).
+var (
+	geocodeMu     sync.Mutex
+	lastGeocodeAt time.Time
+)
+
 // Skill provides IP geolocation lookups.
 type Skill struct {
-	httpClient *http.Client
-	mu         sync.RWMutex
-	apiKey     string // ipinfo.io token (optional)
+	httpClient     *http.Client
+	mu             sync.RWMutex
+	apiKey         string // ipinfo.io token (optional)
+	cfgStore       configReader
+	bus            *eventbus.Bus // nil-safe; observability
+	logger         *zap.Logger   // nil-safe; geocode diagnostics (plan §13)
+	geocodeEnabled bool          // skills.geolocation.geocode_enabled (default true)
+}
+
+// configReader re-reads config effective values on hot-reload (config.Store
+// satisfies it). Declared here to avoid an import cycle.
+type configReader interface {
+	GetEffective(key string) (string, bool)
 }
 
 // New creates a new geolocation skill.
@@ -42,14 +75,78 @@ func New(httpClient *http.Client) *Skill {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
-	return &Skill{httpClient: httpClient}
+	return &Skill{httpClient: httpClient, logger: zap.NewNop(), geocodeEnabled: true}
 }
 
+// SetLogger wires the diagnostic logger (geocode ok/fail rows, plan §13).
+// Never logs the request URL — it embeds the user query.
+func (s *Skill) SetLogger(logger *zap.Logger) {
+	if logger == nil {
+		return
+	}
+	s.mu.Lock()
+	s.logger = logger
+	s.mu.Unlock()
+}
+
+// stripURLError unwraps *url.Error, whose string embeds the full request URL —
+// including the user's place query — before the error is logged (plan §13:
+// never log the request URL).
+func stripURLError(err error) error {
+	var uerr *url.Error
+	if errors.As(err, &uerr) {
+		return uerr.Err
+	}
+	return err
+}
+
+func (s *Skill) log() *zap.Logger {
+	s.mu.RLock()
+	l := s.logger
+	s.mu.RUnlock()
+	if l == nil {
+		return zap.NewNop()
+	}
+	return l
+}
+
+// SetReloader wires the config store for hot-reload re-reads and seeds the
+// geocode kill-switch from the effective value (base config.toml + DB override
+// — without this, a base-config value would be silently inert until the first
+// runtime change). Geolocation has no capability gate (its IP path needs no
+// credentials), so unlike todoist there is no capabilityAdder parameter.
+func (s *Skill) SetReloader(cfgStore configReader) {
+	s.cfgStore = cfgStore
+	if cfgStore == nil {
+		return
+	}
+	if v, ok := cfgStore.GetEffective("skills.geolocation.geocode_enabled"); ok {
+		s.mu.Lock()
+		s.geocodeEnabled = !isGeocodeDisabledValue(v)
+		s.mu.Unlock()
+	}
+}
+
+// isGeocodeDisabledValue normalizes the kill-switch value so free-text input
+// like "False", "no" or "off" disables geocoding instead of being ignored.
+func isGeocodeDisabledValue(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "false", "0", "no", "off":
+		return true
+	}
+	return false
+}
+
+// SetBus wires the observability event bus (deferred wiring).
+func (s *Skill) SetBus(bus *eventbus.Bus) { s.bus = bus }
+
+// Name is the tool name exposed to the LLM.
 func (s *Skill) Name() string { return "geolocation" }
 
 func (s *Skill) Description() string {
 	return "Determine the user's public IP address and geographic location (country, city, timezone, ISP). " +
-		"Can also look up location for a specific IP address."
+		"Can also look up location for a specific IP address, and resolve a place name to coordinates " +
+		"(action=geocode) for sharing it on the map."
 }
 
 func (s *Skill) InputSchema() json.RawMessage {
@@ -59,6 +156,15 @@ func (s *Skill) InputSchema() json.RawMessage {
 		"ip": {
 			"type": "string",
 			"description": "IP address to look up. If omitted, auto-detects the user's public IP."
+		},
+		"action": {
+			"type": "string",
+			"enum": ["geocode"],
+			"description": "Set to \"geocode\" to look up coordinates for a place name instead of an IP."
+		},
+		"query": {
+			"type": "string",
+			"description": "Place name or address to geocode (required when action=geocode)."
 		}
 	}
 }`)
@@ -66,16 +172,32 @@ func (s *Skill) InputSchema() json.RawMessage {
 
 // OnConfigChanged implements skill.ConfigReloadable.
 func (s *Skill) OnConfigChanged(key, value string) {
-	if key != "skills.geolocation.api_key" {
-		return
+	switch key {
+	case "skills.geolocation.api_key":
+		s.mu.Lock()
+		s.apiKey = value
+		s.mu.Unlock()
+	case "skills.geolocation.geocode_enabled":
+		// Re-read the effective value (the `value` param is empty on deletions;
+		// deletion means enabled — registry quirk).
+		enabled := true
+		if s.cfgStore != nil {
+			if v, ok := s.cfgStore.GetEffective("skills.geolocation.geocode_enabled"); ok {
+				enabled = !isGeocodeDisabledValue(v)
+			}
+		} else {
+			enabled = !isGeocodeDisabledValue(value)
+		}
+		s.mu.Lock()
+		s.geocodeEnabled = enabled
+		s.mu.Unlock()
 	}
-	s.mu.Lock()
-	s.apiKey = value
-	s.mu.Unlock()
 }
 
 type geoInput struct {
-	IP string `json:"ip"`
+	IP     string `json:"ip"`
+	Action string `json:"action"` // "" (ip lookup, default) | "geocode"
+	Query  string `json:"query"`
 }
 
 // geoResult holds normalized geolocation data.
@@ -89,10 +211,30 @@ type geoResult struct {
 	ISP         string `json:"isp"`
 }
 
+// Execute runs the IP geolocation lookup or, when action=geocode, the forward
+// geocode (place name → coordinates).
 func (s *Skill) Execute(ctx context.Context, raw json.RawMessage) (string, error) {
 	var in geoInput
 	if err := json.Unmarshal(raw, &in); err != nil {
 		return "", fmt.Errorf("invalid input: %w", err)
+	}
+
+	// Forward geocoding (place name → coordinates) is a distinct action.
+	// Nonconforming enum values (wrong case, padded) must still reach the
+	// geocode branch — falling through to the IP path would answer a place
+	// lookup with the SERVER's location.
+	switch action := strings.ToLower(strings.TrimSpace(in.Action)); action {
+	case "geocode":
+		return s.geocode(ctx, strings.TrimSpace(in.Query))
+	case "":
+		// IP lookup (default) — but a query without an action is a misformed
+		// geocode call (action is optional in the schema and commonly omitted);
+		// answering it from the server IP would be confidently wrong.
+		if strings.TrimSpace(in.Query) != "" && strings.TrimSpace(in.IP) == "" {
+			return s.geocode(ctx, strings.TrimSpace(in.Query))
+		}
+	default:
+		return fmt.Sprintf("Unknown action %q — use action=\"geocode\" for place-name lookups.", in.Action), nil
 	}
 
 	ip := strings.TrimSpace(in.IP)
@@ -418,4 +560,117 @@ func formatResult(r *geoResult) string {
 	}
 
 	return b.String()
+}
+
+// geocode resolves a place name to coordinates via Nominatim (forward geocode).
+// Failures degrade to friendly strings, never errors (the LLM loop must not
+// retry). The request URL is never logged — it embeds the user query.
+func (s *Skill) geocode(ctx context.Context, query string) (string, error) {
+	s.mu.RLock()
+	enabled := s.geocodeEnabled
+	s.mu.RUnlock()
+	if !enabled {
+		return "Place-name lookup (geocoding) is turned off on this server.", nil
+	}
+	if query == "" {
+		return "No place name given to geocode.", nil
+	}
+	start := time.Now()
+
+	// Keep request STARTS ≥1s apart (Nominatim policy). The critical section is
+	// check+stamp only — the HTTP call runs OUTSIDE the lock, so concurrent
+	// callers (e.g. parallel sub-agents) fail fast to "busy" instead of
+	// queueing behind the full upstream latency.
+	geocodeMu.Lock()
+	if time.Since(lastGeocodeAt) < geocodeMinInterval {
+		geocodeMu.Unlock()
+		s.publishGeocode(ctx, "throttled")
+		s.log().Debug("geocode throttled", zap.String("direction", "forward"))
+		return "Geocoder is busy — try again in a moment.", nil
+	}
+	lastGeocodeAt = time.Now()
+	geocodeMu.Unlock()
+
+	reqCtx, cancel := context.WithTimeout(ctx, geocodeTimeout)
+	defer cancel()
+
+	reqURL := nominatimSearchURL + "?q=" + url.QueryEscape(query) + "&format=jsonv2&limit=1"
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, reqURL, http.NoBody)
+	if err != nil {
+		s.publishGeocode(ctx, "error")
+		s.log().Warn("geocode failed", zap.String("direction", "forward"), zap.String("outcome", "error"), zap.Error(stripURLError(err)))
+		return "Geocoding request failed.", nil
+	}
+	req.Header.Set("User-Agent", nominatimUA)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		s.publishGeocode(ctx, "error")
+		s.log().Warn("geocode failed", zap.String("direction", "forward"), zap.String("outcome", "error"), zap.Error(stripURLError(err)))
+		return "Geocoding service is unreachable right now.", nil
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
+	if err != nil {
+		s.publishGeocode(ctx, "error")
+		s.log().Warn("geocode failed", zap.String("direction", "forward"), zap.String("outcome", "error"), zap.Error(stripURLError(err)))
+		return "Geocoding response could not be read.", nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		s.publishGeocode(ctx, "error")
+		s.log().Warn("geocode failed",
+			zap.String("direction", "forward"),
+			zap.String("outcome", "error"),
+			zap.Int("status_code", resp.StatusCode))
+		return "Geocoding service returned an error.", nil
+	}
+
+	// Field whitelist: parse only what we use; Nominatim returns lat/lon as strings.
+	var results []struct {
+		Lat         string `json:"lat"`
+		Lon         string `json:"lon"`
+		DisplayName string `json:"display_name"`
+	}
+	if err := json.Unmarshal(body, &results); err != nil {
+		// A malformed 200 body is a provider problem, not a genuine no-hit.
+		s.publishGeocode(ctx, "error")
+		s.log().Warn("geocode failed", zap.String("direction", "forward"), zap.String("outcome", "error"), zap.Error(err))
+		return "Geocoding response could not be parsed.", nil
+	}
+	if len(results) == 0 {
+		s.publishGeocode(ctx, "ok")
+		return fmt.Sprintf("No coordinates found for %q.", query), nil
+	}
+
+	lat, latErr := strconv.ParseFloat(results[0].Lat, 64)
+	lon, lonErr := strconv.ParseFloat(results[0].Lon, 64)
+	if latErr != nil || lonErr != nil || channel.ValidateCoords(lat, lon) != nil {
+		s.publishGeocode(ctx, "error")
+		s.log().Warn("geocode failed", zap.String("direction", "forward"), zap.String("outcome", "error"))
+		return "Geocoder returned unusable coordinates.", nil
+	}
+
+	s.publishGeocode(ctx, "ok")
+	s.log().Debug("geocode ok",
+		zap.String("direction", "forward"),
+		zap.Int64("duration_ms", time.Since(start).Milliseconds()))
+	name := results[0].DisplayName
+	if runes := []rune(name); len(runes) > 256 {
+		name = string(runes[:256])
+	}
+	return fmt.Sprintf("%s — %s (data © OpenStreetMap contributors)",
+		name, channel.FormatCoords(lat, lon)), nil
+}
+
+// publishGeocode emits the geocode observability event (nil-bus safe).
+func (s *Skill) publishGeocode(ctx context.Context, outcome string) {
+	if s.bus == nil {
+		return
+	}
+	s.bus.Publish(ctx, eventbus.Event{
+		Type:    eventbus.GeocodeExecuted,
+		Payload: eventbus.GeocodePayload{Direction: "forward", Outcome: outcome},
+	})
 }
