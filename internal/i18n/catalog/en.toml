@@ -60,6 +60,20 @@ other = "To clear a channel conversation, type /clear as a reply inside its thre
 [TelegramVoicePrefix]
 other = "[Voice message]: "
 
+[TelegramLocationPrefix]
+other = "[Location]: {{.Coords}}"
+[TelegramLocationAccuracySuffix]
+other = " (±{{.Meters}} m)"
+[TelegramLocationLiveSuffix]
+other = " (live location — updates not tracked)"
+[TelegramVenuePrefix]
+other = "[Place]: {{.Title}}"
+[TelegramVenueAddressSuffix]
+other = " — {{.Address}}"
+
+[TelegramVoiceUnavailable]
+other = "[transcription unavailable]"
+
 [TelegramClearCommand]
 other = "Clear conversation history"
 

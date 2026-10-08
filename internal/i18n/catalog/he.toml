@@ -58,6 +58,20 @@ other = "כדי לנקות שיחה בערוץ, כתוב /clear בתגובה ב�
 [TelegramVoicePrefix]
 other = "[הודעה קולית]: "
 
+[TelegramLocationPrefix]
+other = "[Location]: {{.Coords}}"
+[TelegramLocationAccuracySuffix]
+other = " (±{{.Meters}} מ׳)"
+[TelegramLocationLiveSuffix]
+other = " (מיקום חי — העדכונים אינם נעקבים)"
+[TelegramVenuePrefix]
+other = "[Place]: {{.Title}}"
+[TelegramVenueAddressSuffix]
+other = " — {{.Address}}"
+
+[TelegramVoiceUnavailable]
+other = "[תמלול לא זמין]"
+
 [TelegramClearCommand]
 other = "מחק היסטוריית שיחה"
 

@@ -48,6 +48,7 @@ type Channel struct {
 	rememberSvc    bookmark.Service      // nil = no bookmark feature
 	remembers      *rememberState        // pending bookmark buttons
 	statusMsgs     *statusState          // live status messages per chat
+	locLimiter     *ratelimit.Limiter    // outbound location sends: 10/hour/chat (set in New)
 	logger         *zap.Logger
 	wg             sync.WaitGroup // tracks in-flight message processing
 }
@@ -115,6 +116,7 @@ func New(token string, allowedIDs []int64, clearFn ClearFunc, debounceWindow tim
 		prompts:        newPromptState(),
 		remembers:      newRememberState(),
 		statusMsgs:     newStatusState(),
+		locLimiter:     ratelimit.New(MaxLocationSendsPerHour, time.Hour),
 		logger:         logger,
 	}, nil
 }
@@ -213,6 +215,14 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 			}
 
 			if update.Message == nil {
+				// Live-location position updates arrive as edited_message and are
+				// deliberately ignored in v1 (initial pin only). One Debug line keeps
+				// "ignored by design" distinguishable from "dropped by bug".
+				if update.EditedMessage != nil && update.EditedMessage.Location != nil {
+					c.logger.Debug("live location update ignored (v1: initial pin only)",
+						zap.String("chat_id", strconv.FormatInt(update.EditedMessage.Chat.ID, 10)),
+						zap.Int("message_id", update.EditedMessage.MessageID))
+				}
 				continue
 			}
 
@@ -221,7 +231,8 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 			hasDocument := update.Message.Document != nil
 			hasVoice := update.Message.Voice != nil
 			hasAudio := update.Message.Audio != nil
-			if !hasText && !hasPhoto && !hasDocument && !hasVoice && !hasAudio {
+			hasLocation := update.Message.Location != nil || update.Message.Venue != nil
+			if !hasUpdateContent(update.Message) {
 				continue
 			}
 
@@ -270,7 +281,7 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 				Text:              text,
 				LanguageCode:      update.Message.From.LanguageCode,
 				MessageID:         update.Message.MessageID,
-				Caps:              channel.CapStreaming | channel.CapMarkdown | channel.CapTyping | channel.CapButtons,
+				Caps:              channel.CapStreaming | channel.CapMarkdown | channel.CapTyping | channel.CapButtons | channel.CapLocations,
 			}
 
 			// Resolve iulita user from channel binding.
@@ -289,6 +300,25 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 					if locale, err := c.store.GetChannelLocale(ctx, "telegram", msg.UserID); err == nil {
 						msg.Locale = locale
 					}
+				}
+			}
+
+			// Shared location or venue: structured attachment + localized text line
+			// (TelegramVoicePrefix precedent) so the LLM sees it and history keeps it.
+			// Telegram location shares carry no caption — the append branch is future-proofing.
+			if hasLocation {
+				if loc := locationFromMessage(update.Message); loc != nil {
+					msg.Locations = []channel.LocationAttachment{*loc}
+					line := formatLocationText(i18n.ResolveLocale(msg.Locale, msg.LanguageCode), loc)
+					if msg.Text != "" {
+						msg.Text = msg.Text + "\n" + line
+					} else {
+						msg.Text = line
+					}
+					c.logger.Debug("location received",
+						zap.String("chat_id", chatID),
+						zap.Bool("live", loc.Live),
+						zap.Bool("venue", loc.Title != ""))
 				}
 			}
 
@@ -372,8 +402,18 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 				}
 			}
 
+			// A voice/audio note whose transcription failed or came back empty
+			// must not produce an empty LLM turn (providers reject empty user
+			// messages). Inject a localized fallback line so the model can tell
+			// the user it could not hear the note.
+			if (hasVoice || hasAudio) && msg.Text == "" {
+				localeCtx := i18n.WithLocale(ctx, i18n.ResolveLocale(msg.Locale, msg.LanguageCode))
+				msg.Text = i18n.T(localeCtx, "TelegramVoicePrefix") + i18n.T(localeCtx, "TelegramVoiceUnavailable")
+			}
+
 			// Skip messages with no usable content (e.g. unsupported GIF/animation).
-			if msg.Text == "" && len(msg.Images) == 0 && len(msg.Documents) == 0 {
+			if msg.Text == "" && len(msg.Images) == 0 && len(msg.Documents) == 0 &&
+				len(msg.Audio) == 0 && len(msg.Locations) == 0 {
 				c.logger.Debug("skipping message with no content",
 					zap.String("chat_id", chatID), zap.Int64("user_id", userID))
 				continue

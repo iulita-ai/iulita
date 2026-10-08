@@ -209,6 +209,8 @@ func skillEmoji(name string) string {
 		return "💱"
 	case "geolocation":
 		return "📍"
+	case "share_location":
+		return "\U0001F5FA\uFE0F"
 	case "datetime":
 		return "🕐"
 	default:

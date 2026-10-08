@@ -22,6 +22,18 @@ type AudioAttachment struct {
 	Duration int    // duration in seconds (if known)
 }
 
+// LocationAttachment holds a geographic coordinate or venue received from a channel.
+// A venue (Telegram "share venue") is a location with Title/Address set; Telegram
+// guarantees a venue's embedded Location is never a live location.
+type LocationAttachment struct {
+	Latitude  float64 // decimal degrees, [-90, 90]
+	Longitude float64 // decimal degrees, [-180, 180]
+	Accuracy  float64 // horizontal accuracy in meters, 0 = unknown
+	Title     string  // venue name when shared as a venue ("" for a plain pin)
+	Address   string  // venue address when available ("" for a plain pin)
+	Live      bool    // true when the sender started a live location
+}
+
 // IncomingMessage represents a message received from an input channel.
 type IncomingMessage struct {
 	ChatID            string
@@ -35,6 +47,7 @@ type IncomingMessage struct {
 	Images            []ImageAttachment    // nil for text-only messages
 	Documents         []DocumentAttachment // nil for messages without files
 	Audio             []AudioAttachment    // nil for messages without voice/audio
+	Locations         []LocationAttachment // nil for messages without a shared location
 	MessageID         int                  // platform-specific message ID for reply threading
 	Caps              ChannelCaps          // capabilities of the originating channel
 }

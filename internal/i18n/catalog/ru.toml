@@ -60,6 +60,20 @@ other = "Чтобы очистить разговор в канале, напи�
 [TelegramVoicePrefix]
 other = "[Голосовое сообщение]: "
 
+[TelegramLocationPrefix]
+other = "[Location]: {{.Coords}}"
+[TelegramLocationAccuracySuffix]
+other = " (±{{.Meters}} м)"
+[TelegramLocationLiveSuffix]
+other = " (живая геопозиция — обновления не отслеживаются)"
+[TelegramVenuePrefix]
+other = "[Place]: {{.Title}}"
+[TelegramVenueAddressSuffix]
+other = " — {{.Address}}"
+
+[TelegramVoiceUnavailable]
+other = "[не удалось распознать сообщение]"
+
 [TelegramClearCommand]
 other = "Очистить историю разговора"
 
