@@ -109,6 +109,9 @@ func (a *Assistant) staticSystemPrompt() string {
 		b.WriteString(sp)
 	}
 
+	// Formatting rules that apply to every chat channel.
+	b.WriteString("\n\n## Response Formatting\nWrap short copyable values in inline code (backticks): brand and product names, place and establishment names, addresses, phone numbers, IDs, order and tracking numbers, commands, and file paths. Chat apps render inline code as one-tap copy. Do not wrap whole sentences or long phrases.")
+
 	return b.String()
 }
 

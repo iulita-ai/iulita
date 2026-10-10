@@ -102,14 +102,19 @@ func TestToTelegramHTML(t *testing.T) {
 			want: "above\n\n───────\n\nbelow",
 		},
 		{
-			name: "table rendered as monospace rows",
+			name: "table rendered as aligned monospace rows",
 			in:   "| Name | Value |\n|------|-------|\n| a    | 1     |",
-			want: "<pre>Name | Value\na | 1</pre>",
+			want: "<pre>Name | Value\n-----+------\na    | 1</pre>",
+		},
+		{
+			name: "table columns aligned to widest cell",
+			in:   "| Когда | Погода |\n|---|---|\n| Утро | Ясно |\n| Вечер | Дождь с грозой |",
+			want: "<pre>Когда | Погода\n------+---------------\nУтро  | Ясно\nВечер | Дождь с грозой</pre>",
 		},
 		{
 			name: "emphasis inside table cell suppressed",
 			in:   "| h **b** |\n|---|\n| c |",
-			want: "<pre>h b\nc</pre>",
+			want: "<pre>h b\n---\nc</pre>",
 		},
 		{
 			name: "weather-style response",

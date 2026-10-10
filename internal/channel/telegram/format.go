@@ -3,6 +3,7 @@ package telegram
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
@@ -175,15 +176,15 @@ func nodeAs[T ast.Node](n ast.Node) T {
 // htmlEmitter walks a goldmark AST and writes Telegram-flavored HTML,
 // one fragment per top-level block.
 type htmlEmitter struct {
-	source   []byte
-	blocks   []string
-	cur      strings.Builder // current block being written
-	sep      string          // separator to emit before the next block
-	lists    []listContext
-	plain    int // >0 while tags are suppressed (table cells render inside <pre>)
-	cellIdx  int // cells written in the current table row
-	cellText strings.Builder
-	rowFirst bool // first row of the current table (no leading newline)
+	source    []byte
+	blocks    []string
+	cur       strings.Builder // current block being written
+	sep       string          // separator to emit before the next block
+	lists     []listContext
+	plain     int             // >0 while tags are suppressed (table cells render inside <pre>)
+	cellText  strings.Builder // text of the table cell being walked
+	rowCells  []string        // cells of the table row being walked
+	tableRows [][]string      // completed rows of the table being walked
 }
 
 // block starts a new block, emitting the pending inline separator. Top-level
@@ -324,20 +325,11 @@ func (e *htmlEmitter) enter(n ast.Node) {
 		e.tag(`<a href="` + escapeHTML(string(img.Destination)) + `">🖼 `)
 	case extAst.KindTable:
 		e.block(n)
-		e.tag("<pre>")
-		e.rowFirst = true
+		e.tableRows = e.tableRows[:0]
 		e.sep = ""
 	case extAst.KindTableHeader, extAst.KindTableRow:
-		if !e.rowFirst {
-			e.write("\n")
-		}
-		e.rowFirst = false
-		e.cellIdx = 0
+		e.rowCells = e.rowCells[:0]
 	case extAst.KindTableCell:
-		if e.cellIdx > 0 {
-			e.write(" | ")
-		}
-		e.cellIdx++
 		e.plain++
 	}
 }
@@ -371,10 +363,13 @@ func (e *htmlEmitter) exit(n ast.Node) {
 		e.tag("</a>")
 	case extAst.KindTableCell:
 		e.plain--
-		writeString(&e.cur, e.cellText.String())
+		e.rowCells = append(e.rowCells, e.cellText.String())
 		e.cellText.Reset()
+	case extAst.KindTableHeader, extAst.KindTableRow:
+		e.tableRows = append(e.tableRows, e.rowCells)
+		e.rowCells = nil
 	case extAst.KindTable:
-		e.tag("</pre>")
+		e.renderTable()
 		e.sep = "\n\n"
 	}
 
@@ -382,4 +377,60 @@ func (e *htmlEmitter) exit(n ast.Node) {
 	if n.Parent() != nil && n.Parent().Kind() == ast.KindDocument {
 		e.finishBlock()
 	}
+}
+
+// renderTable emits the buffered rows as a column-aligned monospace table:
+// cells are padded to the widest cell of their column so the pipes line up,
+// with a dashed separator under the header row.
+func (e *htmlEmitter) renderTable() {
+	rows := e.tableRows
+	e.tableRows = nil
+	if len(rows) == 0 {
+		return
+	}
+
+	cols := 0
+	for _, r := range rows {
+		if len(r) > cols {
+			cols = len(r)
+		}
+	}
+	widths := make([]int, cols)
+	for _, r := range rows {
+		for i, c := range r {
+			if w := utf8.RuneCountInString(c); w > widths[i] {
+				widths[i] = w
+			}
+		}
+	}
+
+	pad := func(cell string, width int) string {
+		return cell + strings.Repeat(" ", max(width-utf8.RuneCountInString(cell), 0))
+	}
+
+	e.tag("<pre>")
+	for ri, r := range rows {
+		if ri == 1 {
+			// Dashed separator under the header row.
+			dashes := make([]string, cols)
+			for i := range dashes {
+				dashes[i] = strings.Repeat("-", widths[i])
+			}
+			e.write(strings.Join(dashes, "-+-"))
+			e.write("\n")
+		}
+		cells := make([]string, cols)
+		for i := range cells {
+			cell := ""
+			if i < len(r) {
+				cell = r[i]
+			}
+			cells[i] = pad(cell, widths[i])
+		}
+		e.write(strings.TrimRight(strings.Join(cells, " | "), " "))
+		if ri != len(rows)-1 {
+			e.write("\n")
+		}
+	}
+	e.tag("</pre>")
 }
