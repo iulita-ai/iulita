@@ -117,6 +117,19 @@ func TestToTelegramHTML(t *testing.T) {
 			want: "<pre>h b\n---\nc</pre>",
 		},
 		{
+			name: "emoji cells align by display width, not runes",
+			in:   "| Погода | Темп |\n|---|---|\n| 🌞 Ясно | +20 |\n| 🌧️ Дождь | +15 |",
+			// 🌞/🌧️ are two cells wide (variation selector is zero), so the
+			// 🌧️ Дождь cell (8 cells) sets the column width and Погода (6)
+			// and 🌞 Ясно (7) get padded to it.
+			want: "<pre>Погода   | Темп\n---------+-----\n🌞 Ясно  | +20\n🌧️ Дождь | +15</pre>",
+		},
+		{
+			name: "degree sign is narrow, no extra padding",
+			in:   "| T | V |\n|---|---|\n| 17°C | x |",
+			want: "<pre>T    | V\n-----+--\n17°C | x</pre>",
+		},
+		{
 			name: "weather-style response",
 			in:   "**🌍 Погода в Ницце — 8 октября**\n\nСейчас **17°C**, ощущается как 16°C.\n\n- Утром солнечно\n- Вечером облачно",
 			want: "<b>🌍 Погода в Ницце — 8 октября</b>\n\nСейчас <b>17°C</b>, ощущается как 16°C.\n\n• Утром солнечно\n• Вечером облачно",

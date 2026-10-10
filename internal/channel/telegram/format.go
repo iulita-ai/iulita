@@ -3,8 +3,8 @@ package telegram
 import (
 	"fmt"
 	"strings"
-	"unicode/utf8"
 
+	"github.com/rivo/uniseg"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
@@ -382,6 +382,11 @@ func (e *htmlEmitter) exit(n ast.Node) {
 // renderTable emits the buffered rows as a column-aligned monospace table:
 // cells are padded to the widest cell of their column so the pipes line up,
 // with a dashed separator under the header row.
+//
+// Column widths use display width (uniseg, grapheme-cluster based), not rune
+// count: emoji render two cells wide and variation selectors zero in
+// Telegram's monospace font, so rune-based padding would misalign any column
+// containing an emoji.
 func (e *htmlEmitter) renderTable() {
 	rows := e.tableRows
 	e.tableRows = nil
@@ -398,14 +403,14 @@ func (e *htmlEmitter) renderTable() {
 	widths := make([]int, cols)
 	for _, r := range rows {
 		for i, c := range r {
-			if w := utf8.RuneCountInString(c); w > widths[i] {
+			if w := uniseg.StringWidth(c); w > widths[i] {
 				widths[i] = w
 			}
 		}
 	}
 
 	pad := func(cell string, width int) string {
-		return cell + strings.Repeat(" ", max(width-utf8.RuneCountInString(cell), 0))
+		return cell + strings.Repeat(" ", max(width-uniseg.StringWidth(cell), 0))
 	}
 
 	e.tag("<pre>")
