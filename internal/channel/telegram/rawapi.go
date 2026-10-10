@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"
@@ -41,14 +42,20 @@ type inlineKeyboard struct {
 	InlineKeyboard [][]kbButton `json:"inline_keyboard"`
 }
 
-// bookmarkKeyboard builds the 💾 + 📋 markup: the remember callback button and
-// a client-side copy button carrying the full response text.
+// copyTextMaxLen is Telegram's CopyTextButton text limit; a longer payload
+// makes the API reject the whole sendMessage (BUTTON_COPY_TEXT_INVALID).
+const copyTextMaxLen = 256
+
+// bookmarkKeyboard builds the 💾 markup plus a 📋 copy button when the full
+// response fits Telegram's 256-character copy_text limit; long replies get
+// the remember button only.
 func bookmarkKeyboard(rememberLabel, copyLabel, callbackData, fullText string) string {
 	data := callbackData
-	kb := inlineKeyboard{InlineKeyboard: [][]kbButton{{
-		{Text: rememberLabel, CallbackData: &data},
-		{Text: copyLabel, CopyText: &copyText{Text: fullText}},
-	}}}
+	row := []kbButton{{Text: rememberLabel, CallbackData: &data}}
+	if utf8.RuneCountInString(fullText) <= copyTextMaxLen {
+		row = append(row, kbButton{Text: copyLabel, CopyText: &copyText{Text: fullText}})
+	}
+	kb := inlineKeyboard{InlineKeyboard: [][]kbButton{row}}
 	b, err := json.Marshal(kb)
 	if err != nil {
 		return ""
