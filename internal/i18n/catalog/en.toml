@@ -345,3 +345,6 @@ other = "❌ Error"
 
 [BookmarkNotYours]
 other = "This bookmark belongs to another user."
+
+[CopyButton]
+other = "📋 Copy"

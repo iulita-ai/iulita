@@ -336,3 +336,6 @@ other = "❌ שגיאה"
 
 [BookmarkNotYours]
 other = "סימנייה זו שייכת למשתמש אחר."
+
+[CopyButton]
+other = "📋 העתק"

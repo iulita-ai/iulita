@@ -169,51 +169,37 @@ func (c *Channel) sendResponseWithBookmark(chatID int64, text string, replyTo in
 			rt = replyTo
 		}
 		if i == len(chunks)-1 {
-			// Last chunk: attach the bookmark button.
+			// Last chunk: attach the bookmark + copy buttons.
 			c.sendSingleMessageWithBookmark(chatID, chunk, rt, text, chatIDStr, userID, locale)
 		} else {
-			c.sendSingleMessage(chatID, chunk, rt)
+			_, _ = c.sendHTML(chatID, chunk, rt, "", "") //nolint:errcheck // sendHTML logs failures
 		}
 	}
 }
 
-// sendSingleMessageWithBookmark sends a message with an inline bookmark button.
+// sendSingleMessageWithBookmark sends a message with inline 💾 remember and
+// 📋 copy buttons (the copy button carries the full response, Bot API 7.11).
 func (c *Channel) sendSingleMessageWithBookmark(chatID int64, text string, replyTo int, fullContent, chatIDStr, userID, locale string) {
 	nonce := generateNonce()
 	cbData := "remember:" + nonce
 
 	tag := i18n.ResolveLocale(locale, "en")
-	label := i18n.Tl(tag, "BookmarkButton")
-
-	kb := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(label, cbData),
-		),
+	markup := bookmarkKeyboard(
+		i18n.Tl(tag, "BookmarkButton"),
+		i18n.Tl(tag, "CopyButton"),
+		cbData,
+		fullContent,
 	)
 
-	msg := tgbotapi.NewMessage(chatID, text)
-	msg.ParseMode = tgbotapi.ModeHTML
-	if replyTo > 0 {
-		msg.ReplyToMessageID = replyTo
-	}
-	msg.ReplyMarkup = kb
-
-	sent, err := c.bot.Send(msg)
+	msgID, err := c.sendHTML(chatID, text, replyTo, markup, "")
 	if err != nil {
-		// Retry without formatting.
-		c.logger.Debug("html send failed, retrying as plain text", zap.Error(err))
-		msg.ParseMode = ""
-		sent, err = c.bot.Send(msg)
-		if err != nil {
-			c.logger.Error("failed to send message with bookmark", zap.Error(err), zap.Int64("chat_id", chatID))
-			return
-		}
+		return
 	}
 
 	c.remembers.store(cbData, &rememberEntry{
 		tgChatID:  chatID,
 		tgUserID:  chatID, // in DM, chatID == userID; in groups, still the recipient
-		msgID:     sent.MessageID,
+		msgID:     msgID,
 		content:   fullContent,
 		chatID:    chatIDStr,
 		userID:    userID,
@@ -280,21 +266,18 @@ func (c *Channel) StartStreamWithBookmark(ctx context.Context, chatID string, re
 
 		// Display text is converted to Telegram's HTML dialect;
 		// the stored bookmark content keeps the original Markdown.
-		edit := tgbotapi.NewEditMessageText(tgChatID, msgID, toTelegramHTML(text))
-		edit.ParseMode = tgbotapi.ModeHTML
-
+		markup := ""
 		if c.rememberSvc != nil {
 			nonce := generateNonce()
 			cbData := "remember:" + nonce
 
 			tag := i18n.ResolveLocale(locale, "en")
-			label := i18n.Tl(tag, "BookmarkButton")
-			kb := tgbotapi.NewInlineKeyboardMarkup(
-				tgbotapi.NewInlineKeyboardRow(
-					tgbotapi.NewInlineKeyboardButtonData(label, cbData),
-				),
+			markup = bookmarkKeyboard(
+				i18n.Tl(tag, "BookmarkButton"),
+				i18n.Tl(tag, "CopyButton"),
+				cbData,
+				text,
 			)
-			edit.ReplyMarkup = &kb
 
 			c.remembers.store(cbData, &rememberEntry{
 				tgChatID:  tgChatID,
@@ -308,11 +291,8 @@ func (c *Channel) StartStreamWithBookmark(ctx context.Context, chatID string, re
 			})
 		}
 
-		if _, err := c.bot.Send(edit); err != nil {
-			// Retry without markdown.
-			edit.ParseMode = ""
-			c.bot.Send(edit) //nolint:errcheck,gosec
-		}
+		c.editHTML(tgChatID, msgID, toTelegramHTML(text), markup)
+		c.sentMsgs.record(tgChatID, msgID, text)
 	}
 
 	return editFn, doneFn, nil

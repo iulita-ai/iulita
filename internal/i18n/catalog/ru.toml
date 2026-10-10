@@ -345,3 +345,6 @@ other = "❌ Ошибка"
 
 [BookmarkNotYours]
 other = "Эта закладка принадлежит другому пользователю."
+
+[CopyButton]
+other = "📋 Копировать"

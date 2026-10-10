@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 
@@ -9,14 +10,61 @@ import (
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
 	extAst "github.com/yuin/goldmark/extension/ast"
+	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/util"
 )
+
+// spoilerNode is an inline ||spoiler|| span (Discord-style syntax), rendered
+// as Telegram's <tg-spoiler>.
+type spoilerNode struct {
+	ast.BaseInline
+}
+
+// KindSpoiler is the spoilerNode kind.
+var KindSpoiler = ast.NewNodeKind("Spoiler")
+
+// Kind returns the spoiler node kind.
+func (n *spoilerNode) Kind() ast.NodeKind { return KindSpoiler }
+
+// Dump implements ast.Node.
+func (n *spoilerNode) Dump(src []byte, level int) {
+	ast.DumpHelper(n, src, level, nil, nil)
+}
+
+// spoilerParser matches ||text|| on a single line. Table pipes never reach
+// inline parsing (the table extension splits cells first), so the trigger
+// only fires for genuine spoiler candidates.
+type spoilerParser struct{}
+
+// Trigger implements parser.InlineParser.
+func (p *spoilerParser) Trigger() []byte { return []byte{'|'} }
+
+// Parse implements parser.InlineParser.
+func (p *spoilerParser) Parse(_ ast.Node, block text.Reader, _ parser.Context) ast.Node {
+	line, seg := block.PeekLine()
+	if len(line) < 4 || line[0] != '|' || line[1] != '|' {
+		return nil
+	}
+	end := bytes.Index(line[2:], []byte("||"))
+	if end < 0 {
+		return nil
+	}
+	content := text.NewSegment(seg.Start+2, seg.Start+2+end)
+	block.Advance(2 + end + 2)
+	node := &spoilerNode{}
+	node.AppendChild(node, ast.NewTextSegment(content))
+	return node
+}
 
 // maxMessageLen is the Telegram message length limit with headroom for entity markup.
 const maxMessageLen = 4000
 
 var mdParser = goldmark.New(
 	goldmark.WithExtensions(extension.Table, extension.Strikethrough, extension.Linkify),
+	goldmark.WithParserOptions(
+		parser.WithInlineParsers(util.Prioritized(&spoilerParser{}, 600)),
+	),
 ).Parser()
 
 // htmlEscaper covers the characters Telegram's HTML mode treats specially in
@@ -181,10 +229,11 @@ type htmlEmitter struct {
 	cur       strings.Builder // current block being written
 	sep       string          // separator to emit before the next block
 	lists     []listContext
-	plain     int             // >0 while tags are suppressed (table cells render inside <pre>)
-	cellText  strings.Builder // text of the table cell being walked
-	rowCells  []string        // cells of the table row being walked
-	tableRows [][]string      // completed rows of the table being walked
+	plain     int               // >0 while tags are suppressed (table cells render inside <pre>)
+	cellText  strings.Builder   // text of the table cell being walked
+	rowCells  []string          // cells of the table row being walked
+	tableRows [][]string        // completed rows of the table being walked
+	quotes    []strings.Builder // blockquote render stack (innermost last)
 }
 
 // block starts a new block, emitting the pending inline separator. Top-level
@@ -259,7 +308,10 @@ func (e *htmlEmitter) enter(n ast.Node) {
 		e.sep = "\n\n"
 	case ast.KindBlockquote:
 		e.block(n)
-		e.tag("<blockquote>")
+		// Render the quote into its own buffer: the opening tag is only
+		// known at exit (long quotes become expandable).
+		e.quotes = append(e.quotes, e.cur)
+		e.cur = strings.Builder{}
 		e.sep = ""
 	case ast.KindList:
 		if len(e.lists) > 0 {
@@ -312,6 +364,8 @@ func (e *htmlEmitter) enter(n ast.Node) {
 		}
 	case extAst.KindStrikethrough:
 		e.tag("<s>")
+	case KindSpoiler:
+		e.tag("<tg-spoiler>")
 	case ast.KindLink:
 		l := nodeAs[*ast.Link](n)
 		e.tag(`<a href="` + escapeHTML(string(l.Destination)) + `">`)
@@ -344,6 +398,17 @@ func (e *htmlEmitter) exit(n ast.Node) {
 		e.tag("</b>")
 		e.sep = "\n\n"
 	case ast.KindBlockquote:
+		// Long quotes collapse into an expandable quote so the answer stays
+		// compact; Telegram's entity is server-side (Bot API 7.4+).
+		inner := e.cur.String()
+		e.cur = e.quotes[len(e.quotes)-1]
+		e.quotes = e.quotes[:len(e.quotes)-1]
+		open := "<blockquote>"
+		if strings.Count(inner, "\n") >= 4 {
+			open = "<blockquote expandable>"
+		}
+		e.tag(open)
+		writeString(&e.cur, inner)
 		e.tag("</blockquote>")
 		e.sep = "\n\n"
 	case ast.KindList:
@@ -359,6 +424,8 @@ func (e *htmlEmitter) exit(n ast.Node) {
 		}
 	case extAst.KindStrikethrough:
 		e.tag("</s>")
+	case KindSpoiler:
+		e.tag("</tg-spoiler>")
 	case ast.KindLink, ast.KindAutoLink, ast.KindImage:
 		e.tag("</a>")
 	case extAst.KindTableCell:

@@ -336,3 +336,6 @@ other = "❌ Erreur"
 
 [BookmarkNotYours]
 other = "Ce signet appartient à un autre utilisateur."
+
+[CopyButton]
+other = "📋 Copier"

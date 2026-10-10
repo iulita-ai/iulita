@@ -336,3 +336,6 @@ other = "❌ Error"
 
 [BookmarkNotYours]
 other = "Este marcador pertenece a otro usuario."
+
+[CopyButton]
+other = "📋 Copiar"

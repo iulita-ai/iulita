@@ -336,3 +336,6 @@ other = "❌ 错误"
 
 [BookmarkNotYours]
 other = "这个书签属于其他用户。"
+
+[CopyButton]
+other = "📋 复制"

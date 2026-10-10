@@ -48,6 +48,7 @@ type Channel struct {
 	rememberSvc    bookmark.Service      // nil = no bookmark feature
 	remembers      *rememberState        // pending bookmark buttons
 	statusMsgs     *statusState          // live status messages per chat
+	sentMsgs       *sentTracker          // recent sent texts (🔖 reactions, /clear deletes)
 	locLimiter     *ratelimit.Limiter    // outbound location sends: 10/hour/chat (set in New)
 	logger         *zap.Logger
 	wg             sync.WaitGroup // tracks in-flight message processing
@@ -116,6 +117,7 @@ func New(token string, allowedIDs []int64, clearFn ClearFunc, debounceWindow tim
 		prompts:        newPromptState(),
 		remembers:      newRememberState(),
 		statusMsgs:     newStatusState(),
+		sentMsgs:       newSentTracker(),
 		locLimiter:     ratelimit.New(MaxLocationSendsPerHour, time.Hour),
 		logger:         logger,
 	}, nil
@@ -135,10 +137,9 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 		}
 	}
 
-	u := tgbotapi.NewUpdate(0)
-	u.Timeout = 30
-
-	updates := c.bot.GetUpdatesChan(u)
+	// Raw getUpdates polling: the v5 library drops message_reaction updates
+	// during decoding, so newer update types are decoded ourselves.
+	updates := c.pollUpdates(ctx)
 
 	// processMsg handles a (possibly debounced/merged) message.
 	processMsg := func(msg channel.IncomingMessage) {
@@ -146,6 +147,9 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 
 		// Pre-register replyTo for status message threading.
 		c.statusMsgs.setReplyTo(msg.ChatID, msg.MessageID)
+
+		// 👀 ack: the user sees processing started; cleared once the reply lands.
+		c.setReaction(tgChatID, msg.MessageID, "👀")
 
 		handlerCtx := context.WithoutCancel(ctx)
 		typingCtx, stopTyping := context.WithCancel(handlerCtx)
@@ -155,6 +159,7 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 		response, err := handler(handlerCtx, msg)
 		stopTyping()
 		c.wg.Done()
+		c.setReaction(tgChatID, msg.MessageID, "")
 
 		// Check if remember skill was used (skip bookmark button if so).
 		skipBookmark := false
@@ -192,7 +197,6 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 	for {
 		select {
 		case <-ctx.Done():
-			c.bot.StopReceivingUpdates()
 			c.logger.Info("shutdown: flushing pending debounced messages")
 			debounce.flushAll()
 			c.logger.Info("shutdown: waiting for in-flight message processing to finish")
@@ -446,52 +450,48 @@ func (c *Channel) handleClear(ctx context.Context, tgChatID int64, chatID string
 		c.bot.Send(reply) //nolint:errcheck,gosec
 		return
 	}
+	// Natively delete the bot's own messages from the last 48 hours.
+	c.deleteBotMessages(tgChatID)
 	reply := tgbotapi.NewMessage(tgChatID, i18n.T(localeCtx, "TelegramHistoryCleared"))
 	c.bot.Send(reply) //nolint:errcheck,gosec
 }
 
-// SendMessage sends a proactive message to a chat. Implements channel.MessageSender.
-func (c *Channel) SendMessage(_ context.Context, chatID string, text string) error {
+// SendMessage sends a proactive message to a chat (reminders, agent job
+// results). These are rare, attention-worthy pings, so they carry the 🎉
+// effect. Implements channel.MessageSender.
+func (c *Channel) SendMessage(_ context.Context, chatID, text string) error {
 	tgChatID, err := strconv.ParseInt(chatID, 10, 64)
 	if err != nil {
 		return fmt.Errorf("invalid chat ID: %w", err)
 	}
-	c.sendResponse(tgChatID, text, 0)
+	for i, chunk := range telegramHTMLChunks(text) {
+		rt := 0
+		if i == 0 {
+			// replyTo stays 0 for proactive messages
+			rt = 0
+		}
+		_, _ = c.sendHTML(tgChatID, chunk, rt, "", effectParty) //nolint:errcheck // best-effort proactive push
+	}
 	return nil
 }
 
-// sendResponse splits long messages into chunks and sends each with Markdown fallback.
+// sendResponse splits long messages into chunks and sends each as HTML.
 // replyTo is the message ID to reply to (0 = no reply).
 func (c *Channel) sendResponse(chatID int64, text string, replyTo int) {
-	chunks := telegramHTMLChunks(text)
-	for i, chunk := range chunks {
+	for i, chunk := range telegramHTMLChunks(text) {
 		// Only reply-to the first chunk.
 		rt := 0
 		if i == 0 {
 			rt = replyTo
 		}
-		c.sendSingleMessage(chatID, chunk, rt)
+		_, _ = c.sendHTML(chatID, chunk, rt, "", "") //nolint:errcheck // sendHTML logs failures
 	}
 }
 
-// sendSingleMessage sends a single message with HTML formatting, falling back to plain text.
+// sendSingleMessage sends a plain (non-markdown) message, HTML-escaped.
 // replyTo is the message ID to reply to (0 = no reply).
 func (c *Channel) sendSingleMessage(chatID int64, text string, replyTo int) {
-	msg := tgbotapi.NewMessage(chatID, text)
-	msg.ParseMode = tgbotapi.ModeHTML
-	if replyTo > 0 {
-		msg.ReplyToMessageID = replyTo
-	}
-	if _, err := c.bot.Send(msg); err != nil {
-		c.logger.Debug("html send failed, retrying as plain text", zap.Error(err))
-		msg.ParseMode = ""
-		if _, err := c.bot.Send(msg); err != nil {
-			c.logger.Error("failed to send message",
-				zap.Error(err),
-				zap.Int64("chat_id", chatID),
-			)
-		}
-	}
+	_, _ = c.sendHTML(chatID, escapeHTML(text), replyTo, "", "") //nolint:errcheck // sendHTML logs failures
 }
 
 // StartStream sends an initial message and returns edit/done functions for streaming.
@@ -540,13 +540,8 @@ func (c *Channel) StartStream(_ context.Context, chatID string, replyTo int) (fu
 	}
 
 	doneFn := func(text string) {
-		edit := tgbotapi.NewEditMessageText(tgChatID, msgID, toTelegramHTML(text))
-		edit.ParseMode = tgbotapi.ModeHTML
-		if _, err := c.bot.Send(edit); err != nil {
-			// Retry without formatting.
-			edit.ParseMode = ""
-			c.bot.Send(edit) //nolint:errcheck,gosec
-		}
+		c.editHTML(tgChatID, msgID, toTelegramHTML(text), "")
+		c.sentMsgs.record(tgChatID, msgID, text)
 	}
 
 	return editFn, doneFn, nil
