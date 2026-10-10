@@ -10,7 +10,8 @@ import (
 	"sync"
 	"time"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
 	"go.uber.org/zap"
 
 	"github.com/iulita-ai/iulita/internal/bookmark"
@@ -33,12 +34,13 @@ type TranscriptionProvider interface {
 
 // Channel implements channel.InputChannel for Telegram.
 type Channel struct {
-	bot            *tgbotapi.BotAPI
-	instanceID     string // channel instance slug (e.g., "tg-config")
+	bot            *bot.Bot
+	http           *http.Client // shared client for file downloads
+	instanceID     string       // channel instance slug (e.g., "tg-config")
 	allowedIDs     map[int64]struct{}
 	clearFn        ClearFunc
 	commands       map[string]CommandFunc
-	commandOrder   []tgbotapi.BotCommand
+	commandOrder   []models.BotCommand
 	debounceWindow time.Duration
 	rateLimiter    *ratelimit.Limiter    // nil = no rate limiting
 	userResolver   channel.UserResolver  // nil = no user resolution (backward compat)
@@ -82,7 +84,7 @@ func (c *Channel) SetInstanceID(id string) {
 // RegisterCommand adds a slash command handler with a description for the Telegram menu.
 func (c *Channel) RegisterCommand(name, description string, fn CommandFunc) {
 	c.commands[name] = fn
-	c.commandOrder = append(c.commandOrder, tgbotapi.BotCommand{
+	c.commandOrder = append(c.commandOrder, models.BotCommand{
 		Command:     strings.TrimPrefix(name, "/"),
 		Description: description,
 	})
@@ -90,15 +92,25 @@ func (c *Channel) RegisterCommand(name, description string, fn CommandFunc) {
 
 // New creates a new Telegram channel.
 func New(token string, allowedIDs []int64, clearFn ClearFunc, debounceWindow time.Duration, httpClient *http.Client, logger *zap.Logger) (*Channel, error) {
-	var bot *tgbotapi.BotAPI
-	var err error
-	if httpClient != nil {
-		bot, err = tgbotapi.NewBotAPIWithClient(token, tgbotapi.APIEndpoint, httpClient)
-	} else {
-		bot, err = tgbotapi.NewBotAPI(token)
+	client := httpClient
+	if client == nil {
+		client = &http.Client{Timeout: 100 * time.Second}
 	}
+	opts := []bot.Option{
+		// Long-poll window for getUpdates; the client must outlive it.
+		bot.WithHTTPClient(60*time.Second, client),
+		// Sequential dispatch: preserves the per-update ordering semantics
+		// the debounce/prompt state machines rely on.
+		bot.WithNotAsyncHandlers(),
+		bot.WithWorkers(1),
+	}
+	b, err := bot.New(token, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating telegram bot: %w", err)
+	}
+	me, err := b.GetMe(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("telegram getMe: %w", err)
 	}
 
 	allowed := make(map[int64]struct{}, len(allowedIDs))
@@ -106,10 +118,11 @@ func New(token string, allowedIDs []int64, clearFn ClearFunc, debounceWindow tim
 		allowed[id] = struct{}{}
 	}
 
-	logger.Info("telegram bot authorized", zap.String("username", bot.Self.UserName))
+	logger.Info("telegram bot authorized", zap.String("username", me.Username))
 
 	return &Channel{
-		bot:            bot,
+		bot:            b,
+		http:           client,
 		allowedIDs:     allowed,
 		clearFn:        clearFn,
 		commands:       make(map[string]CommandFunc),
@@ -126,20 +139,15 @@ func New(token string, allowedIDs []int64, clearFn ClearFunc, debounceWindow tim
 func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) error {
 	// Register commands in Telegram's menu (the "/" button).
 	if len(c.commandOrder) > 0 {
-		allCmds := append([]tgbotapi.BotCommand{
+		allCmds := append([]models.BotCommand{
 			{Command: "clear", Description: i18n.Tl(i18n.ResolveLocale("", "en"), "TelegramClearCommand")},
 		}, c.commandOrder...)
-		cmdCfg := tgbotapi.NewSetMyCommands(allCmds...)
-		if _, err := c.bot.Request(cmdCfg); err != nil {
+		if _, err := c.bot.SetMyCommands(ctx, &bot.SetMyCommandsParams{Commands: allCmds}); err != nil {
 			c.logger.Error("failed to set bot commands menu", zap.Error(err))
 		} else {
 			c.logger.Info("registered bot commands in Telegram menu", zap.Int("count", len(allCmds)))
 		}
 	}
-
-	// Raw getUpdates polling: the v5 library drops message_reaction updates
-	// during decoding, so newer update types are decoded ourselves.
-	updates := c.pollUpdates(ctx)
 
 	// processMsg handles a (possibly debounced/merged) message.
 	processMsg := func(msg channel.IncomingMessage) {
@@ -194,246 +202,258 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 	// Cleanup stale remember entries.
 	go c.remembers.startCleanup(ctx)
 
-	for {
-		select {
-		case <-ctx.Done():
-			c.logger.Info("shutdown: flushing pending debounced messages")
-			debounce.flushAll()
-			c.logger.Info("shutdown: waiting for in-flight message processing to finish")
-			c.wg.Wait()
-			c.logger.Info("shutdown: all message processing complete")
-			return ctx.Err()
-
-		case update := <-updates:
-			// Handle inline keyboard callback queries (bookmark + interactive prompts).
-			if update.CallbackQuery != nil && update.CallbackQuery.From != nil {
-				if c.isAllowed(update.CallbackQuery.From.ID) {
-					// Bookmark button takes priority.
-					if c.rememberSvc != nil && c.HandleRememberCallback(update.CallbackQuery) {
-						continue
-					}
-					if c.prompts.HandleCallback(c.bot, update.CallbackQuery) {
-						continue
-					}
+	// dispatch processes one update. Reaction updates are handled inline; the
+	// library's long-poll loop owns fetching and offset management.
+	dispatch := func(update models.Update) {
+		// Handle inline keyboard callback queries (bookmark + interactive prompts).
+		if update.CallbackQuery != nil {
+			if c.isAllowed(update.CallbackQuery.From.ID) {
+				// Bookmark button takes priority.
+				if c.rememberSvc != nil && c.HandleRememberCallback(update.CallbackQuery) {
+					return
+				}
+				if c.prompts.HandleCallback(c.bot, update.CallbackQuery) {
+					return
 				}
 			}
-
-			if update.Message == nil {
-				// Live-location position updates arrive as edited_message and are
-				// deliberately ignored in v1 (initial pin only). One Debug line keeps
-				// "ignored by design" distinguishable from "dropped by bug".
-				if update.EditedMessage != nil && update.EditedMessage.Location != nil {
-					c.logger.Debug("live location update ignored (v1: initial pin only)",
-						zap.String("chat_id", strconv.FormatInt(update.EditedMessage.Chat.ID, 10)),
-						zap.Int("message_id", update.EditedMessage.MessageID))
-				}
-				continue
-			}
-
-			hasText := update.Message.Text != ""
-			hasPhoto := len(update.Message.Photo) > 0
-			hasDocument := update.Message.Document != nil
-			hasVoice := update.Message.Voice != nil
-			hasAudio := update.Message.Audio != nil
-			hasLocation := update.Message.Location != nil || update.Message.Venue != nil
-			if !hasUpdateContent(update.Message) {
-				continue
-			}
-
-			userID := update.Message.From.ID
-			if !c.isAllowed(userID) {
-				c.logger.Warn("unauthorized user", zap.Int64("user_id", userID))
-				continue
-			}
-
-			chatID := strconv.FormatInt(update.Message.Chat.ID, 10)
-
-			// Handle /clear command.
-			if update.Message.Text == "/clear" {
-				c.handleClear(ctx, update.Message.Chat.ID, chatID)
-				continue
-			}
-
-			// Handle registered commands.
-			if strings.HasPrefix(update.Message.Text, "/") {
-				cmd := strings.Fields(update.Message.Text)[0]
-				if fn, ok := c.commands[cmd]; ok {
-					resp := fn(ctx, chatID)
-					if resp != "" {
-						c.sendResponse(update.Message.Chat.ID, resp, 0)
-					}
-					continue
-				}
-			}
-
-			// Check if this text should be routed to a pending interactive prompt.
-			if hasText && c.prompts.HandleText(update.Message.Chat.ID, update.Message.Text) {
-				continue
-			}
-
-			// Extract text: Text for text messages, Caption for photo/document messages.
-			text := update.Message.Text
-			if text == "" && (hasPhoto || hasDocument) {
-				text = update.Message.Caption
-			}
-
-			msg := channel.IncomingMessage{
-				ChatID:            chatID,
-				UserID:            strconv.FormatInt(userID, 10),
-				ChannelInstanceID: c.instanceID,
-				UserName:          update.Message.From.UserName,
-				Text:              text,
-				LanguageCode:      update.Message.From.LanguageCode,
-				MessageID:         update.Message.MessageID,
-				Caps:              channel.CapStreaming | channel.CapMarkdown | channel.CapTyping | channel.CapButtons | channel.CapLocations,
-			}
-
-			// Resolve iulita user from channel binding.
-			if c.userResolver != nil {
-				resolvedID, err := c.userResolver.ResolveUser(ctx, "telegram", msg.UserID, msg.UserName, chatID)
-				if err != nil {
-					c.logger.Warn("user resolution failed", zap.Error(err), zap.String("user_id", msg.UserID))
-					localeCtx := i18n.WithLocale(ctx, i18n.ResolveLocale("", msg.LanguageCode))
-					c.sendSingleMessage(update.Message.Chat.ID, i18n.T(localeCtx, "TelegramRegistrationNotAllowed"), 0)
-					continue
-				}
-				msg.ResolvedUserID = resolvedID
-
-				// Look up channel locale from DB.
-				if c.store != nil {
-					if locale, err := c.store.GetChannelLocale(ctx, "telegram", msg.UserID); err == nil {
-						msg.Locale = locale
-					}
-				}
-			}
-
-			// Shared location or venue: structured attachment + localized text line
-			// (TelegramVoicePrefix precedent) so the LLM sees it and history keeps it.
-			// Telegram location shares carry no caption — the append branch is future-proofing.
-			if hasLocation {
-				if loc := locationFromMessage(update.Message); loc != nil {
-					msg.Locations = []channel.LocationAttachment{*loc}
-					line := formatLocationText(i18n.ResolveLocale(msg.Locale, msg.LanguageCode), loc)
-					if msg.Text != "" {
-						msg.Text = msg.Text + "\n" + line
-					} else {
-						msg.Text = line
-					}
-					c.logger.Debug("location received",
-						zap.String("chat_id", chatID),
-						zap.Bool("live", loc.Live),
-						zap.Bool("venue", loc.Title != ""))
-				}
-			}
-
-			// Download photo if present.
-			if hasPhoto {
-				photo := update.Message.Photo[len(update.Message.Photo)-1] // largest size
-				data, err := c.downloadFile(ctx, photo.FileID)
-				if err != nil {
-					c.logger.Error("failed to download photo", zap.Error(err), zap.String("chat_id", chatID))
-				} else {
-					msg.Images = []channel.ImageAttachment{
-						{Data: data, MediaType: "image/jpeg"},
-					}
-				}
-			}
-
-			// Download document if present (PDF, text files).
-			if hasDocument {
-				doc := update.Message.Document
-				if c.isSupportedDocument(doc.MimeType) {
-					if doc.FileSize > 30*1024*1024 {
-						c.logger.Warn("document too large, skipping",
-							zap.String("filename", doc.FileName),
-							zap.Int("size", doc.FileSize),
-							zap.String("chat_id", chatID))
-					} else {
-						data, err := c.downloadFile(ctx, doc.FileID)
-						if err != nil {
-							c.logger.Error("failed to download document", zap.Error(err),
-								zap.String("filename", doc.FileName), zap.String("chat_id", chatID))
-						} else {
-							msg.Documents = []channel.DocumentAttachment{
-								{Data: data, MimeType: doc.MimeType, Filename: doc.FileName},
-							}
-						}
-					}
-				} else {
-					c.logger.Warn("unsupported document type, skipping",
-						zap.String("mime_type", doc.MimeType),
-						zap.String("filename", doc.FileName),
-						zap.String("chat_id", chatID))
-				}
-			}
-
-			// Download and transcribe voice/audio if present.
-			if hasVoice || hasAudio {
-				var fileID string
-				var duration int
-				if hasVoice {
-					fileID = update.Message.Voice.FileID
-					duration = update.Message.Voice.Duration
-				} else {
-					fileID = update.Message.Audio.FileID
-					duration = update.Message.Audio.Duration
-				}
-
-				if c.transcriber != nil {
-					data, err := c.downloadFile(ctx, fileID)
-					if err != nil {
-						c.logger.Error("failed to download voice message", zap.Error(err), zap.String("chat_id", chatID))
-					} else {
-						transcribed, err := c.transcriber.Transcribe(ctx, data, "ogg")
-						if err != nil {
-							c.logger.Error("failed to transcribe voice message", zap.Error(err), zap.String("chat_id", chatID))
-						} else if transcribed != "" {
-							localeCtx := i18n.WithLocale(ctx, i18n.ResolveLocale(msg.Locale, msg.LanguageCode))
-							prefix := i18n.T(localeCtx, "TelegramVoicePrefix")
-							if msg.Text != "" {
-								msg.Text = msg.Text + "\n" + prefix + transcribed
-							} else {
-								msg.Text = prefix + transcribed
-							}
-						}
-					}
-					msg.Audio = []channel.AudioAttachment{
-						{Format: "ogg", Duration: duration},
-					}
-				} else {
-					c.logger.Debug("voice message received but no transcriber configured",
-						zap.String("chat_id", chatID), zap.Int("duration", duration))
-				}
-			}
-
-			// A voice/audio note whose transcription failed or came back empty
-			// must not produce an empty LLM turn (providers reject empty user
-			// messages). Inject a localized fallback line so the model can tell
-			// the user it could not hear the note.
-			if (hasVoice || hasAudio) && msg.Text == "" {
-				localeCtx := i18n.WithLocale(ctx, i18n.ResolveLocale(msg.Locale, msg.LanguageCode))
-				msg.Text = i18n.T(localeCtx, "TelegramVoicePrefix") + i18n.T(localeCtx, "TelegramVoiceUnavailable")
-			}
-
-			// Skip messages with no usable content (e.g. unsupported GIF/animation).
-			if msg.Text == "" && len(msg.Images) == 0 && len(msg.Documents) == 0 &&
-				len(msg.Audio) == 0 && len(msg.Locations) == 0 {
-				c.logger.Debug("skipping message with no content",
-					zap.String("chat_id", chatID), zap.Int64("user_id", userID))
-				continue
-			}
-
-			// Rate limit check.
-			if c.rateLimiter != nil && !c.rateLimiter.Allow(chatID) {
-				c.logger.Warn("rate limit exceeded", zap.String("chat_id", chatID), zap.Int64("user_id", userID))
-				localeCtx := i18n.WithLocale(ctx, i18n.ResolveLocale(msg.Locale, msg.LanguageCode))
-				c.sendSingleMessage(update.Message.Chat.ID, i18n.T(localeCtx, "TelegramRateLimited"), 0)
-				continue
-			}
-
-			debounce.add(msg)
+			return
 		}
+
+		// 🔖 reaction on a bot message saves it as a fact.
+		if update.MessageReaction != nil {
+			c.handleReactionUpdate(ctx, update.MessageReaction)
+			return
+		}
+
+		if update.Message == nil {
+			// Live-location position updates arrive as edited_message and are
+			// deliberately ignored in v1 (initial pin only). One Debug line keeps
+			// "ignored by design" distinguishable from "dropped by bug".
+			if update.EditedMessage != nil && update.EditedMessage.Location != nil {
+				c.logger.Debug("live location update ignored (v1: initial pin only)",
+					zap.String("chat_id", strconv.FormatInt(update.EditedMessage.Chat.ID, 10)),
+					zap.Int("message_id", update.EditedMessage.ID))
+			}
+			return
+		}
+
+		hasText := update.Message.Text != ""
+		hasPhoto := len(update.Message.Photo) > 0
+		hasDocument := update.Message.Document != nil
+		hasVoice := update.Message.Voice != nil
+		hasAudio := update.Message.Audio != nil
+		hasLocation := update.Message.Location != nil || update.Message.Venue != nil
+		if !hasUpdateContent(update.Message) {
+			return
+		}
+
+		userID := update.Message.From.ID
+		if !c.isAllowed(userID) {
+			c.logger.Warn("unauthorized user", zap.Int64("user_id", userID))
+			return
+		}
+
+		chatID := strconv.FormatInt(update.Message.Chat.ID, 10)
+
+		// Handle /clear command.
+		if update.Message.Text == "/clear" {
+			c.handleClear(ctx, update.Message.Chat.ID, chatID)
+			return
+		}
+
+		// Handle registered commands.
+		if strings.HasPrefix(update.Message.Text, "/") {
+			cmd := strings.Fields(update.Message.Text)[0]
+			if fn, ok := c.commands[cmd]; ok {
+				resp := fn(ctx, chatID)
+				if resp != "" {
+					c.sendResponse(update.Message.Chat.ID, resp, 0)
+				}
+				return
+			}
+		}
+
+		// Check if this text should be routed to a pending interactive prompt.
+		if hasText && c.prompts.HandleText(update.Message.Chat.ID, update.Message.Text) {
+			return
+		}
+
+		// Extract text: Text for text messages, Caption for photo/document messages.
+		text := update.Message.Text
+		if text == "" && (hasPhoto || hasDocument) {
+			text = update.Message.Caption
+		}
+
+		msg := channel.IncomingMessage{
+			ChatID:            chatID,
+			UserID:            strconv.FormatInt(userID, 10),
+			ChannelInstanceID: c.instanceID,
+			UserName:          update.Message.From.Username,
+			Text:              text,
+			LanguageCode:      update.Message.From.LanguageCode,
+			MessageID:         update.Message.ID,
+			Caps:              channel.CapStreaming | channel.CapMarkdown | channel.CapTyping | channel.CapButtons | channel.CapLocations,
+		}
+
+		// Resolve iulita user from channel binding.
+		if c.userResolver != nil {
+			resolvedID, err := c.userResolver.ResolveUser(ctx, "telegram", msg.UserID, msg.UserName, chatID)
+			if err != nil {
+				c.logger.Warn("user resolution failed", zap.Error(err), zap.String("user_id", msg.UserID))
+				localeCtx := i18n.WithLocale(ctx, i18n.ResolveLocale("", msg.LanguageCode))
+				c.sendSingleMessage(update.Message.Chat.ID, i18n.T(localeCtx, "TelegramRegistrationNotAllowed"), 0)
+				return
+			}
+			msg.ResolvedUserID = resolvedID
+
+			// Look up channel locale from DB.
+			if c.store != nil {
+				if locale, err := c.store.GetChannelLocale(ctx, "telegram", msg.UserID); err == nil {
+					msg.Locale = locale
+				}
+			}
+		}
+
+		// Shared location or venue: structured attachment + localized text line
+		// (TelegramVoicePrefix precedent) so the LLM sees it and history keeps it.
+		// Telegram location shares carry no caption — the append branch is future-proofing.
+		if hasLocation {
+			if loc := locationFromMessage(update.Message); loc != nil {
+				msg.Locations = []channel.LocationAttachment{*loc}
+				line := formatLocationText(i18n.ResolveLocale(msg.Locale, msg.LanguageCode), loc)
+				if msg.Text != "" {
+					msg.Text = msg.Text + "\n" + line
+				} else {
+					msg.Text = line
+				}
+				c.logger.Debug("location received",
+					zap.String("chat_id", chatID),
+					zap.Bool("live", loc.Live),
+					zap.Bool("venue", loc.Title != ""))
+			}
+		}
+
+		// Download photo if present.
+		if hasPhoto {
+			photo := update.Message.Photo[len(update.Message.Photo)-1] // largest size
+			data, err := c.downloadFile(ctx, photo.FileID)
+			if err != nil {
+				c.logger.Error("failed to download photo", zap.Error(err), zap.String("chat_id", chatID))
+			} else {
+				msg.Images = []channel.ImageAttachment{
+					{Data: data, MediaType: "image/jpeg"},
+				}
+			}
+		}
+
+		// Download document if present (PDF, text files).
+		if hasDocument {
+			doc := update.Message.Document
+			if c.isSupportedDocument(doc.MimeType) {
+				if doc.FileSize > 30*1024*1024 {
+					c.logger.Warn("document too large, skipping",
+						zap.String("filename", doc.FileName),
+						zap.Int64("size", doc.FileSize),
+						zap.String("chat_id", chatID))
+				} else {
+					data, err := c.downloadFile(ctx, doc.FileID)
+					if err != nil {
+						c.logger.Error("failed to download document", zap.Error(err),
+							zap.String("filename", doc.FileName), zap.String("chat_id", chatID))
+					} else {
+						msg.Documents = []channel.DocumentAttachment{
+							{Data: data, MimeType: doc.MimeType, Filename: doc.FileName},
+						}
+					}
+				}
+			} else {
+				c.logger.Warn("unsupported document type, skipping",
+					zap.String("mime_type", doc.MimeType),
+					zap.String("filename", doc.FileName),
+					zap.String("chat_id", chatID))
+			}
+		}
+
+		// Download and transcribe voice/audio if present.
+		if hasVoice || hasAudio {
+			var fileID string
+			var duration int
+			if hasVoice {
+				fileID = update.Message.Voice.FileID
+				duration = update.Message.Voice.Duration
+			} else {
+				fileID = update.Message.Audio.FileID
+				duration = update.Message.Audio.Duration
+			}
+
+			if c.transcriber != nil {
+				data, err := c.downloadFile(ctx, fileID)
+				if err != nil {
+					c.logger.Error("failed to download voice message", zap.Error(err), zap.String("chat_id", chatID))
+				} else {
+					transcribed, err := c.transcriber.Transcribe(ctx, data, "ogg")
+					if err != nil {
+						c.logger.Error("failed to transcribe voice message", zap.Error(err), zap.String("chat_id", chatID))
+					} else if transcribed != "" {
+						localeCtx := i18n.WithLocale(ctx, i18n.ResolveLocale(msg.Locale, msg.LanguageCode))
+						prefix := i18n.T(localeCtx, "TelegramVoicePrefix")
+						if msg.Text != "" {
+							msg.Text = msg.Text + "\n" + prefix + transcribed
+						} else {
+							msg.Text = prefix + transcribed
+						}
+					}
+				}
+				msg.Audio = []channel.AudioAttachment{
+					{Format: "ogg", Duration: duration},
+				}
+			} else {
+				c.logger.Debug("voice message received but no transcriber configured",
+					zap.String("chat_id", chatID), zap.Int("duration", duration))
+			}
+		}
+
+		// A voice/audio note whose transcription failed or came back empty
+		// must not produce an empty LLM turn (providers reject empty user
+		// messages). Inject a localized fallback line so the model can tell
+		// the user it could not hear the note.
+		if (hasVoice || hasAudio) && msg.Text == "" {
+			localeCtx := i18n.WithLocale(ctx, i18n.ResolveLocale(msg.Locale, msg.LanguageCode))
+			msg.Text = i18n.T(localeCtx, "TelegramVoicePrefix") + i18n.T(localeCtx, "TelegramVoiceUnavailable")
+		}
+
+		// Skip messages with no usable content (e.g. unsupported GIF/animation).
+		if msg.Text == "" && len(msg.Images) == 0 && len(msg.Documents) == 0 &&
+			len(msg.Audio) == 0 && len(msg.Locations) == 0 {
+			c.logger.Debug("skipping message with no content",
+				zap.String("chat_id", chatID), zap.Int64("user_id", userID))
+			return
+		}
+
+		// Rate limit check.
+		if c.rateLimiter != nil && !c.rateLimiter.Allow(chatID) {
+			c.logger.Warn("rate limit exceeded", zap.String("chat_id", chatID), zap.Int64("user_id", userID))
+			localeCtx := i18n.WithLocale(ctx, i18n.ResolveLocale(msg.Locale, msg.LanguageCode))
+			c.sendSingleMessage(update.Message.Chat.ID, i18n.T(localeCtx, "TelegramRateLimited"), 0)
+			return
+		}
+
+		debounce.add(msg)
 	}
+
+	c.bot.RegisterHandlerMatchFunc(func(*models.Update) bool { return true },
+		func(_ context.Context, _ *bot.Bot, update *models.Update) { dispatch(*update) })
+
+	// Long-polling loop owned by the library (Bot API 10.3 models decode all
+	// update types natively, including message_reaction).
+	c.bot.Start(ctx)
+
+	c.logger.Info("shutdown: flushing pending debounced messages")
+	debounce.flushAll()
+	c.logger.Info("shutdown: waiting for in-flight message processing to finish")
+	c.wg.Wait()
+	c.logger.Info("shutdown: all message processing complete")
+	return ctx.Err()
 }
 
 func (c *Channel) handleClear(ctx context.Context, tgChatID int64, chatID string) {
@@ -446,14 +466,18 @@ func (c *Channel) handleClear(ctx context.Context, tgChatID int64, chatID string
 	}
 	if err := c.clearFn(ctx, chatID); err != nil {
 		c.logger.Error("failed to clear history", zap.Error(err), zap.String("chat_id", chatID))
-		reply := tgbotapi.NewMessage(tgChatID, i18n.T(localeCtx, "TelegramHistoryClearFailed"))
-		c.bot.Send(reply) //nolint:errcheck,gosec
+		_, _ = c.bot.SendMessage(ctx, &bot.SendMessageParams{ //nolint:errcheck // best-effort notify
+			ChatID: tgChatID,
+			Text:   i18n.T(localeCtx, "TelegramHistoryClearFailed"),
+		})
 		return
 	}
 	// Natively delete the bot's own messages from the last 48 hours.
 	c.deleteBotMessages(tgChatID)
-	reply := tgbotapi.NewMessage(tgChatID, i18n.T(localeCtx, "TelegramHistoryCleared"))
-	c.bot.Send(reply) //nolint:errcheck,gosec
+	_, _ = c.bot.SendMessage(ctx, &bot.SendMessageParams{ //nolint:errcheck // best-effort notify
+		ChatID: tgChatID,
+		Text:   i18n.T(localeCtx, "TelegramHistoryCleared"),
+	})
 }
 
 // SendMessage sends a proactive message to a chat (reminders, agent job
@@ -470,7 +494,7 @@ func (c *Channel) SendMessage(_ context.Context, chatID, text string) error {
 			// replyTo stays 0 for proactive messages
 			rt = 0
 		}
-		_, _ = c.sendHTML(tgChatID, chunk, rt, "", effectParty) //nolint:errcheck // best-effort proactive push
+		_, _ = c.sendHTML(tgChatID, chunk, rt, nil, effectParty) //nolint:errcheck // best-effort proactive push
 	}
 	return nil
 }
@@ -484,14 +508,14 @@ func (c *Channel) sendResponse(chatID int64, text string, replyTo int) {
 		if i == 0 {
 			rt = replyTo
 		}
-		_, _ = c.sendHTML(chatID, chunk, rt, "", "") //nolint:errcheck // sendHTML logs failures
+		_, _ = c.sendHTML(chatID, chunk, rt, nil, "") //nolint:errcheck // sendHTML logs failures
 	}
 }
 
 // sendSingleMessage sends a plain (non-markdown) message, HTML-escaped.
 // replyTo is the message ID to reply to (0 = no reply).
 func (c *Channel) sendSingleMessage(chatID int64, text string, replyTo int) {
-	_, _ = c.sendHTML(chatID, escapeHTML(text), replyTo, "", "") //nolint:errcheck // sendHTML logs failures
+	_, _ = c.sendHTML(chatID, escapeHTML(text), replyTo, nil, "") //nolint:errcheck // sendHTML logs failures
 }
 
 // StartStream sends an initial message and returns edit/done functions for streaming.
@@ -509,22 +533,25 @@ func (c *Channel) StartStream(_ context.Context, chatID string, replyTo int) (fu
 		msgID = entry.getMsgID()
 		c.statusMsgs.remove(chatID)
 		// Edit status message to streaming placeholder.
-		edit := tgbotapi.NewEditMessageText(tgChatID, msgID, "...")
-		c.bot.Send(edit) //nolint:errcheck,gosec
+		_, _ = c.bot.EditMessageText(context.Background(), &bot.EditMessageTextParams{ //nolint:errcheck // best-effort placeholder
+			ChatID:    tgChatID,
+			MessageID: msgID,
+			Text:      "...",
+		})
 	} else {
 		// For long tasks: finalize the status message with total time, then send fresh response.
 		if entry, ok := c.statusMsgs.get(chatID); ok && entry.isConsumed() {
 			c.finalizeStatusMessage(chatID, entry)
 		}
-		msg := tgbotapi.NewMessage(tgChatID, "...")
+		p := &bot.SendMessageParams{ChatID: tgChatID, Text: "..."}
 		if replyTo > 0 {
-			msg.ReplyToMessageID = replyTo
+			p.ReplyParameters = &models.ReplyParameters{MessageID: replyTo}
 		}
-		sent, sendErr := c.bot.Send(msg)
+		sent, sendErr := c.bot.SendMessage(context.Background(), p)
 		if sendErr != nil {
 			return nil, nil, fmt.Errorf("sending initial stream message: %w", sendErr)
 		}
-		msgID = sent.MessageID
+		msgID = sent.ID
 	}
 	var lastEdit time.Time
 
@@ -532,8 +559,12 @@ func (c *Channel) StartStream(_ context.Context, chatID string, replyTo int) (fu
 		if time.Since(lastEdit) < 1500*time.Millisecond {
 			return // coalesce edits
 		}
-		edit := tgbotapi.NewEditMessageText(tgChatID, msgID, text)
-		if _, err := c.bot.Send(edit); err != nil {
+		_, err := c.bot.EditMessageText(context.Background(), &bot.EditMessageTextParams{
+			ChatID:    tgChatID,
+			MessageID: msgID,
+			Text:      text,
+		})
+		if err != nil {
 			c.logger.Debug("stream edit failed", zap.Error(err))
 		}
 		lastEdit = time.Now()
@@ -582,17 +613,17 @@ func (c *Channel) NotifyStatus(_ context.Context, chatID string, event channel.S
 	entry, exists := c.statusMsgs.get(chatID)
 	if !exists || entry.msgID == 0 {
 		// Send initial status message (entry may be a pre-created placeholder with replyTo).
-		msg := tgbotapi.NewMessage(tgChatID, line)
+		p := &bot.SendMessageParams{ChatID: tgChatID, Text: line}
 		// Preserve reply threading from the pre-registered replyTo.
 		if entry != nil && entry.replyTo > 0 {
-			msg.ReplyToMessageID = entry.replyTo
+			p.ReplyParameters = &models.ReplyParameters{MessageID: entry.replyTo}
 		}
-		sent, sendErr := c.bot.Send(msg)
+		sent, sendErr := c.bot.SendMessage(context.Background(), p)
 		if sendErr != nil {
 			c.logger.Debug("failed to send status message", zap.Error(sendErr))
 			return nil
 		}
-		entry = c.statusMsgs.create(chatID, tgChatID, sent.MessageID)
+		entry = c.statusMsgs.create(chatID, tgChatID, sent.ID)
 		entry.addLine(line)
 		return nil
 	}
@@ -606,8 +637,12 @@ func (c *Channel) NotifyStatus(_ context.Context, chatID string, event channel.S
 
 	// Rate-limited edit.
 	if entry.canEdit() {
-		edit := tgbotapi.NewEditMessageText(tgChatID, entry.msgID, entry.renderText())
-		if _, editErr := c.bot.Send(edit); editErr != nil {
+		_, editErr := c.bot.EditMessageText(context.Background(), &bot.EditMessageTextParams{
+			ChatID:    tgChatID,
+			MessageID: entry.msgID,
+			Text:      entry.renderText(),
+		})
+		if editErr != nil {
 			c.logger.Debug("status edit failed", zap.Error(editErr))
 		}
 		entry.markEdited()
@@ -639,8 +674,10 @@ func (c *Channel) deleteStatusMessage(chatID string, tgChatID int64) {
 		if elapsed := time.Since(sentAt); elapsed < minStatusDisplay {
 			time.Sleep(minStatusDisplay - elapsed)
 		}
-		del := tgbotapi.NewDeleteMessage(tgChatID, msgID)
-		if _, err := c.bot.Request(del); err != nil {
+		if _, err := c.bot.DeleteMessage(context.Background(), &bot.DeleteMessageParams{
+			ChatID:    tgChatID,
+			MessageID: msgID,
+		}); err != nil {
 			c.logger.Debug("failed to delete status message", zap.Error(err))
 		}
 	}()
@@ -653,8 +690,11 @@ func (c *Channel) finalizeStatusMessage(chatID string, entry *statusEntry) {
 	elapsed := time.Since(entry.sentAt)
 	entry.addLine(fmt.Sprintf("\n✅ Done in %s", elapsed.Round(time.Second)))
 
-	edit := tgbotapi.NewEditMessageText(entry.tgChatID, entry.getMsgID(), entry.renderText())
-	if _, err := c.bot.Send(edit); err != nil {
+	if _, err := c.bot.EditMessageText(context.Background(), &bot.EditMessageTextParams{
+		ChatID:    entry.tgChatID,
+		MessageID: entry.getMsgID(),
+		Text:      entry.renderText(),
+	}); err != nil {
 		c.logger.Debug("failed to finalize status message", zap.Error(err))
 	}
 	c.statusMsgs.remove(chatID)
@@ -671,19 +711,20 @@ func (c *Channel) isSupportedDocument(mimeType string) bool {
 
 // downloadFile fetches file bytes from Telegram servers.
 func (c *Channel) downloadFile(ctx context.Context, fileID string) ([]byte, error) {
-	url, err := c.bot.GetFileDirectURL(fileID)
+	f, err := c.bot.GetFile(ctx, &bot.GetFileParams{FileID: fileID})
 	if err != nil {
-		return nil, fmt.Errorf("getting file URL: %w", err)
+		return nil, fmt.Errorf("getting file: %w", err)
 	}
+	url := c.bot.FileDownloadLink(f)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
-	resp, err := c.bot.Client.Do(req)
+	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("downloading file: %w", err)
+		return nil, fmt.Errorf("downloading file: %w", sanitizeTGError(err))
 	}
 	defer resp.Body.Close() //nolint:errcheck
 
@@ -700,8 +741,13 @@ func (c *Channel) downloadFile(ctx context.Context, fileID string) ([]byte, erro
 
 // keepTyping sends the "typing..." action every 4 seconds until ctx is canceled.
 func (c *Channel) keepTyping(ctx context.Context, chatID int64) {
-	typing := tgbotapi.NewChatAction(chatID, tgbotapi.ChatTyping)
-	c.bot.Send(typing) //nolint:errcheck,gosec // send immediately
+	typing := func() {
+		_, _ = c.bot.SendChatAction(ctx, &bot.SendChatActionParams{ //nolint:errcheck // best-effort indicator
+			ChatID: chatID,
+			Action: models.ChatActionTyping,
+		})
+	}
+	typing()
 
 	ticker := time.NewTicker(4 * time.Second)
 	defer ticker.Stop()
@@ -711,7 +757,7 @@ func (c *Channel) keepTyping(ctx context.Context, chatID int64) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			c.bot.Send(typing) //nolint:errcheck,gosec
+			typing()
 		}
 	}
 }
@@ -727,7 +773,7 @@ func (c *Channel) healthMonitor(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if _, err := c.bot.GetMe(); err != nil {
+			if _, err := c.bot.GetMe(ctx); err != nil {
 				consecutiveFailures++
 				c.logger.Error("telegram health check failed",
 					zap.Error(err),

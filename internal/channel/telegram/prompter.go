@@ -7,7 +7,8 @@ import (
 	"sync"
 	"time"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
 
 	"github.com/iulita-ai/iulita/internal/skill/interact"
 )
@@ -59,7 +60,7 @@ func (tp *telegramPrompter) Ask(ctx context.Context, question string, options []
 	replyCh := make(chan string, 1)
 
 	// Build inline keyboard.
-	var rows [][]tgbotapi.InlineKeyboardButton
+	var rows [][]models.InlineKeyboardButton
 	optionMap := make(map[string]string) // callbackData → optionID
 
 	for i, opt := range options {
@@ -68,23 +69,24 @@ func (tp *telegramPrompter) Ask(ctx context.Context, question string, options []
 		}
 		cbData := fmt.Sprintf("prompt_%d", i)
 		optionMap[cbData] = opt.ID
-		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(opt.Label, cbData),
-		))
+		rows = append(rows, []models.InlineKeyboardButton{
+			{Text: opt.Label, CallbackData: cbData},
+		})
 	}
 
 	// Add "Enter manually" button.
 	otherCB := "prompt_other"
 	optionMap[otherCB] = "__other__"
-	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonData("✏️ Enter manually", otherCB),
-	))
+	rows = append(rows, []models.InlineKeyboardButton{
+		{Text: "✏️ Enter manually", CallbackData: otherCB},
+	})
 
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(rows...)
-	msg := tgbotapi.NewMessage(tp.chatID, question)
-	msg.ReplyMarkup = keyboard
-
-	if _, err := tp.channel.bot.Send(msg); err != nil {
+	_, err := tp.channel.bot.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:      tp.chatID,
+		Text:        question,
+		ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: rows},
+	})
+	if err != nil {
 		return "", fmt.Errorf("sending prompt: %w", err)
 	}
 
@@ -110,16 +112,20 @@ func (tp *telegramPrompter) Ask(ctx context.Context, question string, options []
 
 // HandleCallback processes an inline keyboard callback query.
 // Returns true if the callback was handled by the prompt system.
-func (ps *promptState) HandleCallback(bot *tgbotapi.BotAPI, cq *tgbotapi.CallbackQuery) bool {
-	chatID := cq.Message.Chat.ID
+func (ps *promptState) HandleCallback(b *bot.Bot, cq *models.CallbackQuery) bool {
+	if cq.Message.Message == nil {
+		return false
+	}
+	chatID := cq.Message.Message.Chat.ID
 	p, ok := ps.get(chatID)
 	if !ok {
 		return false
 	}
 
 	// Acknowledge the callback.
-	callback := tgbotapi.NewCallback(cq.ID, "")
-	bot.Request(callback)
+	_, _ = b.AnswerCallbackQuery(context.Background(), &bot.AnswerCallbackQueryParams{ //nolint:errcheck // ack only
+		CallbackQueryID: cq.ID,
+	})
 
 	optionID, exists := p.options[cq.Data]
 	if !exists {
@@ -133,16 +139,16 @@ func (ps *promptState) HandleCallback(bot *tgbotapi.BotAPI, cq *tgbotapi.Callbac
 		ps.mu.Unlock()
 
 		// Remove inline keyboard and show hint.
-		removeKB := tgbotapi.NewEditMessageReplyMarkup(chatID, cq.Message.MessageID, tgbotapi.InlineKeyboardMarkup{InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{}})
-		bot.Send(removeKB)
-		hint := tgbotapi.NewMessage(chatID, "Type your answer:")
-		bot.Send(hint)
+		ps.removeKeyboard(b, chatID, cq.Message.Message.ID)
+		_, _ = b.SendMessage(context.Background(), &bot.SendMessageParams{ //nolint:errcheck // hint
+			ChatID: chatID,
+			Text:   "Type your answer:",
+		})
 		return true
 	}
 
 	// Remove inline keyboard after selection.
-	removeKB := tgbotapi.NewEditMessageReplyMarkup(chatID, cq.Message.MessageID, tgbotapi.InlineKeyboardMarkup{InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{}})
-	bot.Send(removeKB)
+	ps.removeKeyboard(b, chatID, cq.Message.Message.ID)
 
 	// Send the selected option ID.
 	select {
@@ -150,6 +156,15 @@ func (ps *promptState) HandleCallback(bot *tgbotapi.BotAPI, cq *tgbotapi.Callbac
 	default:
 	}
 	return true
+}
+
+// removeKeyboard strips the inline keyboard from a message.
+func (ps *promptState) removeKeyboard(b *bot.Bot, chatID int64, msgID int) {
+	_, _ = b.EditMessageReplyMarkup(context.Background(), &bot.EditMessageReplyMarkupParams{ //nolint:errcheck // best-effort UI cleanup
+		ChatID:      chatID,
+		MessageID:   msgID,
+		ReplyMarkup: models.InlineKeyboardMarkup{},
+	})
 }
 
 // HandleText checks if a plain text message should be routed to a pending prompt.

@@ -1540,6 +1540,7 @@ func main() {
 
 	// Wire the native location-send seam + observability (mgr exists now).
 	shareLocSkill.SetLocationSender(mgr)
+	todoistSkill.SetChecklistSender(mgr)
 	shareLocSkill.SetBus(bus)
 	geoSkill.SetBus(bus)
 	mgr.SetSlackWriteCapability(func(enabled bool) {

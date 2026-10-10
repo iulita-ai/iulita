@@ -1,60 +1,42 @@
 package telegram
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 )
 
 func TestBookmarkKeyboard(t *testing.T) {
-	type button struct {
-		Text     string `json:"text"`
-		CopyText *struct {
-			Text string `json:"text"`
-		} `json:"copy_text"`
-		CallbackData *string `json:"callback_data"`
-	}
-	decode := func(t *testing.T, raw string) [][]button {
-		t.Helper()
-		var kb struct {
-			InlineKeyboard [][]button `json:"inline_keyboard"`
-		}
-		if err := json.Unmarshal([]byte(raw), &kb); err != nil {
-			t.Fatalf("invalid keyboard JSON: %v", err)
-		}
-		return kb.InlineKeyboard
-	}
-
 	t.Run("short response gets both buttons", func(t *testing.T) {
-		rows := decode(t, bookmarkKeyboard("💾 Save", "📋 Copy", "remember:abc", "full answer"))
-		if len(rows) != 1 || len(rows[0]) != 2 {
-			t.Fatalf("want one row with two buttons, got %+v", rows)
+		kb := bookmarkKeyboard("💾 Save", "📋 Copy", "remember:abc", "full answer")
+		if len(kb.InlineKeyboard) != 1 || len(kb.InlineKeyboard[0]) != 2 {
+			t.Fatalf("want one row with two buttons, got %+v", kb.InlineKeyboard)
 		}
-		if rows[0][0].Text != "💾 Save" || rows[0][0].CallbackData == nil || *rows[0][0].CallbackData != "remember:abc" {
-			t.Errorf("remember button wrong: %+v", rows[0][0])
+		row := kb.InlineKeyboard[0]
+		if row[0].Text != "💾 Save" || row[0].CallbackData != "remember:abc" {
+			t.Errorf("remember button wrong: %+v", row[0])
 		}
-		if rows[0][1].Text != "📋 Copy" || rows[0][1].CopyText == nil || rows[0][1].CopyText.Text != "full answer" {
-			t.Errorf("copy button wrong: %+v", rows[0][1])
+		if row[1].Text != "📋 Copy" || row[1].CopyText == nil || row[1].CopyText.Text != "full answer" {
+			t.Errorf("copy button wrong: %+v", row[1])
 		}
 	})
 
 	t.Run("long response omits copy button (256-char API limit)", func(t *testing.T) {
 		long := strings.Repeat("x", copyTextMaxLen+1)
-		rows := decode(t, bookmarkKeyboard("💾 Save", "📋 Copy", "remember:abc", long))
-		if len(rows) != 1 || len(rows[0]) != 1 {
-			t.Fatalf("want one row with one button, got %+v", rows)
+		kb := bookmarkKeyboard("💾 Save", "📋 Copy", "remember:abc", long)
+		if len(kb.InlineKeyboard) != 1 || len(kb.InlineKeyboard[0]) != 1 {
+			t.Fatalf("want one row with one button, got %+v", kb.InlineKeyboard)
 		}
-		if rows[0][0].CopyText != nil {
+		if kb.InlineKeyboard[0][0].CopyText != nil {
 			t.Error("copy button should be omitted for long text")
 		}
 	})
 
 	t.Run("exactly 256 runes keeps copy button", func(t *testing.T) {
 		exact := strings.Repeat("у", copyTextMaxLen)
-		rows := decode(t, bookmarkKeyboard("💾 Save", "📋 Copy", "remember:abc", exact))
-		if len(rows[0]) != 2 || rows[0][1].CopyText == nil || rows[0][1].CopyText.Text != exact {
-			t.Fatalf("copy button should be present at the limit: %+v", rows)
+		kb := bookmarkKeyboard("💾 Save", "📋 Copy", "remember:abc", exact)
+		if len(kb.InlineKeyboard[0]) != 2 || kb.InlineKeyboard[0][1].CopyText == nil || kb.InlineKeyboard[0][1].CopyText.Text != exact {
+			t.Fatalf("copy button should be present at the limit: %+v", kb.InlineKeyboard)
 		}
 	})
 }
@@ -140,24 +122,5 @@ func TestSpoilerAndExpandableQuote(t *testing.T) {
 				t.Errorf("toTelegramHTML() = %q, want %q", got, tt.want)
 			}
 		})
-	}
-}
-
-func TestReactionUpdateDecode(t *testing.T) {
-	payload := `{"update_id":1,"message_reaction":{"chat":{"id":42},"from":{"id":7},"message_id":11,"new_reaction":[{"type":"emoji","emoji":"🔖"}]}}`
-	dec := json.NewDecoder(strings.NewReader(payload))
-	dec.DisallowUnknownFields()
-	var u rawUpdate
-	if err := json.Unmarshal([]byte(payload), &u); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if u.MessageReaction == nil || u.MessageReaction.From == nil {
-		t.Fatal("reaction update lost")
-	}
-	if u.MessageReaction.Chat.ID != 42 || u.MessageReaction.MessageID != 11 {
-		t.Errorf("chat/message wrong: %+v", u.MessageReaction)
-	}
-	if len(u.MessageReaction.NewReaction) != 1 || u.MessageReaction.NewReaction[0].Emoji != reactionBookmark {
-		t.Errorf("reactions wrong: %+v", u.MessageReaction.NewReaction)
 	}
 }

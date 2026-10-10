@@ -49,7 +49,7 @@ func (c *Channel) SetBotPhoto(_ context.Context, data []byte) error {
 		zap.Int("total_body_size", buf.Len()),
 		zap.String("content_type", w.FormDataContentType()))
 
-	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/setMyProfilePhoto", c.bot.Token)
+	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/setMyProfilePhoto", c.bot.Token())
 	req, err := http.NewRequest(http.MethodPost, apiURL, &buf)
 	if err != nil {
 		return fmt.Errorf("setMyProfilePhoto: creating request: %w", err)

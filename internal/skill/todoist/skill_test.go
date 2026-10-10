@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"go.uber.org/zap"
+
+	"github.com/iulita-ai/iulita/internal/skill"
 )
 
 func TestSkillMetadata(t *testing.T) {
@@ -823,5 +825,63 @@ func TestOverdueDetection(t *testing.T) {
 	}
 	if !strings.Contains(result, "OVERDUE") {
 		t.Error("should detect overdue tasks")
+	}
+}
+
+type stubChecklistSender struct {
+	called  bool
+	title   string
+	tasks   []string
+	canSend bool
+}
+
+func (s *stubChecklistSender) SendChecklistToChat(_ context.Context, _, title string, tasks []string) (int, error) {
+	s.called = true
+	s.title = title
+	s.tasks = tasks
+	return 1, nil
+}
+
+func (s *stubChecklistSender) CanSendChecklists(string) bool { return s.canSend }
+
+func TestSkillListMirrorsChecklist(t *testing.T) {
+	c, _ := testServer(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(paginatedResponse[Task]{
+			Results: []Task{
+				{ID: "1", Content: "Buy milk"},
+				{ID: "2", Content: "Done thing", IsCompleted: true},
+				{ID: "3", Content: "Read book"},
+			},
+		})
+	})
+
+	stub := &stubChecklistSender{canSend: true}
+	s := NewSkill(c, zap.NewNop())
+	s.SetChecklistSender(stub)
+
+	ctx := skill.WithChatID(context.Background(), "telegram:101")
+	if _, err := s.Execute(ctx, json.RawMessage(`{"action":"list","filter":"today"}`)); err != nil {
+		t.Fatal(err)
+	}
+
+	if !stub.called {
+		t.Fatal("checklist mirror not called")
+	}
+	if stub.title != "Todoist — today" {
+		t.Errorf("title = %q, want %q", stub.title, "Todoist — today")
+	}
+	if len(stub.tasks) != 2 || stub.tasks[0] != "Buy milk" || stub.tasks[1] != "Read book" {
+		t.Errorf("tasks = %v, want uncompleted only [Buy milk Read book]", stub.tasks)
+	}
+
+	// Non-Telegram chat: no mirror.
+	stub2 := &stubChecklistSender{canSend: false}
+	s2 := NewSkill(c, zap.NewNop())
+	s2.SetChecklistSender(stub2)
+	if _, err := s2.Execute(skill.WithChatID(context.Background(), "console"), json.RawMessage(`{"action":"list"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if stub2.called {
+		t.Error("checklist mirror should not fire for unsupported chat")
 	}
 }

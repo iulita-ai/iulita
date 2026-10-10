@@ -5,7 +5,7 @@ import (
 
 	"golang.org/x/text/language"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/go-telegram/bot/models"
 
 	"github.com/iulita-ai/iulita/internal/channel"
 	"github.com/iulita-ai/iulita/internal/i18n"
@@ -15,7 +15,7 @@ import (
 // Returns nil when the message carries neither. Telegram sets Message.Location
 // whenever Message.Venue is set, so reading Venue first yields exactly ONE
 // attachment with Title/Address filled.
-func locationFromMessage(m *tgbotapi.Message) *channel.LocationAttachment {
+func locationFromMessage(m *models.Message) *channel.LocationAttachment {
 	if m == nil {
 		return nil
 	}
@@ -76,7 +76,7 @@ func truncateRunes(s string, limit int) string {
 // hasUpdateContent reports whether the update carries any content type the
 // channel forwards: text, photo, document, voice, audio, location or venue.
 // Stickers, animations and other unsupported types return false.
-func hasUpdateContent(m *tgbotapi.Message) bool {
+func hasUpdateContent(m *models.Message) bool {
 	if m == nil {
 		return false
 	}

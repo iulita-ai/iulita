@@ -2,65 +2,50 @@ package telegram
 
 import (
 	"context"
-	"encoding/json"
-	"strconv"
+	"fmt"
 	"sync"
 	"time"
 	"unicode/utf8"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
 	"go.uber.org/zap"
 )
 
-// Bot API features newer than the v5 library are reached through raw
-// MakeRequest calls (Params is map[string]string, JSON payloads are passed
-// as strings). Effect IDs are the stable documented ones.
+// Modern Bot API surfaces (effects, link previews, reactions, deleteMessages,
+// checklists) reached through the typed go-telegram/bot methods.
 
 const (
-	effectParty = "2947702695341775001" // 🎉
-
-	// linkPreviewAbove renders link previews above the reply (Bot API 7.0).
-	linkPreviewAbove = `{"show_above_text":true}`
+	// effectParty is the stable documented 🎉 message effect ID.
+	effectParty = "2947702695341775001"
 
 	// reactionBookmark is the reaction emoji that saves a bot message as a fact.
 	reactionBookmark = "🔖"
+
+	// copyTextMaxLen is Telegram's CopyTextButton text limit; a longer payload
+	// makes the API reject the whole sendMessage (BUTTON_COPY_TEXT_INVALID).
+	copyTextMaxLen = 256
 )
 
+// linkPreviewAbove renders link previews above the reply (Bot API 7.0).
+func linkPreviewAbove() *models.LinkPreviewOptions {
+	return &models.LinkPreviewOptions{ShowAboveText: bot.True()}
+}
+
 // --- Keyboard with CopyTextButton (Bot API 7.11) ---
-
-type copyText struct {
-	Text string `json:"text"`
-}
-
-type kbButton struct {
-	Text         string    `json:"text"`
-	CopyText     *copyText `json:"copy_text,omitempty"`
-	CallbackData *string   `json:"callback_data,omitempty"`
-}
-
-type inlineKeyboard struct {
-	InlineKeyboard [][]kbButton `json:"inline_keyboard"`
-}
-
-// copyTextMaxLen is Telegram's CopyTextButton text limit; a longer payload
-// makes the API reject the whole sendMessage (BUTTON_COPY_TEXT_INVALID).
-const copyTextMaxLen = 256
 
 // bookmarkKeyboard builds the 💾 markup plus a 📋 copy button when the full
 // response fits Telegram's 256-character copy_text limit; long replies get
 // the remember button only.
-func bookmarkKeyboard(rememberLabel, copyLabel, callbackData, fullText string) string {
-	data := callbackData
-	row := []kbButton{{Text: rememberLabel, CallbackData: &data}}
+func bookmarkKeyboard(rememberLabel, copyLabel, callbackData, fullText string) models.InlineKeyboardMarkup {
+	row := []models.InlineKeyboardButton{{Text: rememberLabel, CallbackData: callbackData}}
 	if utf8.RuneCountInString(fullText) <= copyTextMaxLen {
-		row = append(row, kbButton{Text: copyLabel, CopyText: &copyText{Text: fullText}})
+		row = append(row, models.InlineKeyboardButton{
+			Text:     copyLabel,
+			CopyText: &models.CopyTextButton{Text: fullText},
+		})
 	}
-	kb := inlineKeyboard{InlineKeyboard: [][]kbButton{row}}
-	b, err := json.Marshal(kb)
-	if err != nil {
-		return ""
-	}
-	return string(b)
+	return models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{row}}
 }
 
 // --- Recent sent-message tracking (for 🔖 reactions and /clear deletes) ---
@@ -127,65 +112,56 @@ func (t *sentTracker) deletable(chatID int64) []int {
 	return ids
 }
 
-// --- Raw send/edit core ---
+// --- Send/edit core ---
 
-// sendHTML sends an HTML-formatted message via the raw API so that
-// link_preview_options, message effects and CopyTextButton markups are
-// available. Falls back to plain text when Telegram rejects the HTML.
-// Returns the sent message ID.
-func (c *Channel) sendHTML(chatID int64, html string, replyTo int, markup, effectID string) (int, error) {
-	params := tgbotapi.Params{
-		"chat_id":              strconv.FormatInt(chatID, 10),
-		"text":                 html,
-		"parse_mode":           tgbotapi.ModeHTML,
-		"link_preview_options": linkPreviewAbove,
+// sendHTML sends an HTML-formatted message with link previews above the text,
+// falling back to plain text when Telegram rejects the HTML. Returns the sent
+// message ID.
+func (c *Channel) sendHTML(chatID int64, html string, replyTo int, markup models.ReplyMarkup, effectID string) (int, error) {
+	p := &bot.SendMessageParams{
+		ChatID:             chatID,
+		Text:               html,
+		ParseMode:          models.ParseModeHTML,
+		LinkPreviewOptions: linkPreviewAbove(),
 	}
 	if replyTo > 0 {
-		params["reply_to_message_id"] = strconv.Itoa(replyTo)
+		p.ReplyParameters = &models.ReplyParameters{MessageID: replyTo}
 	}
-	if markup != "" {
-		params["reply_markup"] = markup
+	if markup != nil {
+		p.ReplyMarkup = markup
 	}
 	if effectID != "" {
-		params["message_effect_id"] = effectID
+		p.MessageEffectID = effectID
 	}
-	resp, err := c.bot.MakeRequest("sendMessage", params)
+	m, err := c.bot.SendMessage(context.Background(), p)
 	if err != nil {
 		c.logger.Debug("html send failed, retrying as plain text", zap.Error(err))
-		delete(params, "parse_mode")
-		resp, err = c.bot.MakeRequest("sendMessage", params)
+		p.ParseMode = ""
+		m, err = c.bot.SendMessage(context.Background(), p)
 		if err != nil {
 			c.logger.Error("failed to send message", zap.Error(err), zap.Int64("chat_id", chatID))
 			return 0, err
 		}
 	}
-	var m struct {
-		MessageID int `json:"message_id"`
-	}
-	if jsonErr := json.Unmarshal(resp.Result, &m); jsonErr != nil {
-		c.logger.Debug("cannot decode sent message", zap.Error(jsonErr))
-		return m.MessageID, nil
-	}
-	c.sentMsgs.record(chatID, m.MessageID, html)
-	return m.MessageID, nil
+	c.sentMsgs.record(chatID, m.ID, html)
+	return m.ID, nil
 }
 
-// editHTML replaces a message text with HTML content (raw API for markup
-// support), falling back to plain text.
-func (c *Channel) editHTML(chatID int64, msgID int, html, markup string) {
-	params := tgbotapi.Params{
-		"chat_id":    strconv.FormatInt(chatID, 10),
-		"message_id": strconv.Itoa(msgID),
-		"text":       html,
-		"parse_mode": tgbotapi.ModeHTML,
+// editHTML replaces a message text with HTML content, falling back to plain text.
+func (c *Channel) editHTML(chatID int64, msgID int, html string, markup models.ReplyMarkup) {
+	p := &bot.EditMessageTextParams{
+		ChatID:    chatID,
+		MessageID: msgID,
+		Text:      html,
+		ParseMode: models.ParseModeHTML,
 	}
-	if markup != "" {
-		params["reply_markup"] = markup
+	if markup != nil {
+		p.ReplyMarkup = markup
 	}
-	if _, err := c.bot.MakeRequest("editMessageText", params); err != nil {
+	if _, err := c.bot.EditMessageText(context.Background(), p); err != nil {
 		c.logger.Debug("html edit failed, retrying as plain text", zap.Error(err))
-		delete(params, "parse_mode")
-		if _, err := c.bot.MakeRequest("editMessageText", params); err != nil {
+		p.ParseMode = ""
+		if _, err := c.bot.EditMessageText(context.Background(), p); err != nil {
 			c.logger.Debug("plain edit failed", zap.Error(err), zap.Int64("chat_id", chatID), zap.Int("message_id", msgID))
 		}
 	}
@@ -196,16 +172,16 @@ func (c *Channel) editHTML(chatID int64, msgID int, html, markup string) {
 // setReaction sets (or, for an empty emoji, removes) the bot's reaction on a
 // message. Failures are logged at debug level: reactions are a soft UX layer.
 func (c *Channel) setReaction(chatID int64, msgID int, emoji string) {
-	params := tgbotapi.Params{
-		"chat_id":    strconv.FormatInt(chatID, 10),
-		"message_id": strconv.Itoa(msgID),
-	}
+	p := &bot.SetMessageReactionParams{ChatID: chatID, MessageID: msgID}
 	if emoji == "" {
-		params["reaction"] = "[]"
+		p.Reaction = []models.ReactionType{}
 	} else {
-		params["reaction"] = `[{"type":"emoji","emoji":` + strconv.Quote(emoji) + `}]`
+		p.Reaction = []models.ReactionType{{
+			Type:              models.ReactionTypeTypeEmoji,
+			ReactionTypeEmoji: &models.ReactionTypeEmoji{Type: models.ReactionTypeTypeEmoji, Emoji: emoji},
+		}}
 	}
-	if _, err := c.bot.MakeRequest("setMessageReaction", params); err != nil {
+	if _, err := c.bot.SetMessageReaction(context.Background(), p); err != nil {
 		c.logger.Debug("set reaction failed", zap.Error(err), zap.Int64("chat_id", chatID), zap.Int("message_id", msgID))
 	}
 }
@@ -217,102 +193,23 @@ func (c *Channel) deleteBotMessages(chatID int64) {
 	if len(ids) == 0 {
 		return
 	}
-	raw, err := json.Marshal(ids)
-	if err != nil {
-		return
-	}
-	params := tgbotapi.Params{
-		"chat_id":     strconv.FormatInt(chatID, 10),
-		"message_ids": string(raw),
-	}
-	if _, err := c.bot.MakeRequest("deleteMessages", params); err != nil {
+	if _, err := c.bot.DeleteMessages(context.Background(), &bot.DeleteMessagesParams{
+		ChatID:     chatID,
+		MessageIDs: ids,
+	}); err != nil {
 		c.logger.Debug("delete messages failed", zap.Error(err), zap.Int64("chat_id", chatID), zap.Int("count", len(ids)))
 	}
 }
 
-// --- Reaction updates (raw getUpdates decode) ---
-
-type reactionType struct {
-	Type  string `json:"type"`
-	Emoji string `json:"emoji,omitempty"`
-}
-
-type messageReactionUpdate struct {
-	Chat        tgbotapi.Chat  `json:"chat"`
-	From        *tgbotapi.User `json:"from"`
-	MessageID   int            `json:"message_id"`
-	NewReaction []reactionType `json:"new_reaction"`
-}
-
-// rawUpdate extends the library Update with newer update types the library
-// drops during decoding.
-type rawUpdate struct {
-	tgbotapi.Update
-	MessageReaction *messageReactionUpdate `json:"message_reaction,omitempty"`
-}
-
-// allowedUpdates pins the update types we consume; message_reaction is NOT
-// in the server's default set.
-const allowedUpdates = `["message","edited_message","callback_query","message_reaction"]`
-
-// pollUpdates replaces the library update channel with raw getUpdates so
-// message_reaction updates survive decoding. Reactions are handled inline;
-// everything else is forwarded as library Updates.
-func (c *Channel) pollUpdates(ctx context.Context) <-chan tgbotapi.Update {
-	out := make(chan tgbotapi.Update, 64)
-	go func() {
-		defer close(out)
-		offset := 0
-		for {
-			if ctx.Err() != nil {
-				return
-			}
-			params := tgbotapi.Params{
-				"offset":          strconv.Itoa(offset),
-				"timeout":         "30",
-				"allowed_updates": allowedUpdates,
-			}
-			resp, err := c.bot.MakeRequest("getUpdates", params)
-			if err != nil {
-				c.logger.Warn("getUpdates failed", zap.Error(err))
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(3 * time.Second):
-				}
-				continue
-			}
-			var updates []rawUpdate
-			if err := json.Unmarshal(resp.Result, &updates); err != nil {
-				c.logger.Warn("decode updates failed", zap.Error(err))
-				continue
-			}
-			for i := range updates {
-				offset = updates[i].UpdateID + 1
-				if r := updates[i].MessageReaction; r != nil {
-					c.handleReactionUpdate(ctx, r)
-					continue
-				}
-				select {
-				case out <- updates[i].Update:
-				case <-ctx.Done():
-					return
-				}
-			}
-		}
-	}()
-	return out
-}
-
 // handleReactionUpdate saves a bot message as a fact when the user reacts
 // with 🔖, and confirms with a ✅ reaction.
-func (c *Channel) handleReactionUpdate(ctx context.Context, r *messageReactionUpdate) {
-	if c.rememberSvc == nil || r.From == nil || !c.isAllowed(r.From.ID) {
+func (c *Channel) handleReactionUpdate(ctx context.Context, r *models.MessageReactionUpdated) {
+	if c.rememberSvc == nil || r.User == nil || !c.isAllowed(r.User.ID) {
 		return
 	}
 	bookmarked := false
 	for _, rt := range r.NewReaction {
-		if rt.Type == "emoji" && rt.Emoji == reactionBookmark {
+		if rt.Type == models.ReactionTypeTypeEmoji && rt.ReactionTypeEmoji != nil && rt.ReactionTypeEmoji.Emoji == reactionBookmark {
 			bookmarked = true
 			break
 		}
@@ -324,12 +221,12 @@ func (c *Channel) handleReactionUpdate(ctx context.Context, r *messageReactionUp
 	if !ok {
 		return
 	}
-	chatIDStr := strconv.FormatInt(r.Chat.ID, 10)
+	chatIDStr := fmt.Sprintf("%d", r.Chat.ID)
 	userID := chatIDStr
 	if c.userResolver != nil {
-		resolvedID, err := c.userResolver.ResolveUser(ctx, "telegram", strconv.FormatInt(r.From.ID, 10), r.From.UserName, chatIDStr)
+		resolvedID, err := c.userResolver.ResolveUser(ctx, "telegram", fmt.Sprintf("%d", r.User.ID), r.User.Username, chatIDStr)
 		if err != nil {
-			c.logger.Warn("reaction user resolution failed", zap.Error(err), zap.Int64("user_id", r.From.ID))
+			c.logger.Warn("reaction user resolution failed", zap.Error(err), zap.Int64("user_id", r.User.ID))
 			return
 		}
 		userID = resolvedID
@@ -339,4 +236,30 @@ func (c *Channel) handleReactionUpdate(ctx context.Context, r *messageReactionUp
 		return
 	}
 	c.setReaction(r.Chat.ID, r.MessageID, "✅")
+}
+
+// --- Checklists (Bot API 9.1) ---
+
+// SendChecklist sends a native Telegram checklist to a chat. Task completion
+// is tracked client-side by Telegram; this is a one-way mirror surface.
+// Returns the sent message ID.
+func (c *Channel) SendChecklist(_ context.Context, chatID int64, title string, tasks []string) (int, error) {
+	if len(tasks) == 0 {
+		return 0, fmt.Errorf("checklist needs at least one task")
+	}
+	input := make([]models.InputChecklistTask, 0, len(tasks))
+	for i, t := range tasks {
+		input = append(input, models.InputChecklistTask{ID: i + 1, Text: t})
+	}
+	m, err := c.bot.SendChecklist(context.Background(), &bot.SendChecklistParams{
+		ChatID: chatID,
+		Checklist: models.InputChecklist{
+			Title: title,
+			Tasks: input,
+		},
+	})
+	if err != nil {
+		return 0, fmt.Errorf("sending checklist: %w", sanitizeTGError(err))
+	}
+	return m.ID, nil
 }

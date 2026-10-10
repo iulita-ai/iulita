@@ -8,17 +8,25 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+
+	"github.com/iulita-ai/iulita/internal/channel"
+	"github.com/iulita-ai/iulita/internal/skill"
 )
 
 // Skill provides Todoist task management capabilities.
 type Skill struct {
-	client *Client
-	logger *zap.Logger
+	client     *Client
+	logger     *zap.Logger
+	checklists channel.ChecklistSender // nil until SetChecklistSender (deferred wiring)
 
 	// Hot-reload support
 	capAdder capabilityAdder
 	cfgStore configReader
 }
+
+// SetChecklistSender wires the native Telegram checklist mirror (built after
+// channelmgr exists, share_location precedent).
+func (s *Skill) SetChecklistSender(cs channel.ChecklistSender) { s.checklists = cs }
 
 type capabilityAdder interface {
 	AddCapability(cap string)
@@ -396,7 +404,46 @@ func (s *Skill) listTasks(ctx context.Context, in todoistInput) (string, error) 
 	for i, t := range tasks {
 		s.formatTaskLine(&b, i+1, t, now)
 	}
+	s.mirrorChecklist(ctx, in, tasks)
 	return b.String(), nil
+}
+
+// checklistMaxTasks is Telegram's InputChecklist task limit.
+const checklistMaxTasks = 100
+
+// mirrorChecklist sends the listed tasks as a native Telegram checklist next
+// to the text answer. Best-effort: failures are logged and never fail the
+// list action — the text answer is the source of truth. Only uncompleted
+// tasks with a chat bound to a Telegram instance are mirrored.
+func (s *Skill) mirrorChecklist(ctx context.Context, in todoistInput, tasks []Task) {
+	if s.checklists == nil {
+		return
+	}
+	chatID := skill.ChatIDFrom(ctx)
+	if chatID == "" || !s.checklists.CanSendChecklists(chatID) {
+		return
+	}
+	title := "Todoist"
+	if in.Filter != "" {
+		title = "Todoist — " + in.Filter
+	}
+	var items []string
+	for i := range tasks {
+		t := &tasks[i]
+		if t.IsCompleted {
+			continue
+		}
+		if len(items) == checklistMaxTasks {
+			break
+		}
+		items = append(items, t.Content)
+	}
+	if len(items) == 0 {
+		return
+	}
+	if _, err := s.checklists.SendChecklistToChat(ctx, chatID, title, items); err != nil {
+		s.logger.Debug("checklist mirror failed", zap.String("chat_id", chatID), zap.Error(err))
+	}
 }
 
 func (s *Skill) getTask(ctx context.Context, taskID string) (string, error) {

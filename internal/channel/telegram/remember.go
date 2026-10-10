@@ -11,7 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
 	"go.uber.org/zap"
 
 	"github.com/iulita-ai/iulita/internal/bookmark"
@@ -85,10 +86,12 @@ func (c *Channel) SetBookmarkService(svc bookmark.Service) {
 
 // HandleRememberCallback processes a "remember:..." callback query.
 // Returns true if the callback was handled.
-func (c *Channel) HandleRememberCallback(cq *tgbotapi.CallbackQuery) bool {
+func (c *Channel) HandleRememberCallback(cq *models.CallbackQuery) bool {
 	// Acknowledge "noop" callbacks (from already-saved ✅ button).
 	if cq.Data == "noop" {
-		c.bot.Request(tgbotapi.NewCallback(cq.ID, "")) //nolint:errcheck,gosec
+		_, _ = c.bot.AnswerCallbackQuery(context.Background(), &bot.AnswerCallbackQueryParams{ //nolint:errcheck // ack only
+			CallbackQueryID: cq.ID,
+		})
 		return true
 	}
 
@@ -100,8 +103,10 @@ func (c *Channel) HandleRememberCallback(cq *tgbotapi.CallbackQuery) bool {
 	if !ok {
 		// Already handled or expired.
 		tag := i18n.ResolveLocale("", "en")
-		cb := tgbotapi.NewCallback(cq.ID, i18n.Tl(tag, "BookmarkAlreadySaved"))
-		c.bot.Request(cb) //nolint:errcheck,gosec
+		_, _ = c.bot.AnswerCallbackQuery(context.Background(), &bot.AnswerCallbackQueryParams{ //nolint:errcheck // ack only
+			CallbackQueryID: cq.ID,
+			Text:            i18n.Tl(tag, "BookmarkAlreadySaved"),
+		})
 		return true
 	}
 
@@ -110,8 +115,9 @@ func (c *Channel) HandleRememberCallback(cq *tgbotapi.CallbackQuery) bool {
 		c.logger.Warn("bookmark ownership mismatch",
 			zap.Int64("requested_by", cq.From.ID),
 			zap.Int64("owned_by", entry.tgUserID))
-		cb := tgbotapi.NewCallback(cq.ID, "")
-		c.bot.Request(cb) //nolint:errcheck,gosec
+		_, _ = c.bot.AnswerCallbackQuery(context.Background(), &bot.AnswerCallbackQueryParams{ //nolint:errcheck // ack only
+			CallbackQueryID: cq.ID,
+		})
 		return true
 	}
 
@@ -123,35 +129,41 @@ func (c *Channel) HandleRememberCallback(cq *tgbotapi.CallbackQuery) bool {
 		c.logger.Error("bookmark save failed",
 			zap.Error(err),
 			zap.String("chat_id", entry.chatID))
-		cb := tgbotapi.NewCallback(cq.ID, i18n.Tl(tag, "BookmarkError"))
-		c.bot.Request(cb) //nolint:errcheck,gosec
+		_, _ = c.bot.AnswerCallbackQuery(context.Background(), &bot.AnswerCallbackQueryParams{ //nolint:errcheck // error toast
+			CallbackQueryID: cq.ID,
+			Text:            i18n.Tl(tag, "BookmarkError"),
+		})
 		return true
 	}
 
 	// Acknowledge the callback with a toast.
-	cb := tgbotapi.NewCallback(cq.ID, i18n.Tl(tag, "BookmarkSaved"))
-	c.bot.Request(cb) //nolint:errcheck,gosec
+	_, _ = c.bot.AnswerCallbackQuery(context.Background(), &bot.AnswerCallbackQueryParams{ //nolint:errcheck // ack only
+		CallbackQueryID: cq.ID,
+		Text:            i18n.Tl(tag, "BookmarkSaved"),
+	})
 
 	// Update button to show ✅.
 	savedLabel := i18n.Tl(tag, "BookmarkSaved")
 	noopData := "noop"
-	savedKB := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.InlineKeyboardButton{
-				Text:         savedLabel,
-				CallbackData: &noopData,
-			},
-		),
-	)
-	editKB := tgbotapi.NewEditMessageReplyMarkup(entry.tgChatID, entry.msgID, savedKB)
-	c.bot.Send(editKB) //nolint:errcheck,gosec
+	savedKB := models.InlineKeyboardMarkup{
+		InlineKeyboard: [][]models.InlineKeyboardButton{{
+			{Text: savedLabel, CallbackData: noopData},
+		}},
+	}
+	_, _ = c.bot.EditMessageReplyMarkup(ctx, &bot.EditMessageReplyMarkupParams{ //nolint:errcheck // best-effort UI update
+		ChatID:      entry.tgChatID,
+		MessageID:   entry.msgID,
+		ReplyMarkup: savedKB,
+	})
 
 	// Remove the keyboard after a short delay.
 	go func() {
 		time.Sleep(3 * time.Second)
-		emptyKB := tgbotapi.NewEditMessageReplyMarkup(entry.tgChatID, entry.msgID,
-			tgbotapi.InlineKeyboardMarkup{InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{}})
-		c.bot.Send(emptyKB) //nolint:errcheck,gosec
+		_, _ = c.bot.EditMessageReplyMarkup(context.Background(), &bot.EditMessageReplyMarkupParams{ //nolint:errcheck // best-effort UI cleanup
+			ChatID:      entry.tgChatID,
+			MessageID:   entry.msgID,
+			ReplyMarkup: models.InlineKeyboardMarkup{},
+		})
 	}()
 
 	return true
@@ -172,7 +184,7 @@ func (c *Channel) sendResponseWithBookmark(chatID int64, text string, replyTo in
 			// Last chunk: attach the bookmark + copy buttons.
 			c.sendSingleMessageWithBookmark(chatID, chunk, rt, text, chatIDStr, userID, locale)
 		} else {
-			_, _ = c.sendHTML(chatID, chunk, rt, "", "") //nolint:errcheck // sendHTML logs failures
+			_, _ = c.sendHTML(chatID, chunk, rt, nil, "") //nolint:errcheck // sendHTML logs failures
 		}
 	}
 }
@@ -220,21 +232,24 @@ func (c *Channel) StartStreamWithBookmark(ctx context.Context, chatID string, re
 	if entry, ok := c.statusMsgs.get(chatID); ok && entry.isConsumed() && !entry.isLongTask() {
 		msgID = entry.getMsgID()
 		c.statusMsgs.remove(chatID)
-		edit := tgbotapi.NewEditMessageText(tgChatID, msgID, "...")
-		c.bot.Send(edit) //nolint:errcheck,gosec
+		_, _ = c.bot.EditMessageText(context.Background(), &bot.EditMessageTextParams{ //nolint:errcheck // best-effort placeholder
+			ChatID:    tgChatID,
+			MessageID: msgID,
+			Text:      "...",
+		})
 	} else {
 		if entry, ok := c.statusMsgs.get(chatID); ok && entry.isConsumed() {
 			c.finalizeStatusMessage(chatID, entry)
 		}
-		msg := tgbotapi.NewMessage(tgChatID, "...")
+		p := &bot.SendMessageParams{ChatID: tgChatID, Text: "..."}
 		if replyTo > 0 {
-			msg.ReplyToMessageID = replyTo
+			p.ReplyParameters = &models.ReplyParameters{MessageID: replyTo}
 		}
-		sent, sendErr := c.bot.Send(msg)
+		sent, sendErr := c.bot.SendMessage(context.Background(), p)
 		if sendErr != nil {
 			return nil, nil, fmt.Errorf("sending initial stream message: %w", sendErr)
 		}
-		msgID = sent.MessageID
+		msgID = sent.ID
 	}
 
 	var lastEditNs atomic.Int64
@@ -254,8 +269,12 @@ func (c *Channel) StartStreamWithBookmark(ctx context.Context, chatID string, re
 		if time.Duration(now-lastEditNs.Load()) < 1500*time.Millisecond {
 			return // coalesce edits
 		}
-		edit := tgbotapi.NewEditMessageText(tgChatID, msgID, text)
-		if _, err := c.bot.Send(edit); err != nil {
+		_, err := c.bot.EditMessageText(context.Background(), &bot.EditMessageTextParams{
+			ChatID:    tgChatID,
+			MessageID: msgID,
+			Text:      text,
+		})
+		if err != nil {
 			c.logger.Debug("stream edit failed", zap.Error(err))
 		}
 		lastEditNs.Store(time.Now().UnixNano())
@@ -266,7 +285,7 @@ func (c *Channel) StartStreamWithBookmark(ctx context.Context, chatID string, re
 
 		// Display text is converted to Telegram's HTML dialect;
 		// the stored bookmark content keeps the original Markdown.
-		markup := ""
+		var markup models.ReplyMarkup
 		if c.rememberSvc != nil {
 			nonce := generateNonce()
 			cbData := "remember:" + nonce

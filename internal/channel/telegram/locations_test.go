@@ -8,7 +8,7 @@ import (
 
 	"golang.org/x/text/language"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/go-telegram/bot/models"
 
 	"github.com/iulita-ai/iulita/internal/channel"
 	"github.com/iulita-ai/iulita/internal/i18n"
@@ -20,7 +20,7 @@ func TestLocationFromMessage(t *testing.T) {
 	}
 	tests := []struct {
 		name    string
-		msg     *tgbotapi.Message
+		msg     *models.Message
 		wantNil bool
 		check   func(*channel.LocationAttachment) bool
 	}{
@@ -31,12 +31,12 @@ func TestLocationFromMessage(t *testing.T) {
 		},
 		{
 			name:    "neither location nor venue",
-			msg:     &tgbotapi.Message{Text: "hello"},
+			msg:     &models.Message{Text: "hello"},
 			wantNil: true,
 		},
 		{
 			name: "bare pin with accuracy",
-			msg: &tgbotapi.Message{Location: &tgbotapi.Location{
+			msg: &models.Message{Location: &models.Location{
 				Latitude: 52.51627, Longitude: 13.37775, HorizontalAccuracy: 35,
 			}},
 			check: func(l *channel.LocationAttachment) bool {
@@ -46,21 +46,21 @@ func TestLocationFromMessage(t *testing.T) {
 		},
 		{
 			name: "live pin",
-			msg: &tgbotapi.Message{Location: &tgbotapi.Location{
+			msg: &models.Message{Location: &models.Location{
 				Latitude: 52.51627, Longitude: 13.37775, LivePeriod: 3600,
 			}},
 			check: func(l *channel.LocationAttachment) bool { return l.Live },
 		},
 		{
 			name: "venue (subsumes location)",
-			msg: &tgbotapi.Message{
-				Venue: &tgbotapi.Venue{
-					Location: tgbotapi.Location{Latitude: 52.51627, Longitude: 13.37775},
+			msg: &models.Message{
+				Venue: &models.Venue{
+					Location: models.Location{Latitude: 52.51627, Longitude: 13.37775},
 					Title:    "Brandenburg Gate",
 					Address:  "Pariser Platz 1",
 				},
 				// Telegram also sets Location when Venue is set; venue must win.
-				Location: &tgbotapi.Location{Latitude: 52.51627, Longitude: 13.37775},
+				Location: &models.Location{Latitude: 52.51627, Longitude: 13.37775},
 			},
 			check: func(l *channel.LocationAttachment) bool {
 				return l.Title == "Brandenburg Gate" && l.Address == "Pariser Platz 1" && !l.Live
@@ -68,9 +68,9 @@ func TestLocationFromMessage(t *testing.T) {
 		},
 		{
 			name: "venue with long title is rune-truncated",
-			msg: &tgbotapi.Message{
-				Venue: &tgbotapi.Venue{
-					Location: tgbotapi.Location{Latitude: 1, Longitude: 2},
+			msg: &models.Message{
+				Venue: &models.Venue{
+					Location: models.Location{Latitude: 1, Longitude: 2},
 					Title:    strings.Repeat("é", 300),
 					Address:  "x",
 				},
@@ -181,19 +181,19 @@ func TestFormatCoordsNegative(t *testing.T) {
 func TestHasUpdateContent(t *testing.T) {
 	tests := []struct {
 		name string
-		msg  *tgbotapi.Message
+		msg  *models.Message
 		want bool
 	}{
 		{"nil", nil, false},
-		{"text", &tgbotapi.Message{Text: "hi"}, true},
-		{"photo", &tgbotapi.Message{Photo: []tgbotapi.PhotoSize{{FileID: "x"}}}, true},
-		{"document", &tgbotapi.Message{Document: &tgbotapi.Document{FileID: "x"}}, true},
-		{"voice", &tgbotapi.Message{Voice: &tgbotapi.Voice{FileID: "x"}}, true},
-		{"audio", &tgbotapi.Message{Audio: &tgbotapi.Audio{FileID: "x"}}, true},
-		{"location", &tgbotapi.Message{Location: &tgbotapi.Location{Latitude: 1, Longitude: 2}}, true},
-		{"venue", &tgbotapi.Message{Venue: &tgbotapi.Venue{Title: "t"}}, true},
-		{"sticker", &tgbotapi.Message{Sticker: &tgbotapi.Sticker{FileID: "x"}}, false},
-		{"empty", &tgbotapi.Message{}, false},
+		{"text", &models.Message{Text: "hi"}, true},
+		{"photo", &models.Message{Photo: []models.PhotoSize{{FileID: "x"}}}, true},
+		{"document", &models.Message{Document: &models.Document{FileID: "x"}}, true},
+		{"voice", &models.Message{Voice: &models.Voice{FileID: "x"}}, true},
+		{"audio", &models.Message{Audio: &models.Audio{FileID: "x"}}, true},
+		{"location", &models.Message{Location: &models.Location{Latitude: 1, Longitude: 2}}, true},
+		{"venue", &models.Message{Venue: &models.Venue{Title: "t"}}, true},
+		{"sticker", &models.Message{Sticker: &models.Sticker{FileID: "x"}}, false},
+		{"empty", &models.Message{}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -213,12 +213,11 @@ func TestTruncateRunes(t *testing.T) {
 	}
 }
 
-func TestNudgeZeroAxis(t *testing.T) {
-	if got := nudgeZeroAxis(0); got != 1e-8 {
-		t.Fatalf("nudgeZeroAxis(0) = %v", got)
-	}
-	if got := nudgeZeroAxis(-13.3777); got != -13.3777 {
-		t.Fatalf("nudgeZeroAxis(non-zero) = %v", got)
+func TestNudgeZeroAxisRemoved(t *testing.T) {
+	// The tgbotapi AddNonZeroFloat workaround is gone with the library
+	// migration: 0.0 coordinates serialize correctly now. Guard the removal.
+	if got := round6(0); got != 0 {
+		t.Fatalf("round6(0) should stay exactly 0, got %v", got)
 	}
 }
 
@@ -238,23 +237,23 @@ func TestRound6(t *testing.T) {
 	}
 }
 
-func TestVenueConfigTruncates(t *testing.T) {
-	cfg := venueConfig(100, channel.OutboundVenue{
+func TestVenueParamsTruncates(t *testing.T) {
+	p := venueParams(100, channel.OutboundVenue{
 		Location: channel.OutboundLocation{Latitude: 52.516270000000003, Longitude: 0},
 		Title:    strings.Repeat("T", 200),
 		Address:  strings.Repeat("A", 300),
 	})
-	if got := len([]rune(cfg.Title)); got != 128 {
+	if got := len([]rune(p.Title)); got != 128 {
 		t.Fatalf("title not truncated to 128 (Bot API limit): %d", got)
 	}
-	if got := len([]rune(cfg.Address)); got != 256 {
+	if got := len([]rune(p.Address)); got != 256 {
 		t.Fatalf("address not truncated to 256: %d", got)
 	}
-	if cfg.Latitude != 52.51627 {
-		t.Fatalf("latitude not rounded: %v", cfg.Latitude)
+	if p.Latitude != 52.51627 {
+		t.Fatalf("latitude not rounded: %v", p.Latitude)
 	}
-	if cfg.Longitude != 1e-8 {
-		t.Fatalf("zero longitude not nudged: %v", cfg.Longitude)
+	if p.Longitude != 0 {
+		t.Fatalf("zero longitude must serialize as-is now: %v", p.Longitude)
 	}
 }
 
