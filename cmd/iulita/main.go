@@ -1437,21 +1437,24 @@ func main() {
 			}
 		}
 		if provider == "" && key == "" {
-			if zk, ok := cfgStore.GetEffective("zai.api_key"); ok && zk != "" {
+			if zk := strings.TrimSpace(cfg.ZAI.APIKey); zk != "" {
 				provider, key = "zai", zk
 			}
 		}
 		if provider == "zai" {
 			if key == "" {
-				if zk, ok := cfgStore.GetEffective("zai.api_key"); ok && zk != "" {
-					key = zk
-				}
+				key = strings.TrimSpace(cfg.ZAI.APIKey)
 			}
 			if key == "" {
 				return nil
 			}
 			if baseURL == "" {
-				baseURL = "https://api.z.ai/api/paas/v4"
+				// The z.ai LLM connection base (resolved from model settings or
+				// config) also serves /audio/transcriptions.
+				baseURL = strings.TrimSpace(cfg.ZAI.BaseURL)
+				if baseURL == "" {
+					baseURL = "https://api.z.ai/api/paas/v4"
+				}
 			}
 			if model == "" {
 				model = "glm-asr-2512"
