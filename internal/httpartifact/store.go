@@ -10,12 +10,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"go.uber.org/zap"
@@ -221,18 +219,6 @@ func (s *Store) reserve(ctx context.Context, owner string, bytes int64) error {
 	s.reservedGlobal += bytes
 	s.reservedByUser[owner] += bytes
 	return nil
-}
-
-// diskAvailable reports free bytes visible to unprivileged users.
-func diskAvailable(path string) (uint64, error) {
-	var st syscall.Statfs_t
-	if err := syscall.Statfs(path, &st); err != nil {
-		return 0, err
-	}
-	if st.Bsize <= 0 || st.Bavail <= 0 || st.Bavail > math.MaxInt64/uint64(st.Bsize) {
-		return 0, nil // nonsensical stat: treat as unknown, callers fail closed on 0
-	}
-	return st.Bavail * uint64(st.Bsize), nil
 }
 
 func (s *Store) release(owner string, bytes int64) {
