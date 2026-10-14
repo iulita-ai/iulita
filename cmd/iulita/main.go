@@ -1415,6 +1415,26 @@ func main() {
 			zap.Int("rate", configRateLimit), zap.Duration("window", configRateWindow))
 	}
 
+	// zaiConnectionKey/Base resolve the z.ai connection for GLM-ASR
+	// transcription: model settings first (where production keeps it), then
+	// the config.toml [zai] fallback.
+	zaiConnectionKey := func() string {
+		if modelManager != nil {
+			if c, err := modelManager.LegacyConnection("zai"); err == nil && c.APIKey != "" {
+				return c.APIKey
+			}
+		}
+		return strings.TrimSpace(cfg.ZAI.APIKey)
+	}
+	zaiConnectionBase := func() string {
+		if modelManager != nil {
+			if c, err := modelManager.LegacyConnection("zai"); err == nil && c.Endpoint != "" {
+				return c.Endpoint
+			}
+		}
+		return strings.TrimSpace(cfg.ZAI.BaseURL)
+	}
+
 	// Voice message transcription (any Whisper-compatible endpoint).
 	// Every setting resolves from the credential store first (dashboard-managed,
 	// no sealed-secret re-rolls) with the config values as fallback.
@@ -1437,21 +1457,21 @@ func main() {
 			}
 		}
 		if provider == "" && key == "" {
-			if zk := strings.TrimSpace(cfg.ZAI.APIKey); zk != "" {
+			if zk := zaiConnectionKey(); zk != "" {
 				provider, key = "zai", zk
 			}
 		}
 		if provider == "zai" {
 			if key == "" {
-				key = strings.TrimSpace(cfg.ZAI.APIKey)
+				key = zaiConnectionKey()
 			}
 			if key == "" {
 				return nil
 			}
 			if baseURL == "" {
-				// The z.ai LLM connection base (resolved from model settings or
-				// config) also serves /audio/transcriptions.
-				baseURL = strings.TrimSpace(cfg.ZAI.BaseURL)
+				// The z.ai LLM connection base (model settings or config)
+				// also serves /audio/transcriptions.
+				baseURL = zaiConnectionBase()
 				if baseURL == "" {
 					baseURL = "https://api.z.ai/api/paas/v4"
 				}
