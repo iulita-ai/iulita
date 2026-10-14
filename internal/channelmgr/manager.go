@@ -645,6 +645,39 @@ func (m *Manager) PrompterFor(chatID string) interact.PromptAsker {
 	return nil
 }
 
+// ConfirmerFor returns an identity-bound ConfirmationAsker for the chatID by
+// delegating to the running channel that owns it. Implements
+// interact.ConfirmationAskerFactory — without this, mutating http_request
+// calls fail with "no safe confirmation channel" even on channels that do
+// support consent (Telegram/Slack/Webchat/Console all implement it).
+func (m *Manager) ConfirmerFor(chatID string) interact.ConfirmationAsker {
+	if con := m.GetConsole(); con != nil {
+		if c := con.ConfirmerFor(chatID); c != nil {
+			return c
+		}
+	}
+	if wc := m.GetWebChat(); wc != nil {
+		if c := wc.ConfirmerFor(chatID); c != nil {
+			return c
+		}
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, mc := range m.running {
+		if mc.tg != nil {
+			if c := mc.tg.ConfirmerFor(chatID); c != nil {
+				return c
+			}
+		}
+		if mc.slack != nil {
+			if c := mc.slack.ConfirmerFor(chatID); c != nil {
+				return c
+			}
+		}
+	}
+	return nil
+}
+
 // GetWebChat returns the webchat.Channel if a web channel instance is running.
 func (m *Manager) GetWebChat() *webchat.Channel {
 	m.mu.RLock()
