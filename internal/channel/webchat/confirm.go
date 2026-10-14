@@ -42,13 +42,10 @@ func (wc *webchatConfirmer) Confirm(ctx context.Context, action interact.Confirm
 	}
 
 	wc.channel.sendToConn(conn, wsOutgoingMessage{
-		Type:     "prompt",
-		Text:     question,
-		PromptID: promptID,
-		Options: []wsPromptOption{
-			{ID: "confirm_approve", Label: "✅ Approve"},
-			{ID: "confirm_deny", Label: "❌ Deny"},
-		},
+		Type:      "prompt",
+		Text:      question,
+		PromptID:  promptID,
+		Options:   webchatConfirmOptions(action.Reason),
 		Timestamp: time.Now().Format(time.RFC3339),
 	})
 
@@ -57,15 +54,37 @@ func (wc *webchatConfirmer) Confirm(ctx context.Context, action interact.Confirm
 
 	select {
 	case answer := <-replyCh:
-		if strings.TrimSpace(answer) == "confirm_approve" {
+		switch strings.TrimSpace(answer) {
+		case "confirm_approve":
 			return interact.Decision{Approved: true, Actor: expect, MaxBytes: action.MaxBytes}, nil
+		case "confirm_always_origin":
+			return interact.Decision{Approved: true, Actor: expect, MaxBytes: action.MaxBytes, Standing: interact.StandingOrigin}, nil
+		case "confirm_always":
+			return interact.Decision{Approved: true, Actor: expect, MaxBytes: action.MaxBytes, Standing: interact.StandingGlobal}, nil
+		default:
+			return interact.Decision{Approved: false, Actor: expect}, interact.ErrConfirmRejected
 		}
-		return interact.Decision{Approved: false, Actor: expect}, interact.ErrConfirmRejected
 	case <-timer.C:
 		return interact.Decision{}, interact.ErrPromptTimeout
 	case <-ctx.Done():
 		return interact.Decision{}, interact.ErrCancelled
 	}
+}
+
+// webchatConfirmOptions renders the consent choices; standing options only
+// for mutations (downloads always re-ask).
+func webchatConfirmOptions(reason string) []wsPromptOption {
+	opts := []wsPromptOption{
+		{ID: "confirm_approve", Label: "✅ Approve"},
+		{ID: "confirm_deny", Label: "❌ Deny"},
+	}
+	if reason == interact.ConfirmMutation {
+		opts = append(opts,
+			wsPromptOption{ID: "confirm_always_origin", Label: "🔁 Always for this origin"},
+			wsPromptOption{ID: "confirm_always", Label: "♾️ Always"},
+		)
+	}
+	return opts
 }
 
 // ConfirmerFor returns a ConfirmationAsker for the authenticated web chat.

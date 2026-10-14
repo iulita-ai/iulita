@@ -29,13 +29,16 @@ type Engine struct {
 	policy    Policy
 	proxySafe string // scheme+host of configured proxy, for status only
 
-	resolver     web.Resolver
-	creds        CredentialResolver
-	confirmer    Confirmer
-	artifacts    ArtifactStore
-	rawArtifacts bool // include_raw_artifact may store owner-private copies
-	metrics      MetricsHooks
-	log          *zap.Logger
+	resolver          web.Resolver
+	creds             CredentialResolver
+	confirmer         Confirmer
+	artifacts         ArtifactStore
+	rawArtifacts      bool // include_raw_artifact may store owner-private copies
+	standing          StandingGrantStore
+	standingOriginTTL time.Duration
+	standingGlobalTTL time.Duration
+	metrics           MetricsHooks
+	log               *zap.Logger
 
 	mu            sync.Mutex
 	userTransfer  map[string]int // per-user active transfers
@@ -47,16 +50,19 @@ type Engine struct {
 // EngineConfig wires the engine. Everything is host-provided; nothing is
 // derived from model input.
 type EngineConfig struct {
-	ProxyURL     string
-	Limits       Limits
-	Policy       Policy
-	Resolver     web.Resolver // nil → net.DefaultResolver
-	Credentials  CredentialResolver
-	Confirmer    Confirmer
-	Artifacts    ArtifactStore
-	RawArtifacts bool // allow include_raw_artifact storage (needs Artifacts)
-	Metrics      MetricsHooks
-	Logger       *zap.Logger
+	ProxyURL          string
+	Limits            Limits
+	Policy            Policy
+	Resolver          web.Resolver // nil → net.DefaultResolver
+	Credentials       CredentialResolver
+	Confirmer         Confirmer
+	Artifacts         ArtifactStore
+	Standing          StandingGrantStore // nil = standing approvals unavailable
+	StandingOriginTTL time.Duration      // "always for this origin" lifetime (default 30d)
+	StandingGlobalTTL time.Duration      // "always" lifetime (default 7d)
+	RawArtifacts      bool               // allow include_raw_artifact storage (needs Artifacts)
+	Metrics           MetricsHooks
+	Logger            *zap.Logger
 }
 
 // NewEngine builds the proxy-only engine. A missing/invalid proxy is a typed
@@ -82,20 +88,23 @@ func NewEngine(cfg EngineConfig) (*Engine, *ProxyError) {
 			// No Client.Timeout: per-step deadlines and idle timers are
 			// managed explicitly by the engine.
 		},
-		limits:        limits,
-		policy:        cfg.Policy,
-		proxySafe:     proxySchemeHost(cfg.ProxyURL),
-		resolver:      cfg.Resolver,
-		creds:         cfg.Credentials,
-		confirmer:     cfg.Confirmer,
-		artifacts:     cfg.Artifacts,
-		rawArtifacts:  cfg.RawArtifacts,
-		metrics:       cfg.Metrics,
-		log:           logger,
-		userTransfer:  make(map[string]int),
-		transferSlots: make(chan struct{}, limits.MaxTransfersGlobal),
-		writerSlots:   make(chan struct{}, limits.MaxDownloadWriters),
-		pendingSlots:  make(chan struct{}, limits.MaxPendingGlobal),
+		limits:            limits,
+		policy:            cfg.Policy,
+		proxySafe:         proxySchemeHost(cfg.ProxyURL),
+		resolver:          cfg.Resolver,
+		creds:             cfg.Credentials,
+		confirmer:         cfg.Confirmer,
+		artifacts:         cfg.Artifacts,
+		standing:          cfg.Standing,
+		standingOriginTTL: cfg.StandingOriginTTL,
+		standingGlobalTTL: cfg.StandingGlobalTTL,
+		rawArtifacts:      cfg.RawArtifacts,
+		metrics:           cfg.Metrics,
+		log:               logger,
+		userTransfer:      make(map[string]int),
+		transferSlots:     make(chan struct{}, limits.MaxTransfersGlobal),
+		writerSlots:       make(chan struct{}, limits.MaxDownloadWriters),
+		pendingSlots:      make(chan struct{}, limits.MaxPendingGlobal),
 	}
 	if e.metrics == nil {
 		e.metrics = noopMetrics{}

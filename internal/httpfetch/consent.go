@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/iulita-ai/iulita/internal/skill/interact"
 )
 
@@ -213,6 +215,45 @@ func (e *Engine) askConsent(ctx context.Context, state *runState, scope Scope, r
 		decision.MaxBytes = maxBytes
 	}
 	return decision, nil
+}
+
+// hasStandingGrant reports whether the owner issued a covering "always
+// allow" grant. Storage failures fail CLOSED (ask again) — never silently
+// mutate on an unreadable grants table.
+func (e *Engine) hasStandingGrant(ctx context.Context, scope Scope, origin Origin) bool {
+	if e.standing == nil || scope.UserID == "" {
+		return false
+	}
+	ok, err := e.standing.HasStandingGrant(ctx, scope, origin)
+	if err != nil {
+		e.log.Warn("standing grant lookup failed; asking anyway", zap.Error(err))
+		return false
+	}
+	return ok
+}
+
+// saveStandingGrant persists a standing approval. Failures are logged but
+// never invalidate the one-shot approval the user just gave.
+func (e *Engine) saveStandingGrant(ctx context.Context, scope Scope, origin Origin, standing, actor string) {
+	if e.standing == nil || scope.UserID == "" {
+		return
+	}
+	ttl := e.standingOriginTTL
+	if standing == interact.StandingGlobal {
+		ttl = e.standingGlobalTTL
+	}
+	if ttl <= 0 {
+		if standing == interact.StandingGlobal {
+			ttl = 7 * 24 * time.Hour
+		} else {
+			ttl = 30 * 24 * time.Hour
+		}
+	}
+	if err := e.standing.SaveStandingGrant(ctx, scope, origin, standing, timeNow().Add(ttl)); err != nil {
+		e.log.Warn("failed to persist standing grant; one-shot approval still applies",
+			zap.Error(err), zap.String("standing", standing))
+	}
+	_ = actor
 }
 
 // mutationPreview renders the safe description of all remaining mutating

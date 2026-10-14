@@ -72,13 +72,21 @@ func (e *Engine) runStep(ctx context.Context, step Request, state *runState, sco
 		return *ferr
 	}
 
-	// Mutating methods need an identity-bound confirmation bound to the plan.
+	// Mutating methods need an identity-bound confirmation bound to the
+	// plan — unless a standing grant ("always allow") already covers it.
 	if !isSafeMethod(method) {
-		if state.mutGrant == nil {
+		if e.hasStandingGrant(ctx, scope, origin) {
+			e.metrics.ConsentAsked(string(ConfirmMutation), "standing")
+		} else if state.mutGrant == nil {
 			preview := e.mutationPreview(state, idx, total)
 			decision, ferr := e.askConsent(ctx, state, scope, ConfirmMutation, preview, 0)
 			if ferr != nil {
 				return *ferr
+			}
+			// A standing choice (always-for-origin / always) persists the
+			// user's own approval for future mutations.
+			if decision.Standing != "" {
+				e.saveStandingGrant(ctx, scope, origin, decision.Standing, decision.Actor.UserID)
 			}
 			state.mutGrant = &decision
 		}

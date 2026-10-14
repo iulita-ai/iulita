@@ -1071,6 +1071,7 @@ func main() {
 			},
 			Credentials:  credential.NewHTTPResolver(credStore),
 			Artifacts:    httpArtifacts,
+			Standing:     NewStandingGrantAdapter(store),
 			RawArtifacts: hcfg.RawArtifactsEnabled && httpArtifacts != nil,
 			Metrics:      httpMetricsAdapter{m: promMetrics},
 			Logger:       logger,

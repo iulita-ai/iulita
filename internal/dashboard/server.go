@@ -165,7 +165,8 @@ type Config struct {
 	ModelHTTPClient        *http.Client
 	LegacyModelSettings    *models.Settings
 	LegacyClassifierActive bool
-	HTTPArtifacts          HTTPArtifactStore // nil = artifact delivery unavailable; requires auth
+	HTTPArtifacts          HTTPArtifactStore      // nil = artifact delivery unavailable; requires auth
+	StandingGrants         HTTPStandingGrantStore // nil = standing approvals unmanaged
 }
 
 // Server serves the dashboard API and embedded SPA.
@@ -193,6 +194,7 @@ type Server struct {
 	legacyModelSettings    *models.Settings
 	legacyClassifierActive bool
 	httpArtifacts          HTTPArtifactStore // nil = artifact delivery unavailable
+	standingGrants         HTTPStandingGrantStore
 	tickets                *ticketRegistry
 }
 
@@ -221,6 +223,7 @@ func New(cfg Config) *Server {
 		legacyModelSettings:    cfg.LegacyModelSettings,
 		legacyClassifierActive: cfg.LegacyClassifierActive,
 		httpArtifacts:          cfg.HTTPArtifacts,
+		standingGrants:         cfg.StandingGrants,
 		tickets:                newTicketRegistry(),
 	}
 
@@ -463,6 +466,13 @@ func New(cfg Config) *Server {
 		creds.Get("/:id/http-grants", s.handleListHTTPGrants)
 		creds.Post("/:id/http-grants", s.handleCreateHTTPGrant)
 		creds.Delete("/http-grants/:gid", s.handleDeleteHTTPGrant)
+	}
+
+	// HTTP standing approvals ("always allow"): every user manages their own;
+	// admins can inspect any owner.
+	if s.authService != nil && s.standingGrants != nil {
+		api.Get("/http-standing-grants", s.handleListStandingGrants)
+		api.Delete("/http-standing-grants/:id", s.handleRevokeStandingGrant)
 	}
 
 	// External skills API (admin only)

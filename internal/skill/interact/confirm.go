@@ -41,11 +41,20 @@ type Actor struct {
 
 // Decision is the outcome of a confirmation. Approved decisions carry the
 // verified actor; the engine cross-checks it against the requesting user.
+// Standing converts a one-shot approval into a persistent grant — the
+// engine decides which reasons may earn one (mutations only).
 type Decision struct {
 	Approved bool
 	Actor    Actor
-	MaxBytes int64 // granted byte limit (≤ requested)
+	MaxBytes int64  // granted byte limit (≤ requested)
+	Standing string // "" (one-shot) | StandingOrigin | StandingGlobal
 }
+
+// Standing-grant choices.
+const (
+	StandingOrigin = "origin" // always allow this exact origin
+	StandingGlobal = "global" // always allow any origin
+)
 
 // ErrConfirmRejected signals an explicit denial.
 var ErrConfirmRejected = errors.New("confirmation rejected")

@@ -69,7 +69,9 @@ engine executes it under server-side policy. Key guarantees:
   `HTTP_PROXY`/`NO_PROXY` cannot bypass it.
 - **Consent.** Mutating methods (POST/PUT/PATCH/DELETE/custom) and downloads
   beyond 100 MB require an identity-bound confirmation in the chat channel
-  (Telegram/Slack/Webchat buttons, console prompt). The response body of a
+  (Telegram/Slack/Webchat buttons, console prompt). Mutation confirmations
+  offer standing choices — "always for this origin" (30d) and "always" (7d) —
+  revocable via `/api/http-standing-grants`; large downloads always re-ask. The response body of a
   3xx/4xx/5xx is preserved for diagnostics; a broken connection after a
   mutation reports `outcome_unknown` instead of silently retrying.
 - **Credentials.** `auth.basic/bearer` references stored credentials
