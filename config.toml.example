@@ -20,6 +20,37 @@ encoding = "json"
 # Set via IULITA_PROXY_URL env var.
 url = ""
 
+[skills.http]
+# Strict http_request tool: raw HTTP(S) API client through the MANDATORY
+# proxy above. Enabled by default — the tool registers whenever [proxy].url
+# is set; without a proxy it stays unavailable (proxy_required) and never
+# falls back to a direct connection.
+enabled = true
+# Streaming downloads into owner-scoped artifacts served from the dashboard
+# Files view. Effective only when dashboard authentication is active.
+downloads_enabled = true
+# Allow include_raw_artifact to store owner-private full-header copies.
+raw_artifacts_enabled = true
+# Optional allowlists (empty = all standard/custom methods; all ports 1-65535).
+allowed_methods = []
+allowed_ports = []
+# Byte limits (decimal). consent_threshold_bytes may only be lowered.
+max_download_bytes = 1000000000
+consent_threshold_bytes = 100000000
+max_upload_bytes = 16777216
+inline_max_bytes = 2097152
+max_chain_steps = 10
+max_redirects = 5
+# Time budgets (Go durations).
+request_timeout = "60s"
+chain_budget = "5m"
+wall_timeout = "35m"
+# Artifact storage (defaults under the data dir).
+artifact_dir = ""
+artifact_ttl = "24h"
+quota_global_bytes = 5000000000
+quota_user_bytes = 1000000000
+
 [telegram]
 # Set via IULITA_TELEGRAM_TOKEN env var
 token = ""

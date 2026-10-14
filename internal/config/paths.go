@@ -71,6 +71,12 @@ func (p *Paths) ExternalSkillsDir() string {
 	return filepath.Join(p.DataDir, "external-skills")
 }
 
+// HTTPArtifactDir returns the directory for http_request download artifacts.
+// Lives under DataDir (persistent volume); created 0700 by the artifact store.
+func (p *Paths) HTTPArtifactDir() string {
+	return filepath.Join(p.DataDir, "http-artifacts")
+}
+
 // LogFile returns the path to the log file.
 func (p *Paths) LogFile() string {
 	return filepath.Join(p.StateDir, "iulita.log")

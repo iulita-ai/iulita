@@ -590,3 +590,18 @@ func (s *Store) writeAudit(ctx context.Context, cred *domain.Credential, action,
 func jsonUnmarshalTags(s string, out *[]string) error {
 	return json.Unmarshal([]byte(s), out)
 }
+
+// SaveHTTPGrant persists an HTTP origin grant (admin dashboard).
+func (s *Store) SaveHTTPGrant(ctx context.Context, g *domain.HTTPCredentialGrant) error {
+	return s.repo.SaveHTTPCredentialGrant(ctx, g)
+}
+
+// ListHTTPGrants returns a credential's origin grants.
+func (s *Store) ListHTTPGrants(ctx context.Context, credentialID int64) ([]domain.HTTPCredentialGrant, error) {
+	return s.repo.ListHTTPCredentialGrants(ctx, credentialID)
+}
+
+// DeleteHTTPGrant removes a grant by ID.
+func (s *Store) DeleteHTTPGrant(ctx context.Context, id int64) error {
+	return s.repo.DeleteHTTPCredentialGrant(ctx, id)
+}

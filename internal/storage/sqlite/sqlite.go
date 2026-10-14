@@ -125,6 +125,10 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 		{(*domain.SlackChatRoute)(nil), "slack_chat_routes"},
 		// Slack personal user-token OAuth account (owner-only).
 		{(*domain.SlackAccount)(nil), "slack_accounts"},
+		// HTTP tool: origin-bound credential grants (additive, plan §8.1).
+		{(*domain.HTTPCredentialGrant)(nil), "http_credential_grants"},
+		// HTTP tool: download artifacts metadata (additive, plan §9.2).
+		{(*domain.HTTPArtifact)(nil), "http_artifacts"},
 	}
 
 	// Rename legacy "dreams" table to "insights" (preserves existing data).

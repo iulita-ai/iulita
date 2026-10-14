@@ -198,6 +198,34 @@ IULITA_PROXY_URL           → proxy.url
 | `scheduler.enabled` | true | Включить планировщик задач |
 | `scheduler.worker_token` | — | Bearer-токен для удалённых воркеров |
 
+### Скиллы: HTTP-инструмент (`[skills.http]`)
+
+Настройки строгого инструмента `http_request`. Прокси всегда берётся из
+`[proxy].url` и обязательна. Большинство лимитов применяется при старте;
+`enabled` перечитывается на лету. `consent_threshold_bytes` можно только
+понизить, выше 100 MB поднять нельзя.
+
+| Ключ | По умолчанию | Описание |
+|------|-------------|----------|
+| `skills.http.enabled` | true | Зарегистрировать http_request (нужен `[proxy].url`) |
+| `skills.http.downloads_enabled` | true | Потоковое скачивание и выдача в разделе «Файлы» (действует при авторизации) |
+| `skills.http.raw_artifacts_enabled` | true | Разрешить `include_raw_artifact` — приватные копии владельца |
+| `skills.http.allowed_methods` | `[]` | Список разрешённых методов (пусто = все) |
+| `skills.http.allowed_ports` | `[]` | Список разрешённых портов (пусто = 1–65535) |
+| `skills.http.max_download_bytes` | 1000000000 | Жёсткий потолок скачивания |
+| `skills.http.consent_threshold_bytes` | 100000000 | Порог подтверждения скачивания (только понижение) |
+| `skills.http.max_upload_bytes` | 16777216 | Потолок тела запроса |
+| `skills.http.inline_max_bytes` | 2097152 | Потолок inline-чтения ответа |
+| `skills.http.max_chain_steps` | 10 | Шагов в цепочке |
+| `skills.http.max_redirects` | 5 | Переходов редиректа (режим same_origin) |
+| `skills.http.request_timeout` | 60s | Один не-download шаг |
+| `skills.http.chain_budget` | 5m | Сумма не-download шагов одного запуска |
+| `skills.http.wall_timeout` | 35m | Общий лимит операции (включая ожидание подтверждений) |
+| `skills.http.artifact_dir` | `<data>/http-artifacts` | Корень хранилища артефактов (0700) |
+| `skills.http.artifact_ttl` | 24h | Время жизни артефактов |
+| `skills.http.quota_global_bytes` | 5000000000 | Глобальная квота артефактов |
+| `skills.http.quota_user_bytes` | 1000000000 | Квота артефактов на пользователя |
+
 ### Расходы
 
 | Ключ | По умолчанию | Описание |

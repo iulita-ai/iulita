@@ -24,6 +24,10 @@ type storageRepo interface {
 
 	SaveCredentialAudit(ctx context.Context, a *domain.CredentialAudit) error
 	ListCredentialAudit(ctx context.Context, credentialID int64, limit int) ([]domain.CredentialAudit, error)
+
+	SaveHTTPCredentialGrant(ctx context.Context, g *domain.HTTPCredentialGrant) error
+	ListHTTPCredentialGrants(ctx context.Context, credentialID int64) ([]domain.HTTPCredentialGrant, error)
+	DeleteHTTPCredentialGrant(ctx context.Context, id int64) error
 }
 
 // storageAdapter adapts storage.Repository to credential.Repository.
@@ -92,4 +96,16 @@ func (a *storageAdapter) SaveCredentialAudit(ctx context.Context, a2 *domain.Cre
 
 func (a *storageAdapter) ListCredentialAudit(ctx context.Context, credentialID int64, limit int) ([]domain.CredentialAudit, error) { //nolint:revive // interface implementation
 	return a.repo.ListCredentialAudit(ctx, credentialID, limit)
+}
+
+func (a *storageAdapter) SaveHTTPCredentialGrant(ctx context.Context, g *domain.HTTPCredentialGrant) error { //nolint:revive // interface implementation
+	return a.repo.SaveHTTPCredentialGrant(ctx, g)
+}
+
+func (a *storageAdapter) ListHTTPCredentialGrants(ctx context.Context, credentialID int64) ([]domain.HTTPCredentialGrant, error) { //nolint:revive // interface implementation
+	return a.repo.ListHTTPCredentialGrants(ctx, credentialID)
+}
+
+func (a *storageAdapter) DeleteHTTPCredentialGrant(ctx context.Context, id int64) error { //nolint:revive // interface implementation
+	return a.repo.DeleteHTTPCredentialGrant(ctx, id)
 }

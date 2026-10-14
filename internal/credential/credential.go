@@ -11,6 +11,11 @@ import (
 // ErrNotFound is returned when a credential does not exist.
 var ErrNotFound = errors.New("credential not found")
 
+// ErrCredentialDenied is returned by the HTTP resolver when a reference is
+// not grantable for this owner/origin/caller combination. It is the strict
+// counterpart to ErrNotFound: not-found and not-granted are both denials.
+var ErrCredentialDenied = errors.New("credential not granted for this origin/caller")
+
 // Repository is the storage interface for credentials.
 // Defined locally to avoid import cycles (credential -> storage -> credential).
 type Repository interface {
@@ -32,6 +37,11 @@ type Repository interface {
 	// Audit
 	SaveCredentialAudit(ctx context.Context, a *domain.CredentialAudit) error
 	ListCredentialAudit(ctx context.Context, credentialID int64, limit int) ([]domain.CredentialAudit, error)
+
+	// HTTP origin grants (additive; used by the HTTP resolver only)
+	SaveHTTPCredentialGrant(ctx context.Context, g *domain.HTTPCredentialGrant) error
+	ListHTTPCredentialGrants(ctx context.Context, credentialID int64) ([]domain.HTTPCredentialGrant, error)
+	DeleteHTTPCredentialGrant(ctx context.Context, id int64) error
 }
 
 // CredentialFilter specifies list query criteria.

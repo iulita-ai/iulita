@@ -57,6 +57,29 @@ func DefaultConfig(paths *Paths) *Config {
 				Timeout:        "10s",
 				ForbiddenPaths: []string{"~/.ssh", "~/.gnupg", "/etc/shadow", "/etc/passwd"},
 			},
+			HTTP: HTTPSkillConfig{
+				// On by default: the tool registers whenever [proxy].url is
+				// configured; without a proxy it stays unavailable
+				// (proxy_required) and the rest of Iulita runs normally.
+				Enabled: true,
+				// Delivery requires an authenticated dashboard; the store is
+				// only wired when auth is active (main.go gate).
+				DownloadsEnabled:      true,
+				RawArtifactsEnabled:   true,
+				MaxDownloadBytes:      1_000_000_000,
+				ConsentThresholdBytes: 100_000_000,
+				MaxUploadBytes:        16 << 20,
+				InlineMaxBytes:        2 << 20,
+				MaxChainSteps:         10,
+				MaxRedirects:          5,
+				RequestTimeout:        "60s",
+				ChainBudget:           "5m",
+				WallTimeout:           "35m",
+				ArtifactDir:           paths.HTTPArtifactDir(),
+				ArtifactTTL:           "24h",
+				QuotaGlobalBytes:      5_000_000_000,
+				QuotaUserBytes:        1_000_000_000,
+			},
 			Google: GoogleConfig{
 				RedirectURL: "http://localhost:8080/api/google/callback",
 			},

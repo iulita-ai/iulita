@@ -161,3 +161,25 @@ func (s *Store) ListCredentialAudit(ctx context.Context, credentialID int64, lim
 	err := q.Scan(ctx)
 	return entries, err
 }
+
+// SaveHTTPCredentialGrant persists an origin-bound HTTP credential grant.
+func (s *Store) SaveHTTPCredentialGrant(ctx context.Context, g *domain.HTTPCredentialGrant) error {
+	_, err := s.db.NewInsert().Model(g).Exec(ctx)
+	return err
+}
+
+// ListHTTPCredentialGrants returns all grants for a credential.
+func (s *Store) ListHTTPCredentialGrants(ctx context.Context, credentialID int64) ([]domain.HTTPCredentialGrant, error) {
+	var grants []domain.HTTPCredentialGrant
+	err := s.db.NewSelect().Model(&grants).
+		Where("credential_id = ?", credentialID).
+		Order("id ASC").
+		Scan(ctx)
+	return grants, err
+}
+
+// DeleteHTTPCredentialGrant removes a grant by ID (ownership checked by caller).
+func (s *Store) DeleteHTTPCredentialGrant(ctx context.Context, id int64) error {
+	_, err := s.db.NewDelete().Model((*domain.HTTPCredentialGrant)(nil)).Where("id = ?", id).Exec(ctx)
+	return err
+}

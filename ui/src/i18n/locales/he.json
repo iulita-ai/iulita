@@ -17,7 +17,8 @@
     "credentials": "אישורים",
     "skillStats": "סטטיסטיקת כישורים",
     "skillProposals": "הצעות כישורים",
-    "models": "מודלים"
+    "models": "מודלים",
+    "files": "קבצים"
   },
   "common": {
     "save": "שמירה",
@@ -636,7 +637,20 @@
     "bound": "קשר נוסף",
     "unbound": "קשר הוסר",
     "ownerId": "בעלים",
-    "ownerIdPlaceholder": "מזהה משתמש"
+    "ownerIdPlaceholder": "מזהה משתמש",
+    "httpGrantsTab": "הרשאות HTTP",
+    "httpGrantsHint": "הרשאות לפי מקור: ה credential נשלח רק אל scheme+host+port המדויק המופיע כאן (כלי http_request).",
+    "noGrants": "אין הרשאות HTTP — ה credential עדיין אינו ניתן לשימוש ב-http_request",
+    "addGrant": "הוספת הרשאה",
+    "grantPrincipal": "משתמש",
+    "grantPrincipalId": "מזהה משתמש",
+    "grantPrincipalIdPlaceholder": "מזהה משתמש הדומיין (בעלים)",
+    "grantCaller": "קורא (רשות)",
+    "grantOrigin": "מקור",
+    "grantUsages": "שימושים",
+    "grantAdded": "ההרשאה נוספה",
+    "grantDeleted": "ההרשאה נמחקה",
+    "grantError": "פעולת ההרשאה נכשלה"
   },
   "skillStats": {
     "title": "טלמטריית כישורים",
@@ -823,5 +837,18 @@
     "noHistory": "גרסאות קודמות יופיעו לאחר הפעלת גרסה חדשה.",
     "preparePrevious": "הכנת גרסה זו לבדיקה",
     "legacyPreserved": "ההגדרה הקיימת נשמרה"
+  },
+  "files": {
+    "title": "קבצים",
+    "subtitle": "הורדות של הכלי http_request (לפי בעלים, פגות תוקף אוטומטית)",
+    "total": "{count} קבצים",
+    "filename": "קובץ",
+    "size": "גודל",
+    "expires": "פג תוקף",
+    "download": "הורדה",
+    "downloadFailed": "ההורדה נכשלה — ייתכן שהכרטיס פג",
+    "deleted": "הקובץ נמחק",
+    "deleteFailed": "המחיקה נכשלה",
+    "deleteConfirm": "למחוק קובץ זה לצמיתות?"
   }
 }

@@ -26,6 +26,17 @@ type RuntimeCaps struct {
 	ShellExecEnabled  bool         // true if shell_exec skill is enabled and configured
 	WebfetchAvailable bool         // true if webfetch skill is registered and enabled
 	HTTPClient        *http.Client // SSRF-safe HTTP client for proxy skills (optional)
+	HTTPToolAvailable bool         // true if the strict http_request tool is registered+enabled
+	// HTTPFetcher routes the legacy webfetch-proxy GETs through the strict
+	// engine when it exists (same proxy/policy); nil keeps the legacy
+	// client path — the legacy enable lifecycle is independent of the HTTP
+	// feature flag (plan §10.3).
+	HTTPFetcher HTTPPlanFetcher
+}
+
+// HTTPPlanFetcher is the narrow slice of the engine the legacy adapter uses.
+type HTTPPlanFetcher interface {
+	Run(ctx context.Context, plan []byte) (body string, status int, err error)
 }
 
 // Manager orchestrates external skill installation, loading, and lifecycle.
@@ -368,6 +379,19 @@ func (m *Manager) loadSkill(ctx context.Context, sk *domain.InstalledSkill) erro
 		return nil
 	}
 
+	// Skill dependencies (plan §10.2/§10.4): a missing dependency is an
+	// explicit diagnostic, never a silent capability downgrade. Executable
+	// code (shell/docker/wasm) cannot call the Go http_request tool — the
+	// bridge is deliberately unsupported until a scoped broker exists.
+	if err := m.validateSkillDependencies(isolation, parsed.Requires.Skills); err != nil {
+		m.log.Warn("skipping skill due to missing dependencies",
+			zap.String("slug", sk.Slug),
+			zap.Strings("requires.skills", parsed.Requires.Skills),
+			zap.Error(err),
+		)
+		return err
+	}
+
 	effectiveMode := isolation // track actual runtime mode
 
 	switch isolation {
@@ -426,6 +450,28 @@ func (m *Manager) loadSkill(ctx context.Context, sk *domain.InstalledSkill) erro
 	return nil
 }
 
+// validateSkillDependencies enforces requires.skills at load time. The
+// http_request tool is the only supported skill dependency so far; text-only
+// skills may depend on it (their instructions translate curl usage into the
+// structured tool), executable code may not (no bridge exists — plan §10.4).
+func (m *Manager) validateSkillDependencies(isolation string, required []string) error {
+	for _, dep := range required {
+		switch dep {
+		case "http_request":
+			switch isolation {
+			case "docker", "wasm", "shell":
+				return fmt.Errorf("dependency %q cannot be satisfied for %s-isolated executable code (native_http_bridge unsupported)", dep, isolation)
+			}
+			if !m.caps.HTTPToolAvailable {
+				return fmt.Errorf("dependency %q unavailable: the http_request tool is disabled or not registered (enable skills.http and configure [proxy].url)", dep)
+			}
+		default:
+			return fmt.Errorf("unknown skill dependency %q", dep)
+		}
+	}
+	return nil
+}
+
 // validateIsolation checks if the requested isolation level is allowed by config.
 func (m *Manager) validateIsolation(isolation string) error {
 	switch isolation {
@@ -460,7 +506,7 @@ func (m *Manager) registerWebfetchProxyOrTextOnly(slug string, parsed *ParsedMan
 		)
 		// Create proxy BEFORE clearing SystemPrompt — it parses URLs from the text.
 		parsed.Manifest.ForceTriggers = buildForceTriggers(parsed.Manifest.Name)
-		proxy := newWebfetchProxySkill(parsed.Manifest, m.caps.HTTPClient, parsed.Requires.Bins)
+		proxy := newWebfetchProxySkill(parsed.Manifest, m.caps.HTTPClient, m.caps.HTTPFetcher, parsed.Requires.Bins)
 		if len(proxy.urlHints) == 0 {
 			// No URL patterns found — proxy would be useless, fall back to text-only.
 			m.log.Warn("no URL patterns found in skill instructions, registering as text-only instead of proxy",

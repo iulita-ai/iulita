@@ -83,6 +83,12 @@ const router = createRouter({
       meta: { admin: true },
     },
     {
+      path: '/files',
+      name: 'files',
+      component: () => import('./views/Files.vue'),
+      // Available to every authenticated user: artifacts are owner-scoped.
+    },
+    {
       path: '/agent-jobs',
       name: 'agent-jobs',
       component: () => import('./views/AgentJobs.vue'),

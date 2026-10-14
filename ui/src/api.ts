@@ -63,6 +63,38 @@ export interface Directive {
   UpdatedAt: string
 }
 
+// HTTP artifact (owner-scoped download from http_request).
+export interface HTTPArtifactView {
+  id: string
+  filename: string
+  bytes: number
+  sha256: string
+  mime?: string
+  sensitive: boolean
+  expires_at: string
+}
+
+// HTTP origin grant: which exact scheme+host+port a credential may travel to.
+export interface HTTPGrantView {
+  id: number
+  credential_id: number
+  principal_type: 'user' | 'global'
+  principal_id?: string
+  caller_id?: string
+  scheme: string
+  host: string
+  port: string
+  usages: string[]
+  expires_at?: string | null
+  created_at: string
+  created_by: string
+}
+
+export interface ArtifactTicketResponse {
+  download_url: string
+  expires_in: number
+}
+
 export interface SkillInfo {
   name: string
   description: string
@@ -955,6 +987,12 @@ export const api = {
   },
   getTaskCounts: () => get<TaskCounts>('/api/tasks/counts'),
 
+  // HTTP artifacts (http_request downloads; owner-scoped)
+  getHTTPArtifacts: () => get<HTTPArtifactView[]>('/api/http-artifacts'),
+  deleteHTTPArtifact: (id: string) => del<{ status: string }>(`/api/http-artifacts/${id}`),
+  issueArtifactTicket: (id: string) =>
+    post<ArtifactTicketResponse>(`/api/http-artifacts/${id}/ticket`, {}),
+
   // Config (admin)
   getConfigDebug: () => get<ConfigDebugResponse>('/api/config/debug'),
   getConfig: () => get<ConfigListResponse>('/api/config/'),
@@ -1153,6 +1191,10 @@ export const api = {
     return get<CredentialView[]>(`/api/credentials${qs ? `?${qs}` : ''}`)
   },
   getCredential: (id: number) => get<CredentialDetail>(`/api/credentials/${id}`),
+  getHTTPGrants: (id: number) => get<HTTPGrantView[]>(`/api/credentials/${id}/http-grants`),
+  createHTTPGrant: (id: number, data: Partial<HTTPGrantView>) =>
+    post<HTTPGrantView>(`/api/credentials/${id}/http-grants`, data),
+  deleteHTTPGrant: (gid: number) => del<{ status: string }>(`/api/credentials/http-grants/${gid}`),
   createCredential: (data: {
     name: string; type: string; scope: string; value: string;
     owner_id?: string; description?: string; tags?: string[]; expires_at?: string;

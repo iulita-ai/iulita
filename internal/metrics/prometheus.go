@@ -39,6 +39,18 @@ type Metrics struct {
 	// Locations (share_location skill).
 	LocationOutbound *prometheus.CounterVec // labels: kind (pin/venue), outcome (sent/fallback/invalid/error)
 	LocationGeocode  *prometheus.CounterVec // labels: direction (forward), outcome (ok/error/throttled)
+
+	// HTTP tool (http_request engine). Labels are strictly bounded buckets:
+	// method bucket, status class, outcome, proxy scheme. No URLs, queries,
+	// usernames, headers, or operation IDs ever appear as label values.
+	HTTPRequests       *prometheus.CounterVec   // labels: method, status_class, outcome
+	HTTPBytesRead      *prometheus.CounterVec   // labels: direction (inline/download)
+	HTTPDuration       *prometheus.HistogramVec // labels: method
+	HTTPInflight       prometheus.Gauge
+	HTTPPendingConsent prometheus.Gauge
+	HTTPArtifactBytes  *prometheus.CounterVec // labels: op (stored/deleted)
+	HTTPConsentAsks    *prometheus.CounterVec // labels: reason, outcome
+
 }
 
 // New registers all Prometheus metrics and returns a Metrics instance.
@@ -193,5 +205,34 @@ func New() *Metrics {
 			Namespace: "iulita", Subsystem: "location", Name: "geocode_total",
 			Help: "Geocode lookups via the geolocation skill, by direction and outcome.",
 		}, []string{"direction", "outcome"}),
+		HTTPRequests: promauto.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "iulita", Subsystem: "http", Name: "requests_total",
+			Help: "http_request engine steps by method bucket, status class, and outcome. HTTP 4xx/5xx count as successful transports with http_error outcomes.",
+		}, []string{"method", "status_class", "outcome"}),
+		HTTPBytesRead: promauto.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "iulita", Subsystem: "http", Name: "bytes_read_total",
+			Help: "Entity bytes consumed by the HTTP engine, by consumption mode.",
+		}, []string{"direction"}),
+		HTTPDuration: promauto.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: "iulita", Subsystem: "http", Name: "step_duration_seconds",
+			Help:    "HTTP engine step wall time by method bucket.",
+			Buckets: []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 300},
+		}, []string{"method"}),
+		HTTPInflight: promauto.NewGauge(prometheus.GaugeOpts{
+			Namespace: "iulita", Subsystem: "http", Name: "transfers_inflight",
+			Help: "Active HTTP engine network transfers.",
+		}),
+		HTTPPendingConsent: promauto.NewGauge(prometheus.GaugeOpts{
+			Namespace: "iulita", Subsystem: "http", Name: "pending_confirmations",
+			Help: "Paused download streams holding a response open while awaiting human confirmation.",
+		}),
+		HTTPArtifactBytes: promauto.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "iulita", Subsystem: "http", Name: "artifact_bytes_total",
+			Help: "Artifact bytes stored and deleted by the HTTP engine.",
+		}, []string{"op"}),
+		HTTPConsentAsks: promauto.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "iulita", Subsystem: "http", Name: "consent_asks_total",
+			Help: "Identity-bound confirmation asks by reason and outcome.",
+		}, []string{"reason", "outcome"}),
 	}
 }

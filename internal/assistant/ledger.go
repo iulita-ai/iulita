@@ -16,7 +16,8 @@ type ExplorationLedger struct {
 
 type ledgerEntry struct {
 	ToolName string
-	InputKey string // normalized input for dedup
+	InputKey string // normalized input for dedup ("" for non-cacheable calls)
+	Display  string // sanitized one-line input description for the summary
 	Result   string
 	IsError  bool
 }
@@ -31,6 +32,24 @@ func (l *ExplorationLedger) Record(tc llm.ToolCall, result llm.ToolResult) {
 	l.entries = append(l.entries, ledgerEntry{
 		ToolName: tc.Name,
 		InputKey: normalizeInput(tc.Input),
+		Display:  truncate(normalizeInput(tc.Input), 80),
+		Result:   result.Content,
+		IsError:  result.IsError,
+	})
+}
+
+// RecordNonCacheable stores an operation whose identical re-issue is a
+// separate operation (HTTP requests, mutations): it is excluded from the
+// dedup cache and rendered in the summary via the sanitized display line
+// instead of the raw input.
+func (l *ExplorationLedger) RecordNonCacheable(tc llm.ToolCall, result llm.ToolResult, display string) {
+	if display == "" {
+		display = tc.Name
+	}
+	l.entries = append(l.entries, ledgerEntry{
+		ToolName: tc.Name,
+		InputKey: "", // never matched by IsDuplicate
+		Display:  truncate(display, 120),
 		Result:   result.Content,
 		IsError:  result.IsError,
 	})
@@ -39,6 +58,9 @@ func (l *ExplorationLedger) Record(tc llm.ToolCall, result llm.ToolResult) {
 // IsDuplicate returns true if an identical tool call was already made.
 func (l *ExplorationLedger) IsDuplicate(tc llm.ToolCall) (string, bool) {
 	key := normalizeInput(tc.Input)
+	if key == "" {
+		return "", false
+	}
 	for _, e := range l.entries {
 		if e.ToolName == tc.Name && e.InputKey == key {
 			return e.Result, true
@@ -61,7 +83,7 @@ func (l *ExplorationLedger) Summary() string {
 		if e.IsError {
 			status = "error"
 		}
-		fmt.Fprintf(&b, "%d. %s(%s) → %s\n", i+1, e.ToolName, truncate(e.InputKey, 80), status)
+		fmt.Fprintf(&b, "%d. %s(%s) → %s\n", i+1, e.ToolName, e.Display, status)
 	}
 	return b.String()
 }

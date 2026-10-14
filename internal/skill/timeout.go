@@ -35,6 +35,36 @@ func DefaultDeadlineExtender(ctx context.Context, d time.Duration) (context.Cont
 	return context.WithTimeout(context.WithoutCancel(ctx), d)
 }
 
+// LifecycleExtender is a DeadlineExtender that breaks the per-turn deadline
+// chain (like DefaultDeadlineExtender) but keeps the APPLICATION ROOT
+// cancellation alive: a shutdown signal cancels the extended work instead of
+// letting it run orphaned (HTTP plan §11). A nil root degrades to the default
+// behavior.
+func LifecycleExtender(root context.Context) DeadlineExtender {
+	return func(ctx context.Context, d time.Duration) (context.Context, context.CancelFunc) {
+		extended, cancel := context.WithTimeout(context.WithoutCancel(ctx), d)
+		if root == nil {
+			return extended, cancel
+		}
+		stop := make(chan struct{})
+		go func() {
+			select {
+			case <-root.Done():
+				cancel()
+			case <-stop:
+			}
+		}()
+		return extended, func() {
+			select {
+			case <-stop:
+			default:
+				close(stop)
+			}
+			cancel()
+		}
+	}
+}
+
 // TimeoutDeclarer is an optional interface for skills that require a longer
 // execution deadline than the default request timeout. When a skill implements
 // this and a DeadlineExtender is available in the context, the assistant will

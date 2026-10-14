@@ -198,6 +198,34 @@ Runtime-editable configuration stored in the `config_overrides` SQLite table. Ma
 | `scheduler.enabled` | true | Enable task scheduler |
 | `scheduler.worker_token` | — | Bearer token for remote workers |
 
+### Skills: HTTP tool (`[skills.http]`)
+
+Strict `http_request` tool settings. The proxy always comes from
+`[proxy].url` and is mandatory for this tool. Most limits are startup-only;
+`enabled` is hot-reloadable. `consent_threshold_bytes` can only be lowered,
+never raised above 100 MB.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `skills.http.enabled` | true | Register the http_request tool (needs `[proxy].url`) |
+| `skills.http.downloads_enabled` | true | Enable streamed downloads + Files-view delivery (effective with auth) |
+| `skills.http.raw_artifacts_enabled` | true | Allow `include_raw_artifact` owner-private copies |
+| `skills.http.allowed_methods` | `[]` | Method allowlist (empty = all) |
+| `skills.http.allowed_ports` | `[]` | Port allowlist (empty = 1–65535) |
+| `skills.http.max_download_bytes` | 1000000000 | Download hard cap |
+| `skills.http.consent_threshold_bytes` | 100000000 | Download consent threshold (lowering only) |
+| `skills.http.max_upload_bytes` | 16777216 | Request body cap |
+| `skills.http.inline_max_bytes` | 2097152 | Inline response read cap |
+| `skills.http.max_chain_steps` | 10 | Steps per chain |
+| `skills.http.max_redirects` | 5 | Redirect hops (same_origin mode) |
+| `skills.http.request_timeout` | 60s | Per non-download step |
+| `skills.http.chain_budget` | 5m | Summed non-download steps per run |
+| `skills.http.wall_timeout` | 35m | Whole-operation wall clock (incl. consent waits) |
+| `skills.http.artifact_dir` | `<data>/http-artifacts` | Artifact storage root (0700) |
+| `skills.http.artifact_ttl` | 24h | Artifact retention |
+| `skills.http.quota_global_bytes` | 5000000000 | Global artifact quota |
+| `skills.http.quota_user_bytes` | 1000000000 | Per-user artifact quota |
+
 ### Cost
 
 | Key | Default | Description |

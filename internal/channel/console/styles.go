@@ -3,18 +3,18 @@ package console
 import "github.com/charmbracelet/lipgloss"
 
 type uiStyles struct {
-	userLabel     lipgloss.Style
-	botLabel      lipgloss.Style
-	userMsg       lipgloss.Style
-	botMsg        lipgloss.Style
-	statusLine    lipgloss.Style
-	errorLine     lipgloss.Style
-	divider       lipgloss.Style
-	statusBar     lipgloss.Style
-	skillBadge    lipgloss.Style
-	thinkBadge    lipgloss.Style
-	helpKey       lipgloss.Style
-	helpDesc      lipgloss.Style
+	userLabel  lipgloss.Style
+	botLabel   lipgloss.Style
+	userMsg    lipgloss.Style
+	botMsg     lipgloss.Style
+	statusLine lipgloss.Style
+	errorLine  lipgloss.Style
+	divider    lipgloss.Style
+	statusBar  lipgloss.Style
+	skillBadge lipgloss.Style
+	thinkBadge lipgloss.Style
+	helpKey    lipgloss.Style
+	helpDesc   lipgloss.Style
 }
 
 func defaultStyles() uiStyles {

@@ -17,7 +17,8 @@
     "credentials": "Identifiants",
     "skillStats": "Stats des compétences",
     "skillProposals": "Propositions de compétences",
-    "models": "Modèles"
+    "models": "Modèles",
+    "files": "Fichiers"
   },
   "common": {
     "save": "Enregistrer",
@@ -636,7 +637,20 @@
     "bound": "Liaison ajoutée",
     "unbound": "Liaison supprimée",
     "ownerId": "Propriétaire",
-    "ownerIdPlaceholder": "ID utilisateur"
+    "ownerIdPlaceholder": "ID utilisateur",
+    "httpGrantsTab": "Droits HTTP",
+    "httpGrantsHint": "Droits liés à l'origine : le credential ne voyage que vers le scheme+hôte+port exact listé ici (outil http_request).",
+    "noGrants": "Aucun droit HTTP — le credential n'est pas encore utilisable par http_request",
+    "addGrant": "Ajouter un droit",
+    "grantPrincipal": "Principal",
+    "grantPrincipalId": "ID utilisateur",
+    "grantPrincipalIdPlaceholder": "ID utilisateur du domaine (propriétaire)",
+    "grantCaller": "Appelant (optionnel)",
+    "grantOrigin": "Origine",
+    "grantUsages": "Usages",
+    "grantAdded": "Droit ajouté",
+    "grantDeleted": "Droit supprimé",
+    "grantError": "Échec de l'opération sur le droit"
   },
   "skillStats": {
     "title": "Télémétrie des compétences",
@@ -823,5 +837,18 @@
     "noHistory": "Les versions précédentes apparaîtront après application d'une nouvelle version.",
     "preparePrevious": "Préparer cette version pour les tests",
     "legacyPreserved": "Configuration existante conservée"
+  },
+  "files": {
+    "title": "Fichiers",
+    "subtitle": "Téléchargements de l'outil http_request (par propriétaire, expirent automatiquement)",
+    "total": "{count} fichier(s)",
+    "filename": "Fichier",
+    "size": "Taille",
+    "expires": "Expire",
+    "download": "Télécharger",
+    "downloadFailed": "Échec du téléchargement — le ticket a peut-être expiré",
+    "deleted": "Fichier supprimé",
+    "deleteFailed": "Échec de la suppression",
+    "deleteConfirm": "Supprimer définitivement ce fichier ?"
   }
 }
