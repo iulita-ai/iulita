@@ -274,3 +274,19 @@ func TestSanitizeTGError(t *testing.T) {
 		t.Fatalf("non-url error must pass through: %v", got)
 	}
 }
+
+func TestAudioFormat(t *testing.T) {
+	tests := []struct{ mime, want string }{
+		{"audio/ogg", "ogg"},
+		{"", "ogg"},
+		{"audio/mpeg", "mp3"},
+		{"audio/mp4", "m4a"},
+		{"audio/wav", "wav"},
+		{"audio/webm", "webm"},
+	}
+	for _, tt := range tests {
+		if got := audioFormat(tt.mime); got != tt.want {
+			t.Errorf("audioFormat(%q) = %q, want %q", tt.mime, got, tt.want)
+		}
+	}
+}

@@ -20,6 +20,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/ratelimit"
 	"github.com/iulita-ai/iulita/internal/security"
 	"github.com/iulita-ai/iulita/internal/storage"
+	"github.com/iulita-ai/iulita/internal/transcription"
 )
 
 // ClearFunc is called to clear conversation history for a chat.
@@ -399,22 +400,34 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 		if hasVoice || hasAudio {
 			var fileID string
 			var duration int
+			var fileSize int64
+			mime := "audio/ogg"
 			if hasVoice {
 				fileID = update.Message.Voice.FileID
 				duration = update.Message.Voice.Duration
+				fileSize = update.Message.Voice.FileSize
 			} else {
 				fileID = update.Message.Audio.FileID
 				duration = update.Message.Audio.Duration
+				fileSize = update.Message.Audio.FileSize
+				if update.Message.Audio.MimeType != "" {
+					mime = update.Message.Audio.MimeType
+				}
 			}
 
-			if c.transcriber != nil {
+			switch {
+			case c.transcriber != nil && fileSize > transcription.MaxAudioBytes:
+				c.logger.Warn("voice/audio too large for transcription, skipping",
+					zap.Int64("size", fileSize),
+					zap.String("chat_id", chatID))
+			case c.transcriber != nil:
 				data, err := c.downloadFile(ctx, fileID)
 				if err != nil {
 					c.logger.Error("failed to download voice message", zap.Error(err), zap.String("chat_id", chatID))
 				} else {
-					transcribed, err := c.transcriber.Transcribe(ctx, data, "ogg")
-					if err != nil {
-						c.logger.Error("failed to transcribe voice message", zap.Error(err), zap.String("chat_id", chatID))
+					transcribed, terr := c.transcriber.Transcribe(ctx, data, audioFormat(mime))
+					if terr != nil {
+						c.logger.Error("failed to transcribe voice message", zap.Error(terr), zap.String("chat_id", chatID))
 					} else if transcribed != "" {
 						localeCtx := i18n.WithLocale(ctx, i18n.ResolveLocale(msg.Locale, msg.LanguageCode))
 						prefix := i18n.T(localeCtx, "TelegramVoicePrefix")
@@ -428,7 +441,7 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 				msg.Audio = []channel.AudioAttachment{
 					{Format: "ogg", Duration: duration},
 				}
-			} else {
+			default:
 				c.logger.Debug("voice message received but no transcriber configured",
 					zap.String("chat_id", chatID), zap.Int("duration", duration))
 			}

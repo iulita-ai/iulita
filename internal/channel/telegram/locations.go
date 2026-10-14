@@ -83,3 +83,21 @@ func hasUpdateContent(m *models.Message) bool {
 	return m.Text != "" || len(m.Photo) > 0 || m.Document != nil ||
 		m.Voice != nil || m.Audio != nil || m.Location != nil || m.Venue != nil
 }
+
+// audioFormat maps a Telegram audio MIME type to the file extension the
+// transcription multipart upload expects. Voice notes are always OGG/Opus;
+// music files keep their container.
+func audioFormat(mime string) string {
+	switch mime {
+	case "audio/mpeg", "audio/mp3":
+		return "mp3"
+	case "audio/mp4", "audio/x-m4a":
+		return "m4a"
+	case "audio/wav", "audio/x-wav":
+		return "wav"
+	case "audio/webm":
+		return "webm"
+	default:
+		return "ogg"
+	}
+}

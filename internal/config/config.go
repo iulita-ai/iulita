@@ -130,6 +130,7 @@ type TranscriptionConfig struct {
 	Provider string `koanf:"provider"` // "openai" or empty (disabled)
 	APIKey   string `koanf:"api_key"`  // API key for the provider
 	Model    string `koanf:"model"`    // model name (default: "whisper-1")
+	BaseURL  string `koanf:"base_url"` // Whisper-compatible endpoint override (groq, self-hosted); empty = OpenAI
 }
 
 // AuthConfig controls user authentication and multi-user mode.

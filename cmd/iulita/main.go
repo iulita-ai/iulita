@@ -1415,11 +1415,14 @@ func main() {
 			zap.Int("rate", configRateLimit), zap.Duration("window", configRateWindow))
 	}
 
-	// Voice message transcription.
+	// Voice message transcription (any Whisper-compatible endpoint).
 	var transcriber telegram.TranscriptionProvider
 	if cfg.Transcription.Provider == "openai" && cfg.Transcription.APIKey != "" {
-		transcriber = transcription.NewOpenAI(cfg.Transcription.APIKey, cfg.Transcription.Model, httpClient)
-		logger.Info("voice transcription enabled", zap.String("provider", "openai"))
+		transcriber = transcription.NewOpenAI(cfg.Transcription.APIKey, cfg.Transcription.Model, cfg.Transcription.BaseURL, httpClient)
+		logger.Info("voice transcription enabled",
+			zap.String("provider", "openai"),
+			zap.String("model", cfg.Transcription.Model),
+			zap.String("base_url", cfg.Transcription.BaseURL))
 	}
 
 	mgr := channelmgr.New(channelmgr.Config{

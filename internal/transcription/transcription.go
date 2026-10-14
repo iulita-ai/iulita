@@ -9,14 +9,21 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"strings"
 )
+
+// MaxAudioBytes is the transcription payload cap (Whisper-compatible APIs
+// accept 25 MB; guard with headroom for the multipart envelope).
+const MaxAudioBytes = 24 * 1024 * 1024
 
 // Provider transcribes audio data to text.
 type Provider interface {
 	Transcribe(ctx context.Context, audio []byte, format string) (string, error)
 }
 
-// OpenAI implements Provider using OpenAI's Whisper API.
+// OpenAI implements Provider using OpenAI's Whisper API. Any
+// Whisper-compatible endpoint works via baseURL (groq, whisper.cpp servers,
+// Azure-style gateways): it must expose POST {baseURL}/audio/transcriptions.
 type OpenAI struct {
 	apiKey     string
 	model      string
@@ -24,20 +31,29 @@ type OpenAI struct {
 	baseURL    string
 }
 
-// NewOpenAI creates a new OpenAI Whisper transcription provider.
-func NewOpenAI(apiKey, model string, httpClient *http.Client) *OpenAI {
+// NewOpenAI creates a Whisper transcription provider. Empty baseURL defaults
+// to https://api.openai.com/v1; empty model defaults to whisper-1.
+func NewOpenAI(apiKey, model, baseURL string, httpClient *http.Client) *OpenAI {
 	if model == "" {
 		model = "whisper-1"
+	}
+	if baseURL == "" {
+		baseURL = "https://api.openai.com/v1"
 	}
 	return &OpenAI{
 		apiKey:     apiKey,
 		model:      model,
 		httpClient: httpClient,
-		baseURL:    "https://api.openai.com/v1",
+		baseURL:    strings.TrimSuffix(baseURL, "/"),
 	}
 }
 
+// Transcribe uploads the audio (with a format-derived extension) to the
+// configured Whisper-compatible endpoint and returns the transcribed text.
 func (o *OpenAI) Transcribe(ctx context.Context, audio []byte, format string) (string, error) {
+	if len(audio) > MaxAudioBytes {
+		return "", fmt.Errorf("audio too large for transcription: %d bytes (max %d)", len(audio), MaxAudioBytes)
+	}
 	if format == "" {
 		format = "ogg"
 	}
@@ -49,15 +65,15 @@ func (o *OpenAI) Transcribe(ctx context.Context, audio []byte, format string) (s
 	if err != nil {
 		return "", fmt.Errorf("creating form file: %w", err)
 	}
-	if _, err := part.Write(audio); err != nil {
-		return "", fmt.Errorf("writing audio data: %w", err)
+	if _, werr := part.Write(audio); werr != nil {
+		return "", fmt.Errorf("writing audio data: %w", werr)
 	}
 
-	if err := writer.WriteField("model", o.model); err != nil {
-		return "", fmt.Errorf("writing model field: %w", err)
+	if werr := writer.WriteField("model", o.model); werr != nil {
+		return "", fmt.Errorf("writing model field: %w", werr)
 	}
-	if err := writer.Close(); err != nil {
-		return "", fmt.Errorf("closing multipart writer: %w", err)
+	if werr := writer.Close(); werr != nil {
+		return "", fmt.Errorf("closing multipart writer: %w", werr)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, o.baseURL+"/audio/transcriptions", &body)
@@ -71,7 +87,7 @@ func (o *OpenAI) Transcribe(ctx context.Context, audio []byte, format string) (s
 	if err != nil {
 		return "", fmt.Errorf("transcription request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // read-only body
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
