@@ -1417,32 +1417,47 @@ func main() {
 
 	// Voice message transcription (any Whisper-compatible endpoint).
 	// Every setting resolves from the credential store first (dashboard-managed,
-	// no sealed-secret re-rolls) with the config values as fallback; a key
-	// alone enables the feature (provider defaults to "openai").
+	// no sealed-secret re-rolls) with the config values as fallback.
+	// Zero-config default: GLM-ASR transcription on the existing z.ai
+	// credential (same base URL as the LLM API) — voice works out of the box
+	// on zai deployments. Note: glm-asr-2512 caps clips at 30 seconds.
 	buildTranscriber := func() telegram.TranscriptionProvider {
 		key := cfg.Transcription.APIKey
-		if v, ok := cfgStore.GetEffective("transcription.api_key"); ok && v != "" {
-			key = v
-		}
-		if key == "" {
-			return nil
-		}
 		provider := cfg.Transcription.Provider
-		if v, ok := cfgStore.GetEffective("transcription.provider"); ok && v != "" {
-			provider = v
-		}
-		if provider == "" {
-			provider = "openai"
-		}
 		model := cfg.Transcription.Model
-		if v, ok := cfgStore.GetEffective("transcription.model"); ok && v != "" {
-			model = v
-		}
 		baseURL := cfg.Transcription.BaseURL
-		if v, ok := cfgStore.GetEffective("transcription.base_url"); ok && v != "" {
-			baseURL = v
+		for k, dst := range map[string]*string{
+			"transcription.api_key":  &key,
+			"transcription.provider": &provider,
+			"transcription.model":    &model,
+			"transcription.base_url": &baseURL,
+		} {
+			if v, ok := cfgStore.GetEffective(k); ok && v != "" {
+				*dst = v
+			}
 		}
-		if provider != "openai" {
+		if provider == "" && key == "" {
+			if zk, ok := cfgStore.GetEffective("zai.api_key"); ok && zk != "" {
+				provider, key = "zai", zk
+			}
+		}
+		if provider == "zai" {
+			if key == "" {
+				if zk, ok := cfgStore.GetEffective("zai.api_key"); ok && zk != "" {
+					key = zk
+				}
+			}
+			if key == "" {
+				return nil
+			}
+			if baseURL == "" {
+				baseURL = "https://api.z.ai/api/paas/v4"
+			}
+			if model == "" {
+				model = "glm-asr-2512"
+			}
+		}
+		if key == "" || (provider != "openai" && provider != "zai") {
 			return nil
 		}
 		logger.Info("voice transcription enabled",
