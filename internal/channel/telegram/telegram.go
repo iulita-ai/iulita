@@ -18,6 +18,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/channel"
 	"github.com/iulita-ai/iulita/internal/i18n"
 	"github.com/iulita-ai/iulita/internal/ratelimit"
+	"github.com/iulita-ai/iulita/internal/security"
 	"github.com/iulita-ai/iulita/internal/storage"
 )
 
@@ -51,6 +52,7 @@ type Channel struct {
 	remembers      *rememberState        // pending bookmark buttons
 	statusMsgs     *statusState          // live status messages per chat
 	sentMsgs       *sentTracker          // recent sent texts (🔖 reactions, /clear deletes)
+	draftStreaming bool                  // experimental sendMessageDraft streaming
 	locLimiter     *ratelimit.Limiter    // outbound location sends: 10/hour/chat (set in New)
 	logger         *zap.Logger
 	wg             sync.WaitGroup // tracks in-flight message processing
@@ -80,6 +82,11 @@ func (c *Channel) SetTranscriber(t TranscriptionProvider) {
 func (c *Channel) SetInstanceID(id string) {
 	c.instanceID = id
 }
+
+// SetDraftStreaming toggles experimental sendMessageDraft reply streaming
+// (Bot API 9.3+): partial replies render client-side as a live draft; the
+// final message replaces it. Off (default) = placeholder-message edits.
+func (c *Channel) SetDraftStreaming(on bool) { c.draftStreaming = on }
 
 // RegisterCommand adds a slash command handler with a description for the Telegram menu.
 func (c *Channel) RegisterCommand(name, description string, fn CommandFunc) {
@@ -182,6 +189,20 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 			c.logger.Error("handler error", zap.Error(err), zap.String("chat_id", msg.ChatID))
 			localeCtx := i18n.WithLocale(handlerCtx, i18n.ResolveLocale(msg.Locale, msg.LanguageCode))
 			response = i18n.T(localeCtx, "TelegramErrorResponse")
+		}
+
+		// Secret-looking replies (keys, tokens, passwords) go out as ephemeral
+		// messages: visible to the recipient only, no bookmark/copy buttons,
+		// not left lingering in the chat (Bot API 10.2).
+		if matched, pattern := security.Contains(response); matched && err == nil {
+			c.logger.Info("reply contains suspected secret, sending ephemeral",
+				zap.String("chat_id", msg.ChatID), zap.String("pattern", pattern))
+			uid, parseErr := strconv.ParseInt(msg.UserID, 10, 64)
+			if parseErr != nil {
+				uid = tgChatID // DM fallback: chat == user
+			}
+			_, _ = c.sendEphemeralHTML(tgChatID, uid, toTelegramHTML(response), msg.MessageID) //nolint:errcheck // logged inside
+			return
 		}
 
 		if c.rememberSvc != nil && response != "" && !skipBookmark && err == nil {
@@ -526,51 +547,87 @@ func (c *Channel) StartStream(_ context.Context, chatID string, replyTo int) (fu
 		return nil, nil, fmt.Errorf("invalid chat ID: %w", err)
 	}
 
-	// Reuse the status message if it was consumed by stream_start AND the task was quick.
-	// For long tasks (>30s), keep the status message as a separate log and send a fresh response.
 	var msgID int
-	if entry, ok := c.statusMsgs.get(chatID); ok && entry.isConsumed() && !entry.isLongTask() {
-		msgID = entry.getMsgID()
-		c.statusMsgs.remove(chatID)
-		// Edit status message to streaming placeholder.
-		_, _ = c.bot.EditMessageText(context.Background(), &bot.EditMessageTextParams{ //nolint:errcheck // best-effort placeholder
-			ChatID:    tgChatID,
-			MessageID: msgID,
-			Text:      "...",
-		})
-	} else {
-		// For long tasks: finalize the status message with total time, then send fresh response.
-		if entry, ok := c.statusMsgs.get(chatID); ok && entry.isConsumed() {
-			c.finalizeStatusMessage(chatID, entry)
-		}
-		p := &bot.SendMessageParams{ChatID: tgChatID, Text: "..."}
-		if replyTo > 0 {
-			p.ReplyParameters = &models.ReplyParameters{MessageID: replyTo}
-		}
-		sent, sendErr := c.bot.SendMessage(context.Background(), p)
-		if sendErr != nil {
-			return nil, nil, fmt.Errorf("sending initial stream message: %w", sendErr)
-		}
-		msgID = sent.ID
-	}
 	var lastEdit time.Time
+	// Experimental draft streaming: partials render client-side; the final
+	// message replaces the draft. Any draft failure degrades to the classic
+	// placeholder-message path transparently.
+	draftID := ""
+	if c.draftStreaming {
+		draftID = "draft-" + generateNonce()
+	}
+
+	if draftID == "" {
+		// Reuse the status message if it was consumed by stream_start AND the task was quick.
+		// For long tasks (>30s), keep the status message as a separate log and send fresh response.
+		if entry, ok := c.statusMsgs.get(chatID); ok && entry.isConsumed() && !entry.isLongTask() {
+			msgID = entry.getMsgID()
+			c.statusMsgs.remove(chatID)
+			// Edit status message to streaming placeholder.
+			_, _ = c.bot.EditMessageText(context.Background(), &bot.EditMessageTextParams{ //nolint:errcheck // best-effort placeholder
+				ChatID:    tgChatID,
+				MessageID: msgID,
+				Text:      "...",
+			})
+		} else {
+			// For long tasks: finalize the status message with total time, then send fresh response.
+			if entry, ok := c.statusMsgs.get(chatID); ok && entry.isConsumed() {
+				c.finalizeStatusMessage(chatID, entry)
+			}
+			p := &bot.SendMessageParams{ChatID: tgChatID, Text: "..."}
+			if replyTo > 0 {
+				p.ReplyParameters = &models.ReplyParameters{MessageID: replyTo}
+			}
+			sent, sendErr := c.bot.SendMessage(context.Background(), p)
+			if sendErr != nil {
+				return nil, nil, fmt.Errorf("sending initial stream message: %w", sendErr)
+			}
+			msgID = sent.ID
+		}
+	}
 
 	editFn := func(text string) {
 		if time.Since(lastEdit) < 1500*time.Millisecond {
 			return // coalesce edits
 		}
-		_, err := c.bot.EditMessageText(context.Background(), &bot.EditMessageTextParams{
+		if draftID != "" {
+			if _, derr := c.bot.SendMessageDraft(context.Background(), &bot.SendMessageDraftParams{
+				ChatID:  tgChatID,
+				DraftID: draftID,
+				Text:    text,
+			}); derr == nil {
+				lastEdit = time.Now()
+				return
+			} else {
+				c.logger.Debug("draft streaming failed, falling back to placeholder edits", zap.Error(derr))
+				draftID = ""
+				if sent, sendErr := c.bot.SendMessage(context.Background(), &bot.SendMessageParams{ChatID: tgChatID, Text: "..."}); sendErr == nil {
+					msgID = sent.ID
+				}
+			}
+		}
+		if msgID == 0 {
+			return
+		}
+		if _, eerr := c.bot.EditMessageText(context.Background(), &bot.EditMessageTextParams{
 			ChatID:    tgChatID,
 			MessageID: msgID,
 			Text:      text,
-		})
-		if err != nil {
-			c.logger.Debug("stream edit failed", zap.Error(err))
+		}); eerr != nil {
+			c.logger.Debug("stream edit failed", zap.Error(eerr))
 		}
 		lastEdit = time.Now()
 	}
 
 	doneFn := func(text string) {
+		if draftID != "" {
+			// Final message replaces the draft bubble.
+			_, _ = c.sendHTML(tgChatID, toTelegramHTML(text), replyTo, nil, "") //nolint:errcheck // sendHTML logs failures
+			return
+		}
+		if msgID == 0 {
+			return
+		}
 		c.editHTML(tgChatID, msgID, toTelegramHTML(text), "")
 		c.sentMsgs.record(tgChatID, msgID, text)
 	}

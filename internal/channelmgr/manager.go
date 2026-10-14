@@ -115,6 +115,9 @@ type Config struct {
 	ConfigRateLimit  int
 	ConfigRateWindow time.Duration
 
+	// DraftStreaming enables experimental sendMessageDraft reply streaming.
+	ConfigDraftStreaming bool
+
 	// Transcriber for voice messages (nil = disabled).
 	Transcriber telegram.TranscriptionProvider
 
@@ -149,7 +152,8 @@ type Manager struct {
 	configRateLimit  int
 	configRateWindow time.Duration
 
-	transcriber telegram.TranscriptionProvider
+	transcriber    telegram.TranscriptionProvider
+	draftStreaming bool
 
 	bookmarkSvc       bookmark.Service       // nil = no bookmark feature
 	commandRegistrar  CommandRegistrar       // set via SetCommandRegistrar
@@ -180,6 +184,7 @@ func New(cfg Config) *Manager {
 		configRateLimit:    cfg.ConfigRateLimit,
 		configRateWindow:   cfg.ConfigRateWindow,
 		transcriber:        cfg.Transcriber,
+		draftStreaming:     cfg.ConfigDraftStreaming,
 		bus:                cfg.Bus,
 		logger:             cfg.Logger,
 	}
@@ -883,6 +888,8 @@ func (m *Manager) createTelegramChannel(instance domain.ChannelInstance) (*teleg
 	if err != nil {
 		return nil, err
 	}
+
+	tg.SetDraftStreaming(m.draftStreaming)
 
 	if rateLimit > 0 {
 		if rateWindow == 0 {

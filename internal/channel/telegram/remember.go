@@ -227,29 +227,37 @@ func (c *Channel) StartStreamWithBookmark(ctx context.Context, chatID string, re
 		return nil, nil, fmt.Errorf("invalid chat ID: %w", err)
 	}
 
-	// Reuse the status message if it was consumed by stream_start AND the task was quick.
 	var msgID int
-	if entry, ok := c.statusMsgs.get(chatID); ok && entry.isConsumed() && !entry.isLongTask() {
-		msgID = entry.getMsgID()
-		c.statusMsgs.remove(chatID)
-		_, _ = c.bot.EditMessageText(context.Background(), &bot.EditMessageTextParams{ //nolint:errcheck // best-effort placeholder
-			ChatID:    tgChatID,
-			MessageID: msgID,
-			Text:      "...",
-		})
-	} else {
-		if entry, ok := c.statusMsgs.get(chatID); ok && entry.isConsumed() {
-			c.finalizeStatusMessage(chatID, entry)
+	// Experimental draft streaming (see StartStream); degrades transparently.
+	draftID := ""
+	if c.draftStreaming {
+		draftID = "draft-" + generateNonce()
+	}
+
+	if draftID == "" {
+		// Reuse the status message if it was consumed by stream_start AND the task was quick.
+		if entry, ok := c.statusMsgs.get(chatID); ok && entry.isConsumed() && !entry.isLongTask() {
+			msgID = entry.getMsgID()
+			c.statusMsgs.remove(chatID)
+			_, _ = c.bot.EditMessageText(context.Background(), &bot.EditMessageTextParams{ //nolint:errcheck // best-effort placeholder
+				ChatID:    tgChatID,
+				MessageID: msgID,
+				Text:      "...",
+			})
+		} else {
+			if entry, ok := c.statusMsgs.get(chatID); ok && entry.isConsumed() {
+				c.finalizeStatusMessage(chatID, entry)
+			}
+			p := &bot.SendMessageParams{ChatID: tgChatID, Text: "..."}
+			if replyTo > 0 {
+				p.ReplyParameters = &models.ReplyParameters{MessageID: replyTo}
+			}
+			sent, sendErr := c.bot.SendMessage(context.Background(), p)
+			if sendErr != nil {
+				return nil, nil, fmt.Errorf("sending initial stream message: %w", sendErr)
+			}
+			msgID = sent.ID
 		}
-		p := &bot.SendMessageParams{ChatID: tgChatID, Text: "..."}
-		if replyTo > 0 {
-			p.ReplyParameters = &models.ReplyParameters{MessageID: replyTo}
-		}
-		sent, sendErr := c.bot.SendMessage(context.Background(), p)
-		if sendErr != nil {
-			return nil, nil, fmt.Errorf("sending initial stream message: %w", sendErr)
-		}
-		msgID = sent.ID
 	}
 
 	var lastEditNs atomic.Int64
@@ -261,6 +269,35 @@ func (c *Channel) StartStreamWithBookmark(ctx context.Context, chatID string, re
 		locale = tag.String()
 	}
 
+	// bookmarkMarkup builds the 💾(+📋) keyboard and registers the remember entry.
+	bookmarkMarkup := func(text string) models.ReplyMarkup {
+		if c.rememberSvc == nil {
+			return nil
+		}
+		nonce := generateNonce()
+		cbData := "remember:" + nonce
+
+		tag := i18n.ResolveLocale(locale, "en")
+		markup := bookmarkKeyboard(
+			i18n.Tl(tag, "BookmarkButton"),
+			i18n.Tl(tag, "CopyButton"),
+			cbData,
+			text,
+		)
+
+		c.remembers.store(cbData, &rememberEntry{
+			tgChatID:  tgChatID,
+			tgUserID:  tgChatID, // in DM, chatID == userID
+			msgID:     msgID,
+			content:   text,
+			chatID:    chatID,
+			userID:    userID,
+			locale:    locale,
+			createdAt: time.Now(),
+		})
+		return markup
+	}
+
 	editFn := func(text string) {
 		if done.Load() {
 			return
@@ -269,47 +306,49 @@ func (c *Channel) StartStreamWithBookmark(ctx context.Context, chatID string, re
 		if time.Duration(now-lastEditNs.Load()) < 1500*time.Millisecond {
 			return // coalesce edits
 		}
-		_, err := c.bot.EditMessageText(context.Background(), &bot.EditMessageTextParams{
+		if draftID != "" {
+			if _, derr := c.bot.SendMessageDraft(context.Background(), &bot.SendMessageDraftParams{
+				ChatID:  tgChatID,
+				DraftID: draftID,
+				Text:    text,
+			}); derr == nil {
+				lastEditNs.Store(time.Now().UnixNano())
+				return
+			} else {
+				c.logger.Debug("draft streaming failed, falling back to placeholder edits", zap.Error(derr))
+				draftID = ""
+				if sent, sendErr := c.bot.SendMessage(context.Background(), &bot.SendMessageParams{ChatID: tgChatID, Text: "..."}); sendErr == nil {
+					msgID = sent.ID
+				}
+			}
+		}
+		if msgID == 0 {
+			return
+		}
+		if _, eerr := c.bot.EditMessageText(context.Background(), &bot.EditMessageTextParams{
 			ChatID:    tgChatID,
 			MessageID: msgID,
 			Text:      text,
-		})
-		if err != nil {
-			c.logger.Debug("stream edit failed", zap.Error(err))
+		}); eerr != nil {
+			c.logger.Debug("stream edit failed", zap.Error(eerr))
 		}
 		lastEditNs.Store(time.Now().UnixNano())
 	}
 
 	doneFn := func(text string) {
 		done.Store(true)
+		markup := bookmarkMarkup(text)
 
-		// Display text is converted to Telegram's HTML dialect;
-		// the stored bookmark content keeps the original Markdown.
-		var markup models.ReplyMarkup
-		if c.rememberSvc != nil {
-			nonce := generateNonce()
-			cbData := "remember:" + nonce
-
-			tag := i18n.ResolveLocale(locale, "en")
-			markup = bookmarkKeyboard(
-				i18n.Tl(tag, "BookmarkButton"),
-				i18n.Tl(tag, "CopyButton"),
-				cbData,
-				text,
-			)
-
-			c.remembers.store(cbData, &rememberEntry{
-				tgChatID:  tgChatID,
-				tgUserID:  tgChatID, // in DM, chatID == userID
-				msgID:     msgID,
-				content:   text,
-				chatID:    chatID,
-				userID:    userID,
-				locale:    locale,
-				createdAt: time.Now(),
-			})
+		if draftID != "" {
+			// Final message replaces the draft bubble.
+			if _, err := c.sendHTML(tgChatID, toTelegramHTML(text), replyTo, markup, ""); err == nil {
+				c.sentMsgs.record(tgChatID, msgID, text)
+			}
+			return
 		}
-
+		if msgID == 0 {
+			return
+		}
 		c.editHTML(tgChatID, msgID, toTelegramHTML(text), markup)
 		c.sentMsgs.record(tgChatID, msgID, text)
 	}

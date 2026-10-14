@@ -224,6 +224,7 @@ type TelegramConfig struct {
 	DebounceWindow string  `koanf:"debounce_window"` // Go duration, e.g. "1.5s". 0 = disabled.
 	RateLimit      int     `koanf:"rate_limit"`      // Max messages per rate_window (0 = unlimited)
 	RateWindow     string  `koanf:"rate_window"`     // Go duration, default "1m"
+	DraftStreaming bool    `koanf:"draft_streaming"` // experimental: stream replies via sendMessageDraft (Bot API 9.3+); off = placeholder edits
 }
 
 type ClaudeConfig struct {

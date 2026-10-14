@@ -167,6 +167,33 @@ func (c *Channel) editHTML(chatID int64, msgID int, html string, markup models.R
 	}
 }
 
+// --- Ephemeral messages (Bot API 10.2) ---
+
+// sendEphemeralHTML sends a message visible only to receiverUserID and
+// carrying the ephemeral lifecycle (edit/delete, no persistence in chat
+// history for other members). Used for secret-looking replies so credentials
+// don't linger in the chat. Falls back to a regular HTML send.
+func (c *Channel) sendEphemeralHTML(chatID, receiverUserID int64, html string, replyTo int) (int, error) {
+	p := &bot.SendMessageParams{
+		ChatID:    chatID,
+		Text:      html,
+		ParseMode: models.ParseModeHTML,
+		EphemeralMessageParameters: &models.EphemeralMessageParameters{
+			ReceiverUserID: receiverUserID,
+		},
+	}
+	if replyTo > 0 {
+		p.ReplyParameters = &models.ReplyParameters{MessageID: replyTo}
+	}
+	m, err := c.bot.SendMessage(context.Background(), p)
+	if err != nil {
+		c.logger.Warn("ephemeral send failed, falling back to regular send", zap.Error(err))
+		return c.sendHTML(chatID, html, replyTo, nil, "")
+	}
+	c.sentMsgs.record(chatID, m.ID, html)
+	return m.ID, nil
+}
+
 // --- Reactions (Bot API 7.0) ---
 
 // setReaction sets (or, for an empty emoji, removes) the bot's reaction on a

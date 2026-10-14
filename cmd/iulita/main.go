@@ -1423,20 +1423,21 @@ func main() {
 	}
 
 	mgr := channelmgr.New(channelmgr.Config{
-		Store:              store,
-		CfgStore:           cfgStore,
-		CredentialResolver: credStore,
-		HTTPClient:         tgHTTPClient,
-		UserResolver:       userResolver,
-		ClearFn:            store.ClearHistory,
-		ConfigToken:        effectiveTelegramToken(cfgStore, cfg.Telegram.Token),
-		ConfigAllowedIDs:   cfg.Telegram.AllowedIDs,
-		ConfigDebounce:     debounceWindow,
-		ConfigRateLimit:    configRateLimit,
-		ConfigRateWindow:   configRateWindow,
-		Transcriber:        transcriber,
-		Bus:                bus,
-		Logger:             logger,
+		Store:                store,
+		CfgStore:             cfgStore,
+		CredentialResolver:   credStore,
+		HTTPClient:           tgHTTPClient,
+		UserResolver:         userResolver,
+		ClearFn:              store.ClearHistory,
+		ConfigToken:          effectiveTelegramToken(cfgStore, cfg.Telegram.Token),
+		ConfigAllowedIDs:     cfg.Telegram.AllowedIDs,
+		ConfigDebounce:       debounceWindow,
+		ConfigRateLimit:      configRateLimit,
+		ConfigRateWindow:     configRateWindow,
+		ConfigDraftStreaming: cfg.Telegram.DraftStreaming,
+		Transcriber:          transcriber,
+		Bus:                  bus,
+		Logger:               logger,
 	})
 
 	// Subscribe channelmgr to credential changes for hot-reload.
