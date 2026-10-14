@@ -275,6 +275,7 @@ type SkillsConfig struct {
 	Memory      MemoryConfig         `koanf:"memory"`
 	Insights    InsightsConfig       `koanf:"insights"`
 	Web         WebConfig            `koanf:"web"`
+	HTTP        HTTPSkillConfig      `koanf:"http"`
 	ShellExec   ShellExecConfig      `koanf:"shell_exec"`
 	Craft       CraftConfig          `koanf:"craft"`
 	Google      GoogleConfig         `koanf:"google"`
@@ -282,6 +283,33 @@ type SkillsConfig struct {
 	Todoist     TodoistConfig        `koanf:"todoist"`
 	External    ExternalSkillsConfig `koanf:"external"`
 	SelfImprove SelfImproveConfig    `koanf:"selfimprove"`
+}
+
+// HTTPSkillConfig controls the strict http_request tool ([skills.http]).
+// The feature ships disabled; the proxy always comes from [proxy].url and is
+// mandatory for the tool. Most transport/storage limits are startup-only.
+type HTTPSkillConfig struct {
+	Enabled             bool     `koanf:"enabled"`
+	DownloadsEnabled    bool     `koanf:"downloads_enabled"`
+	RawArtifactsEnabled bool     `koanf:"raw_artifacts_enabled"` // include_raw_artifact storage (needs downloads/auth wiring)
+	AllowedMethods      []string `koanf:"allowed_methods"`       // empty = all
+	AllowedPorts        []int    `koanf:"allowed_ports"`         // empty = 1-65535
+
+	MaxDownloadBytes      int64 `koanf:"max_download_bytes"`      // hard cap (≤1e9)
+	ConsentThresholdBytes int64 `koanf:"consent_threshold_bytes"` // ≤1e8, operator may lower only
+	MaxUploadBytes        int64 `koanf:"max_upload_bytes"`
+	InlineMaxBytes        int64 `koanf:"inline_max_bytes"`
+	MaxChainSteps         int   `koanf:"max_chain_steps"`
+	MaxRedirects          int   `koanf:"max_redirects"`
+
+	RequestTimeout string `koanf:"request_timeout"` // per non-download step
+	ChainBudget    string `koanf:"chain_budget"`    // summed non-download steps
+	WallTimeout    string `koanf:"wall_timeout"`    // whole operation incl. consent waits
+
+	ArtifactDir      string `koanf:"artifact_dir"`       // default DataDir/http-artifacts
+	ArtifactTTL      string `koanf:"artifact_ttl"`       // default 24h
+	QuotaGlobalBytes int64  `koanf:"quota_global_bytes"` // decimal
+	QuotaUserBytes   int64  `koanf:"quota_user_bytes"`
 }
 
 // SelfImproveConfig controls the self-improvement loop: after a "hard" turn
@@ -529,6 +557,22 @@ func structToMap(cfg *Config) map[string]interface{} {
 	m["skills.memory.system_prompt"] = cfg.Skills.Memory.SystemPrompt
 	m["skills.memory.triggers"] = cfg.Skills.Memory.Triggers
 	m["skills.memory.vector_weight"] = cfg.Skills.Memory.VectorWeight
+	m["skills.http.enabled"] = cfg.Skills.HTTP.Enabled
+	m["skills.http.downloads_enabled"] = cfg.Skills.HTTP.DownloadsEnabled
+	m["skills.http.raw_artifacts_enabled"] = cfg.Skills.HTTP.RawArtifactsEnabled
+	m["skills.http.max_download_bytes"] = cfg.Skills.HTTP.MaxDownloadBytes
+	m["skills.http.consent_threshold_bytes"] = cfg.Skills.HTTP.ConsentThresholdBytes
+	m["skills.http.max_upload_bytes"] = cfg.Skills.HTTP.MaxUploadBytes
+	m["skills.http.inline_max_bytes"] = cfg.Skills.HTTP.InlineMaxBytes
+	m["skills.http.max_chain_steps"] = cfg.Skills.HTTP.MaxChainSteps
+	m["skills.http.max_redirects"] = cfg.Skills.HTTP.MaxRedirects
+	m["skills.http.request_timeout"] = cfg.Skills.HTTP.RequestTimeout
+	m["skills.http.chain_budget"] = cfg.Skills.HTTP.ChainBudget
+	m["skills.http.wall_timeout"] = cfg.Skills.HTTP.WallTimeout
+	m["skills.http.artifact_dir"] = cfg.Skills.HTTP.ArtifactDir
+	m["skills.http.artifact_ttl"] = cfg.Skills.HTTP.ArtifactTTL
+	m["skills.http.quota_global_bytes"] = cfg.Skills.HTTP.QuotaGlobalBytes
+	m["skills.http.quota_user_bytes"] = cfg.Skills.HTTP.QuotaUserBytes
 	m["skills.insights.enabled"] = cfg.Skills.Insights.Enabled
 	m["skills.insights.interval"] = cfg.Skills.Insights.Interval
 	m["skills.insights.min_facts"] = cfg.Skills.Insights.MinFacts

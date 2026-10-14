@@ -36,27 +36,30 @@ type TranscriptionProvider interface {
 
 // Channel implements channel.InputChannel for Telegram.
 type Channel struct {
-	bot            *bot.Bot
-	http           *http.Client // shared client for file downloads
-	instanceID     string       // channel instance slug (e.g., "tg-config")
-	allowedIDs     map[int64]struct{}
-	clearFn        ClearFunc
-	commands       map[string]CommandFunc
-	commandOrder   []models.BotCommand
-	debounceWindow time.Duration
-	rateLimiter    *ratelimit.Limiter    // nil = no rate limiting
-	userResolver   channel.UserResolver  // nil = no user resolution (backward compat)
-	store          storage.Repository    // nil = no locale lookup
-	transcriber    TranscriptionProvider // nil = voice messages ignored
-	prompts        *promptState          // interactive skill prompts
-	rememberSvc    bookmark.Service      // nil = no bookmark feature
-	remembers      *rememberState        // pending bookmark buttons
-	statusMsgs     *statusState          // live status messages per chat
-	sentMsgs       *sentTracker          // recent sent texts (🔖 reactions, /clear deletes)
-	draftStreaming bool                  // experimental sendMessageDraft streaming
-	locLimiter     *ratelimit.Limiter    // outbound location sends: 10/hour/chat (set in New)
-	logger         *zap.Logger
-	wg             sync.WaitGroup // tracks in-flight message processing
+	bot              *bot.Bot
+	http             *http.Client // shared client for file downloads
+	instanceID       string       // channel instance slug (e.g., "tg-config")
+	allowedIDs       map[int64]struct{}
+	clearFn          ClearFunc
+	commands         map[string]CommandFunc
+	commandOrder     []models.BotCommand
+	debounceWindow   time.Duration
+	rateLimiter      *ratelimit.Limiter    // nil = no rate limiting
+	userResolver     channel.UserResolver  // nil = no user resolution (backward compat)
+	store            storage.Repository    // nil = no locale lookup
+	transcriber      TranscriptionProvider // nil = voice messages ignored
+	prompts          *promptState          // interactive skill prompts
+	rememberSvc      bookmark.Service      // nil = no bookmark feature
+	remembers        *rememberState        // pending bookmark buttons
+	statusMsgs       *statusState          // live status messages per chat
+	sentMsgs         *sentTracker          // recent sent texts (🔖 reactions, /clear deletes)
+	draftStreaming   bool                  // experimental sendMessageDraft streaming
+	locLimiter       *ratelimit.Limiter    // outbound location sends: 10/hour/chat (set in New)
+	confirms         *confirmState         // identity-bound security confirmations
+	confirmSendersMu sync.Mutex
+	confirmSenders   map[string]int64 // chatID → Telegram user who started the turn
+	logger           *zap.Logger
+	wg               sync.WaitGroup // tracks in-flight message processing
 }
 
 // SetRateLimiter attaches a per-chat rate limiter. Nil disables limiting.
@@ -138,6 +141,8 @@ func New(token string, allowedIDs []int64, clearFn ClearFunc, debounceWindow tim
 		prompts:        newPromptState(),
 		remembers:      newRememberState(),
 		statusMsgs:     newStatusState(),
+		confirms:       newConfirmState(),
+		confirmSenders: make(map[string]int64),
 		sentMsgs:       newSentTracker(),
 		locLimiter:     ratelimit.New(MaxLocationSendsPerHour, time.Hour),
 		logger:         logger,
@@ -230,6 +235,10 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 		// Handle inline keyboard callback queries (bookmark + interactive prompts).
 		if update.CallbackQuery != nil {
 			if c.isAllowed(update.CallbackQuery.From.ID) {
+				// Security confirmations take priority: one-shot, identity-bound.
+				if c.HandleConfirmCallback(update.CallbackQuery) {
+					return
+				}
 				// Bookmark button takes priority.
 				if c.rememberSvc != nil && c.HandleRememberCallback(update.CallbackQuery) {
 					return
@@ -276,6 +285,8 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 		}
 
 		chatID := strconv.FormatInt(update.Message.Chat.ID, 10)
+		// Bind later security confirmations in this chat to this sender.
+		c.RecordTurnSender(chatID, userID)
 
 		// Handle /clear command.
 		if update.Message.Text == "/clear" {

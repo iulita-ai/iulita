@@ -397,7 +397,7 @@ func TestWebfetchProxySkillURLExtraction(t *testing.T) {
 			"Fallback JSON:\n```bash\ncurl -s \"https://api.open-meteo.com/v1/forecast?latitude=51.5&longitude=-0.12&current_weather=true\"\n```\n" +
 			"Docs: https://open-meteo.com/en/docs\n",
 	}
-	proxy := newWebfetchProxySkill(m, &http.Client{}, []string{"curl"})
+	proxy := newWebfetchProxySkill(m, &http.Client{}, nil, []string{"curl"})
 
 	// curl bin → curl User-Agent.
 	if proxy.userAgent != "curl/8.0" {
@@ -453,7 +453,7 @@ func TestWebfetchProxySkillTemplateVars(t *testing.T) {
 		Description:  "Test API skill",
 		SystemPrompt: "Use: https://api.example.com/v1/{query}/data\n",
 	}
-	proxy := newWebfetchProxySkill(m, &http.Client{}, nil)
+	proxy := newWebfetchProxySkill(m, &http.Client{}, nil, nil)
 
 	urls := proxy.buildURLs("test-input")
 	if len(urls) == 0 {

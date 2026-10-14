@@ -62,8 +62,9 @@ type Assistant struct {
 	approvals         *approvalStore
 	sender            channel.MessageSender // for sending approval prompts
 	prompterFactory   interact.PromptAskerFactory
-	modelName         atomic.Value // LLM model name for usage tracking (string)
-	providerName      atomic.Value // LLM provider name for usage tracking (string)
+	lifecycleRoot     context.Context // application shutdown root (nil = default extender)
+	modelName         atomic.Value    // LLM model name for usage tracking (string)
+	providerName      atomic.Value    // LLM provider name for usage tracking (string)
 
 	selfImproveEnabled  atomic.Bool  // enqueue skill.review after hard turns (hot-reloadable)
 	complexityThreshold atomic.Int64 // min tool-executing iterations to trigger a review
@@ -170,9 +171,16 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	// Inject deadline extender so long-running skills (orchestrate) can
-	// replace the context deadline with their own longer timeout.
-	ctx = skill.WithDeadlineExtender(ctx, skill.DefaultDeadlineExtender)
+	// Inject deadline extender so long-running skills (orchestrate, the HTTP
+	// engine's consent waits) can replace the context deadline with their own
+	// longer timeout. When a lifecycle root is attached (main wires the
+	// shutdown signal), the extension stays cancellable by shutdown instead
+	// of detaching from everything.
+	if a.lifecycleRoot != nil {
+		ctx = skill.WithDeadlineExtender(ctx, skill.LifecycleExtender(a.lifecycleRoot))
+	} else {
+		ctx = skill.WithDeadlineExtender(ctx, skill.DefaultDeadlineExtender)
+	}
 
 	// Per-turn taint holder so one skill (e.g. slack_search reading untrusted
 	// content) can force later skills (e.g. slack_post) through approval.
@@ -718,8 +726,16 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 		}
 
 		for _, tc := range lastResp.ToolCalls {
-			// Check for duplicate tool calls via ledger.
-			if cachedResult, isDup := ledger.IsDuplicate(tc); isDup {
+			// Check for duplicate tool calls via ledger. Skills with an
+			// execution policy may opt out entirely: identical HTTP calls are
+			// separate operations, never served from a cache.
+			skipDedup := false
+			if s, ok := a.registry.Get(tc.Name); ok {
+				if ep, ok := s.(skill.ExecutionPolicy); ok && ep.SkipLedgerDedup() {
+					skipDedup = true
+				}
+			}
+			if cachedResult, isDup := ledger.IsDuplicate(tc); isDup && !skipDedup {
 				a.logger.Info("duplicate tool call, returning cached result",
 					zap.String("skill", tc.Name))
 				exchange.Results = append(exchange.Results, llm.ToolResult{
@@ -758,6 +774,17 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 			result := a.executeSkill(ctx, msg.ChatID, tc, i)
 			if tc.Name == requiredTool && !result.IsError && !result.PendingApproval {
 				requiredToolSucceeded = true
+			}
+			if s, ok := a.registry.Get(tc.Name); ok {
+				if ep, ok := s.(skill.ExecutionPolicy); ok && ep.SkipLedgerDedup() {
+					ledger.RecordNonCacheable(tc, result, ep.SafeInputSummary(tc.Input))
+					exchange.Results = append(exchange.Results, result)
+					if result.PendingApproval {
+						a.saveAssistantResponse(ctx, msg.ChatID, result.Content)
+						return result.Content, nil
+					}
+					continue
+				}
 			}
 			ledger.Record(tc, result)
 			exchange.Results = append(exchange.Results, result)
@@ -829,6 +856,14 @@ func (a *Assistant) executeSkill(ctx context.Context, chatID string, tc llm.Tool
 		if prompter := a.prompterFactory.PrompterFor(chatID); prompter != nil {
 			ctx = interact.WithPrompter(ctx, prompter)
 		}
+		// Identity-bound confirmation asker for security consent flows
+		// (http_request mutations, large downloads). Channels that cannot
+		// verify the responder return nil — the engine fails closed.
+		if cf, ok := a.prompterFactory.(interact.ConfirmationAskerFactory); ok {
+			if asker := cf.ConfirmerFor(chatID); asker != nil {
+				ctx = interact.WithConfirmer(ctx, asker)
+			}
+		}
 	}
 
 	// Notify client that a skill is starting.
@@ -874,15 +909,24 @@ func (a *Assistant) executeSkill(ctx context.Context, chatID string, tc llm.Tool
 	// Log tool result preview for debugging. Coordinate-shaped substrings are
 	// scrubbed first: geocode results and OSM map links embed full-precision
 	// coordinates, and no coordinate may reach INFO+ logs (plan §12/§13).
-	preview := scrubPreview(output)
-	if len(preview) > 500 {
-		preview = preview[:500] + "..."
+	// Skills with sensitive output (http_request) suppress the preview
+	// entirely — results may embed credentials or large external content.
+	if ep, ok := s.(skill.ExecutionPolicy); ok && ep.SuppressResultPreview() {
+		a.logger.Info("skill execution result",
+			zap.String("skill", tc.Name),
+			zap.Int("result_len", len(output)),
+			zap.Int64("duration_ms", durationMs))
+	} else {
+		preview := scrubPreview(output)
+		if len(preview) > 500 {
+			preview = preview[:500] + "..."
+		}
+		a.logger.Info("skill execution result",
+			zap.String("skill", tc.Name),
+			zap.Int("result_len", len(output)),
+			zap.Int64("duration_ms", durationMs),
+			zap.String("preview", preview))
 	}
-	a.logger.Info("skill execution result",
-		zap.String("skill", tc.Name),
-		zap.Int("result_len", len(output)),
-		zap.Int64("duration_ms", durationMs),
-		zap.String("preview", preview))
 
 	// Notify frontend of locale change so it can switch UI language.
 	if tc.Name == "set_language" && !strings.Contains(output, "Unknown") {
@@ -1142,6 +1186,13 @@ func (a *Assistant) AddPreHook(h PreprocessorHook) {
 // AddPostHook registers a postprocessor hook.
 func (a *Assistant) AddPostHook(h PostprocessorHook) {
 	a.postHooks = append(a.postHooks, h)
+}
+
+// SetLifecycleRoot attaches the application shutdown root. Extended skill
+// deadlines (long skills, HTTP consent waits) then remain cancellable by
+// shutdown instead of detaching from everything.
+func (a *Assistant) SetLifecycleRoot(root context.Context) {
+	a.lifecycleRoot = root
 }
 
 // SetMessageSender attaches a sender for approval confirmation prompts.

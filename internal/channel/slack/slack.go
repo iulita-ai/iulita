@@ -52,6 +52,7 @@ type Channel struct {
 	rememberSvc    bookmark.Service
 	remembers      *rememberState
 	prompts        *promptState
+	confirms       *confirmState
 
 	chatMetaMu sync.RWMutex
 	chatMetaM  map[string]*chatMeta // composite chatID → meta
@@ -115,6 +116,7 @@ func New(botToken, appToken string, allowedUserIDs []string, debounceWindow time
 		clearFn:        clearFn,
 		remembers:      newRememberState(),
 		prompts:        newPromptState(),
+		confirms:       newConfirmState(),
 		chatMetaM:      make(map[string]*chatMeta),
 		userCache:      make(map[string]userInfo),
 		shutdownCh:     make(chan struct{}),
@@ -436,6 +438,9 @@ func (c *Channel) handleInteraction(callback slackapi.InteractionCallback) {
 			return
 		}
 		// Try interactive prompt.
+		if c.handleConfirmCallback(action.ActionID, callback.User.ID) {
+			return
+		}
 		if c.handlePromptCallback(action.ActionID, action.Value) {
 			return
 		}

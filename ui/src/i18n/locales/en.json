@@ -19,7 +19,8 @@
     "logout": "Logout",
     "import": "Import",
     "slackActivity": "Slack Activity",
-    "models": "Models"
+    "models": "Models",
+    "files": "Files"
   },
   "common": {
     "save": "Save",
@@ -706,7 +707,20 @@
     "deleted": "Credential deleted",
     "rotated": "Credential rotated",
     "bound": "Binding added",
-    "unbound": "Binding removed"
+    "unbound": "Binding removed",
+    "httpGrantsTab": "HTTP Grants",
+    "httpGrantsHint": "Origin-bound grants: the credential only travels to the exact scheme+host+port listed here (http_request tool).",
+    "noGrants": "No HTTP grants — the credential is not usable by http_request yet",
+    "addGrant": "Add grant",
+    "grantPrincipal": "Principal",
+    "grantPrincipalId": "User ID",
+    "grantPrincipalIdPlaceholder": "Domain user ID (owner)",
+    "grantCaller": "Caller (optional)",
+    "grantOrigin": "Origin",
+    "grantUsages": "Usages",
+    "grantAdded": "Grant added",
+    "grantDeleted": "Grant deleted",
+    "grantError": "Grant operation failed"
   },
   "import": {
     "title": "Import from Claude",
@@ -939,5 +953,18 @@
     "fallbackHelp": "Select up to two backups per role, in the order they should be tried. Only verified profiles with sufficient context are available. Switching occurs only on a temporary failure before any text or tool calls; tool continuations and explicit profile choices keep their model. Failed attempts may incur charges.",
     "fallbackRole": "{role}: ordered backups",
     "fallbackTimeout": "Deadline for each attempt with backups, milliseconds"
+  },
+  "files": {
+    "title": "Files",
+    "subtitle": "Downloads produced by the http_request tool (owner-scoped, auto-expire)",
+    "total": "{count} file(s)",
+    "filename": "File",
+    "size": "Size",
+    "expires": "Expires",
+    "download": "Download",
+    "downloadFailed": "Download failed — the ticket may have expired",
+    "deleted": "File deleted",
+    "deleteFailed": "Delete failed",
+    "deleteConfirm": "Delete this file permanently?"
   }
 }

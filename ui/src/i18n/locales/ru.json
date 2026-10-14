@@ -19,7 +19,8 @@
     "skillProposals": "Заявки на навыки",
     "import": "Импорт",
     "slackActivity": "Активность Slack",
-    "models": "Модели"
+    "models": "Модели",
+    "files": "Файлы"
   },
   "common": {
     "save": "Сохранить",
@@ -668,7 +669,20 @@
     "bound": "Привязка добавлена",
     "unbound": "Привязка удалена",
     "ownerId": "Владелец",
-    "ownerIdPlaceholder": "ID пользователя"
+    "ownerIdPlaceholder": "ID пользователя",
+    "httpGrantsTab": "HTTP-гранты",
+    "httpGrantsHint": "Гранты, привязанные к origin: credential уходит только на точные scheme+host+port из этого списка (инструмент http_request).",
+    "noGrants": "Нет HTTP-грантов — credential пока непригоден для http_request",
+    "addGrant": "Добавить грант",
+    "grantPrincipal": "Принципал",
+    "grantPrincipalId": "ID пользователя",
+    "grantPrincipalIdPlaceholder": "ID пользователя домена (владелец)",
+    "grantCaller": "Вызывающий (опционально)",
+    "grantOrigin": "Origin",
+    "grantUsages": "Способы использования",
+    "grantAdded": "Грант добавлен",
+    "grantDeleted": "Грант удалён",
+    "grantError": "Операция с грантом не удалась"
   },
   "skillStats": {
     "title": "Телеметрия навыков",
@@ -946,5 +960,18 @@
     "fallbackHelp": "Выберите до двух резервов для каждой роли в порядке перехода. Доступны проверенные профили с достаточным контекстом. Переход выполняется только при временном сбое до выдачи текста или вызова инструментов. Продолжения инструментов и явный выбор профиля сохраняют модель. Неуспешные попытки могут тарифицироваться.",
     "fallbackRole": "{role}: резервы по порядку",
     "fallbackTimeout": "Таймаут каждой попытки с резервами, миллисекунды"
+  },
+  "files": {
+    "title": "Файлы",
+    "subtitle": "Загрузки инструмента http_request (доступны владельцу, автоматически удаляются)",
+    "total": "файлов: {count}",
+    "filename": "Файл",
+    "size": "Размер",
+    "expires": "Истекает",
+    "download": "Скачать",
+    "downloadFailed": "Не удалось скачать — билет мог истечь",
+    "deleted": "Файл удалён",
+    "deleteFailed": "Не удалось удалить",
+    "deleteConfirm": "Удалить этот файл навсегда?"
   }
 }

@@ -20,6 +20,8 @@ type mockRepo struct {
 	nextID      int64
 	bindings    []domain.CredentialBinding
 	audits      []domain.CredentialAudit
+	grants      map[int64][]domain.HTTPCredentialGrant
+	nextGrantID int64
 }
 
 func newMockRepo() *mockRepo {
@@ -692,3 +694,35 @@ var _ CredentialProvider = NilProvider{}
 
 // Suppress unused import warning.
 var _ = time.Now
+
+func (m *mockRepo) SaveHTTPCredentialGrant(_ context.Context, g *domain.HTTPCredentialGrant) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.grants == nil {
+		m.grants = make(map[int64][]domain.HTTPCredentialGrant)
+	}
+	g.ID = m.nextGrantID
+	m.nextGrantID++
+	m.grants[g.CredentialID] = append(m.grants[g.CredentialID], *g)
+	return nil
+}
+
+func (m *mockRepo) ListHTTPCredentialGrants(_ context.Context, credentialID int64) ([]domain.HTTPCredentialGrant, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]domain.HTTPCredentialGrant(nil), m.grants[credentialID]...), nil
+}
+
+func (m *mockRepo) DeleteHTTPCredentialGrant(_ context.Context, id int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for credID, list := range m.grants {
+		for i := range list {
+			if list[i].ID == id {
+				m.grants[credID] = append(list[:i], list[i+1:]...)
+				return nil
+			}
+		}
+	}
+	return nil
+}

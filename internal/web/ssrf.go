@@ -6,6 +6,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -16,8 +18,14 @@ var privateRanges = []*net.IPNet{
 	mustParseCIDR("10.0.0.0/8"),
 	mustParseCIDR("172.16.0.0/12"),
 	mustParseCIDR("192.168.0.0/16"),
-	mustParseCIDR("100.64.0.0/10"), // CGN (Carrier-Grade NAT, RFC 6598)
-	mustParseCIDR("fc00::/7"),      // IPv6 unique local
+	mustParseCIDR("100.64.0.0/10"),   // CGN (Carrier-Grade NAT, RFC 6598)
+	mustParseCIDR("192.0.0.0/24"),    // IETF protocol assignments (incl. NAT64 bypass)
+	mustParseCIDR("198.18.0.0/15"),   // benchmarking (RFC 2544)
+	mustParseCIDR("240.0.0.0/4"),     // reserved for future use
+	mustParseCIDR("192.0.2.0/24"),    // TEST-NET-1 (documentation)
+	mustParseCIDR("198.51.100.0/24"), // TEST-NET-2 (documentation)
+	mustParseCIDR("203.0.113.0/24"),  // TEST-NET-3 (documentation)
+	mustParseCIDR("fc00::/7"),        // IPv6 unique local
 }
 
 // isPrivateIP checks if an IP address is in a private, loopback,
@@ -39,7 +47,41 @@ func isPrivateIP(ip net.IP) bool {
 		}
 	}
 
+	// IPv6 ranges that embed IPv4 addresses must be checked against the
+	// embedded v4 too: DNS64/NAT64 (64:ff9b::/96) and 6to4 (2002::/16) can
+	// carry private v4 targets behind an innocent-looking v6 address.
+	if embedded := embeddedIPv4(ip); embedded != nil {
+		return isPrivateIP(embedded)
+	}
+
 	return false
+}
+
+// embeddedIPv4 extracts an IPv4 address carried inside a transition-range
+// IPv6 address, or nil.
+func embeddedIPv4(ip net.IP) net.IP {
+	if len(ip) != 16 {
+		return nil
+	}
+	// 64:ff9b::/96 (NAT64/DNS64 well-known prefix).
+	if ip[0] == 0x00 && ip[1] == 0x64 && ip[2] == 0xff && ip[3] == 0x9b &&
+		allZero(ip[4:12]) {
+		return net.IPv4(ip[12], ip[13], ip[14], ip[15])
+	}
+	// 2002::/16 (6to4): the v4 address occupies bytes 2-5.
+	if ip[0] == 0x20 && ip[1] == 0x02 {
+		return net.IPv4(ip[2], ip[3], ip[4], ip[5])
+	}
+	return nil
+}
+
+func allZero(b []byte) bool {
+	for _, v := range b {
+		if v != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func mustParseCIDR(s string) *net.IPNet {
@@ -129,6 +171,98 @@ func CheckURLSSRF(ctx context.Context, rawURL string) error {
 		}
 	}
 	return nil
+}
+
+// Resolver abstracts DNS resolution so callers (and tests) can inject one.
+type Resolver interface {
+	LookupIPAddr(ctx context.Context, host string) ([]net.IPAddr, error)
+}
+
+// ValidateTarget performs the shared pre-network target validation used by
+// the strict HTTP engine (plan §7.2): scheme, authority shape, port range,
+// literal/alternative numeric IP forms, zone identifiers, and DNS answers
+// (empty or mixed public/private answer sets are rejected).
+//
+// The trusted proxy address itself may be private — this function validates
+// the ORIGIN, not the proxy. All checks here are local preflight: they cannot
+// close the rebinding gap between local and proxy-side DNS; that guarantee
+// belongs to the proxy-side policy (deployment release gate).
+func ValidateTarget(ctx context.Context, rawURL string, resolver Resolver) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("SSRF: invalid URL: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("SSRF: scheme must be http or https, got %q", u.Scheme)
+	}
+	host := u.Hostname()
+	if host == "" {
+		return fmt.Errorf("SSRF: URL has no host")
+	}
+	if strings.ContainsAny(host, "% \t\x00\r\n") {
+		return fmt.Errorf("SSRF: invalid host (zone identifiers and control characters are rejected)")
+	}
+	if u.User != nil {
+		return fmt.Errorf("SSRF: userinfo in URL is rejected")
+	}
+	if p := u.Port(); p != "" {
+		port, err := strconv.Atoi(p)
+		if err != nil || port < 1 || port > 65535 {
+			return fmt.Errorf("SSRF: invalid port %q", p)
+		}
+	}
+
+	if ip := net.ParseIP(host); ip != nil {
+		if isPrivateIP(ip) {
+			return fmt.Errorf("SSRF: target is a private/special-use address %s", ip)
+		}
+		return nil
+	}
+
+	// Alternative numeric IPv4 forms (0x7f000001, 2130706433, 127.1) parse as
+	// hostnames but resolve numerically via getaddrinfo — reject outright
+	// instead of racing the resolver.
+	if looksNumericHost(host) {
+		return fmt.Errorf("SSRF: numeric host %q in non-standard form is rejected", host)
+	}
+
+	if resolver == nil {
+		resolver = net.DefaultResolver
+	}
+	ips, lookupErr := resolver.LookupIPAddr(ctx, host)
+	if lookupErr != nil {
+		return fmt.Errorf("SSRF: DNS lookup for %q: %w", host, lookupErr)
+	}
+	if len(ips) == 0 {
+		return fmt.Errorf("SSRF: empty DNS answer for %q", host)
+	}
+	for _, ipAddr := range ips {
+		if isPrivateIP(ipAddr.IP) {
+			// Mixed public/private answers are rejected with the same rule:
+			// any private answer makes the whole name untrustworthy.
+			return fmt.Errorf("SSRF: host %q resolves to private/special-use address %s", host, ipAddr.IP)
+		}
+	}
+	return nil
+}
+
+// looksNumericHost reports whether a non-IP-literal host is still numeric
+// (decimal/hex IPv4 shorthand like "127.1", "0x7f.0.0.1", "2130706433").
+func looksNumericHost(host string) bool {
+	if host == "" {
+		return false
+	}
+	hex := strings.HasPrefix(strings.ToLower(host), "0x")
+	for i := 0; i < len(host); i++ {
+		c := host[i]
+		digit := c >= '0' && c <= '9'
+		dot := c == '.'
+		hexDigit := hex && (c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F')
+		if !digit && !dot && !hexDigit {
+			return false
+		}
+	}
+	return true
 }
 
 // ssrfTransport wraps an http.RoundTripper and validates target URLs

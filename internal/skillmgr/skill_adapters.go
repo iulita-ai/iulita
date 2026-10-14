@@ -88,8 +88,9 @@ const browserUserAgent = "Mozilla/5.0 (compatible; Iulita/1.0)"
 type webfetchProxySkill struct {
 	manifest   *skill.Manifest
 	httpClient *http.Client
-	urlHints   []string // base URLs extracted from the system prompt
-	userAgent  string   // User-Agent header to send (curl-like or browser-like)
+	fetcher    HTTPPlanFetcher // strict engine path (optional; preferred when set)
+	urlHints   []string        // base URLs extracted from the system prompt
+	userAgent  string          // User-Agent header to send (curl-like or browser-like)
 }
 
 // urlWithSchemeRe matches URLs with scheme (https://... or http://...).
@@ -130,7 +131,7 @@ func urlPathKey(rawURL string) string {
 	return base
 }
 
-func newWebfetchProxySkill(m *skill.Manifest, httpClient *http.Client, requiredBins []string) *webfetchProxySkill {
+func newWebfetchProxySkill(m *skill.Manifest, httpClient *http.Client, fetcher HTTPPlanFetcher, requiredBins []string) *webfetchProxySkill {
 	// We collect candidates, deduplicating by path. When the same path is seen
 	// multiple times with different query params, we keep the LAST one — docs
 	// typically progress from compact to full format.
@@ -210,6 +211,7 @@ func newWebfetchProxySkill(m *skill.Manifest, httpClient *http.Client, requiredB
 	return &webfetchProxySkill{
 		manifest:   m,
 		httpClient: httpClient,
+		fetcher:    fetcher,
 		urlHints:   candidates,
 		userAgent:  ua,
 	}
@@ -356,8 +358,24 @@ func replaceLocationInURL(url, query string) string {
 	return url
 }
 
-func (s *webfetchProxySkill) fetch(ctx context.Context, url string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+func (s *webfetchProxySkill) fetch(ctx context.Context, rawURL string) (string, error) {
+	// Strict-engine path: same proxy, same policy, GET only — never a guess
+	// at POST semantics from prompt text (plan §10.2).
+	if s.fetcher != nil {
+		body, status, err := s.fetcher.Run(ctx, proxyFetchPlan(rawURL, s.userAgent))
+		if err != nil {
+			return "", err
+		}
+		if status < 200 || status > 299 {
+			return "", fmt.Errorf("HTTP %d", status)
+		}
+		if len(body) > maxProxyResponseLen {
+			body = body[:maxProxyResponseLen] + "\n...(truncated)"
+		}
+		return body, nil
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, http.NoBody)
 	if err != nil {
 		return "", err
 	}
@@ -383,4 +401,16 @@ func (s *webfetchProxySkill) fetch(ctx context.Context, url string) (string, err
 		text = text[:maxProxyResponseLen] + "\n...(truncated)"
 	}
 	return text, nil
+}
+
+// proxyFetchPlan renders the single-GET plan for the strict engine.
+func proxyFetchPlan(rawURL, userAgent string) []byte {
+	return []byte(fmt.Sprintf(`{
+		"version": 1,
+		"request": {
+			"id": "proxy_get", "method": "GET", "url": %q,
+			"headers": [{"name": "User-Agent", "values": [%q]}],
+			"response": {"mode": "inline"}
+		}
+	}`, rawURL, userAgent))
 }

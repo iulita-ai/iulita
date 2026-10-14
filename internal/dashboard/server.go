@@ -133,6 +133,11 @@ type CredentialManager interface {
 	ListBindingsByConsumer(ctx context.Context, consumerType, consumerID string) ([]domain.CredentialBinding, error)
 	ListCredentialAudit(ctx context.Context, credentialID int64, limit int) ([]domain.CredentialAudit, error)
 	EncryptionEnabled() bool
+
+	// HTTP origin grants (admin-managed; values never returned by the API).
+	SaveHTTPGrant(ctx context.Context, g *domain.HTTPCredentialGrant) error
+	ListHTTPGrants(ctx context.Context, credentialID int64) ([]domain.HTTPCredentialGrant, error)
+	DeleteHTTPGrant(ctx context.Context, id int64) error
 }
 
 // Config holds dependencies for the dashboard server.
@@ -160,6 +165,7 @@ type Config struct {
 	ModelHTTPClient        *http.Client
 	LegacyModelSettings    *models.Settings
 	LegacyClassifierActive bool
+	HTTPArtifacts          HTTPArtifactStore // nil = artifact delivery unavailable; requires auth
 }
 
 // Server serves the dashboard API and embedded SPA.
@@ -186,6 +192,8 @@ type Server struct {
 	modelHTTPClient        *http.Client
 	legacyModelSettings    *models.Settings
 	legacyClassifierActive bool
+	httpArtifacts          HTTPArtifactStore // nil = artifact delivery unavailable
+	tickets                *ticketRegistry
 }
 
 // New creates a new dashboard server.
@@ -212,6 +220,8 @@ func New(cfg Config) *Server {
 		modelHTTPClient:        cfg.ModelHTTPClient,
 		legacyModelSettings:    cfg.LegacyModelSettings,
 		legacyClassifierActive: cfg.LegacyClassifierActive,
+		httpArtifacts:          cfg.HTTPArtifacts,
+		tickets:                newTicketRegistry(),
 	}
 
 	app := fiber.New(fiber.Config{
@@ -281,9 +291,26 @@ func New(cfg Config) *Server {
 		api.Get("/slack/callback", s.handleSlackCallback)
 	}
 
+	// HTTP artifact delivery: the one-time download ticket IS the capability
+	// (browser navigation cannot carry headers). Registered before the JWT
+	// middleware; it authorizes exactly one owner-bound artifact, once.
+	// Metadata/ticket-issuance routes below stay JWT-protected, and ALL
+	// artifact routes exist only when auth is enabled (plan §9.3).
+	if s.httpArtifacts != nil && s.authService != nil {
+		api.Get("/http-artifacts/download/:ticket", s.handleDownloadByTicket)
+	}
+
 	// Protected routes: require JWT when auth is enabled.
 	if s.authService != nil {
 		api.Use(auth.FiberMiddleware(s.authService))
+	}
+
+	// Owner-scoped artifact management (authenticated users only).
+	if s.httpArtifacts != nil && s.authService != nil {
+		api.Get("/http-artifacts", s.handleListHTTPArtifacts)
+		api.Get("/http-artifacts/:id", s.handleGetHTTPArtifact)
+		api.Delete("/http-artifacts/:id", s.handleDeleteHTTPArtifact)
+		api.Post("/http-artifacts/:id/ticket", s.handleIssueDownloadTicket)
 	}
 
 	// Auth-protected endpoints available to all authenticated users.
@@ -432,6 +459,10 @@ func New(cfg Config) *Server {
 		creds.Post("/:id/bindings", s.handleBindCredential)
 		creds.Delete("/:id/bindings/:consumer_type/:consumer_id", s.handleUnbindCredential)
 		creds.Get("/by-consumer/:consumer_type/:consumer_id", s.handleListCredentialsByConsumer)
+		// HTTP origin grants (strict validation; values never returned).
+		creds.Get("/:id/http-grants", s.handleListHTTPGrants)
+		creds.Post("/:id/http-grants", s.handleCreateHTTPGrant)
+		creds.Delete("/http-grants/:gid", s.handleDeleteHTTPGrant)
 	}
 
 	// External skills API (admin only)

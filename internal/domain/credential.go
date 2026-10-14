@@ -13,6 +13,7 @@ type CredentialType string
 const (
 	CredentialTypeAPIKey             CredentialType = "api_key"
 	CredentialTypeBearer             CredentialType = "bearer"
+	CredentialTypeHTTPBasic          CredentialType = "http_basic"    // JSON {"username","password"} for the HTTP tool
 	CredentialTypeOAuth2Client       CredentialType = "oauth2_client" //nolint:gosec // G101 false positive: these are type constants not credentials
 	CredentialTypeOAuth2Tokens       CredentialType = "oauth2_tokens" //nolint:gosec // G101 false positive: these are type constants not credentials
 	CredentialTypeServiceAccountJSON CredentialType = "service_account_json"
@@ -81,6 +82,34 @@ type CredentialAudit struct {
 	Detail         string    `bun:"detail,notnull,default:''" json:"detail"`
 	CreatedAt      time.Time `bun:"created_at,nullzero,notnull,default:current_timestamp" json:"created_at"`
 }
+
+// HTTPCredentialGrant binds a credential to an exact HTTP origin
+// (scheme+host+effective port) for a principal and optionally a caller.
+// The universal HTTP tool NEVER resolves credentials without a matching
+// grant — global credentials become usable only through an explicit
+// published grant with allowed origins (plan §8.1).
+type HTTPCredentialGrant struct {
+	bun.BaseModel `bun:"table:http_credential_grants"`
+
+	ID            int64      `bun:"id,pk,autoincrement" json:"id"`
+	CredentialID  int64      `bun:"credential_id,notnull" json:"credential_id"`
+	PrincipalType string     `bun:"principal_type,notnull,default:'user'" json:"principal_type"` // user | global
+	PrincipalID   string     `bun:"principal_id,notnull,default:''" json:"principal_id"`         // domain user ID or policy ID
+	CallerID      string     `bun:"caller_id,notnull,default:''" json:"caller_id"`               // "" = any caller
+	Scheme        string     `bun:"scheme,notnull" json:"scheme"`                                // http | https
+	Host          string     `bun:"host,notnull" json:"host"`                                    // canonical lowercase
+	Port          string     `bun:"port,notnull" json:"port"`                                    // effective port
+	Usages        string     `bun:"usages,notnull,default:'[]'" json:"usages"`                   // JSON array of usages
+	ExpiresAt     *time.Time `bun:"expires_at" json:"expires_at,omitempty"`
+	CreatedAt     time.Time  `bun:"created_at,nullzero,notnull,default:current_timestamp" json:"created_at"`
+	CreatedBy     string     `bun:"created_by,notnull,default:''" json:"created_by"`
+}
+
+// HTTP grant principal types.
+const (
+	HTTPGrantPrincipalUser   = "user"
+	HTTPGrantPrincipalGlobal = "global"
+)
 
 // Audit action constants.
 const (

@@ -215,6 +215,21 @@ func CoreConfigSchema() []ConfigSection {
 				{Key: "skills.selfimprove.propose_skills", Label: "Propose Skills", Description: "Also draft inert, human-approved skill proposals from reviews", Type: FieldBool, Default: "false", Section: "selfimprove"},
 			},
 		},
+		{
+			Name:        "http",
+			Label:       "HTTP Client",
+			Description: "Strict http_request tool: raw HTTP(S) API client through the mandatory [proxy].url",
+			Fields: []ConfigField{
+				{Key: "skills.http.enabled", Label: "Enabled", Description: "Register the http_request tool (needs [proxy].url; the proxy is mandatory, no direct fallback)", Type: FieldBool, Default: "true", Section: "http"},
+				{Key: "skills.http.downloads_enabled", Label: "Downloads", Description: "Streamed downloads into owner-scoped artifacts (effective with dashboard auth)", Type: FieldBool, Default: "true", Section: "http"},
+				{Key: "skills.http.raw_artifacts_enabled", Label: "Raw Artifacts", Description: "Allow include_raw_artifact owner-private full-header copies", Type: FieldBool, Default: "true", Section: "http"},
+				{Key: "skills.http.consent_threshold_bytes", Label: "Consent Threshold (bytes)", Description: "Downloads beyond this need human confirmation; can only be lowered (ceiling 100000000)", Type: FieldInt, Default: "100000000", Section: "http", RestartRequired: true},
+				{Key: "skills.http.max_download_bytes", Label: "Max Download (bytes)", Description: "Download hard cap (ceiling 1000000000)", Type: FieldInt, Default: "1000000000", Section: "http", RestartRequired: true},
+				{Key: "skills.http.max_upload_bytes", Label: "Max Upload (bytes)", Description: "Request body cap (ceiling 1073741824)", Type: FieldInt, Default: "16777216", Section: "http", RestartRequired: true},
+				{Key: "skills.http.allowed_methods", Label: "Allowed Methods", Description: "Comma-separated method allowlist (empty = all)", Type: FieldString, Default: "", Section: "http", RestartRequired: true},
+				{Key: "skills.http.allowed_ports", Label: "Allowed Ports", Description: "Comma-separated port allowlist (empty = 1-65535)", Type: FieldString, Default: "", Section: "http", RestartRequired: true},
+			},
+		},
 	}
 }
 

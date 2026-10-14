@@ -76,6 +76,7 @@ import {
   ConstructOutline,
   KeyOutline,
   CloudUploadOutline,
+  DownloadOutline,
   LogoSlack,
 } from '@vicons/ionicons5'
 import { currentUser, clearTokens, isAdmin } from '../api'
@@ -109,6 +110,7 @@ const menuOptions = computed<MenuOption[]>(() => {
   items.push(
     { label: t('nav.facts'), key: 'facts', icon: renderIcon(BulbOutline) },
     { label: t('nav.insights'), key: 'insights', icon: renderIcon(NuclearOutline) },
+    { label: t('nav.files'), key: 'files', icon: renderIcon(DownloadOutline) },
     { label: t('nav.profile'), key: 'profile', icon: renderIcon(PersonOutline) },
     { label: t('nav.settings'), key: 'settings', icon: renderIcon(SettingsOutline) },
   )

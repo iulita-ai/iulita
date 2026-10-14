@@ -17,7 +17,8 @@
     "credentials": "Credenciales",
     "skillStats": "Estadísticas de skills",
     "skillProposals": "Propuestas de skills",
-    "models": "Modelos"
+    "models": "Modelos",
+    "files": "Archivos"
   },
   "common": {
     "save": "Guardar",
@@ -636,7 +637,20 @@
     "bound": "Vínculo agregado",
     "unbound": "Vínculo eliminado",
     "ownerId": "Propietario",
-    "ownerIdPlaceholder": "ID de usuario"
+    "ownerIdPlaceholder": "ID de usuario",
+    "httpGrantsTab": "Permisos HTTP",
+    "httpGrantsHint": "Permisos por origen: la credencial solo viaja al scheme+host+puerto exacto listado aquí (herramienta http_request).",
+    "noGrants": "Sin permisos HTTP — la credencial aún no es utilizable por http_request",
+    "addGrant": "Añadir permiso",
+    "grantPrincipal": "Principal",
+    "grantPrincipalId": "ID de usuario",
+    "grantPrincipalIdPlaceholder": "ID de usuario del dominio (propietario)",
+    "grantCaller": "Llamador (opcional)",
+    "grantOrigin": "Origen",
+    "grantUsages": "Usos",
+    "grantAdded": "Permiso añadido",
+    "grantDeleted": "Permiso eliminado",
+    "grantError": "Error en la operación de permiso"
   },
   "skillStats": {
     "title": "Telemetría de skills",
@@ -823,5 +837,18 @@
     "noHistory": "Las versiones anteriores aparecen tras aplicar una nueva.",
     "preparePrevious": "Preparar versión para pruebas",
     "legacyPreserved": "Configuración existente conservada"
+  },
+  "files": {
+    "title": "Archivos",
+    "subtitle": "Descargas de la herramienta http_request (por propietario, caducan solas)",
+    "total": "{count} archivo(s)",
+    "filename": "Archivo",
+    "size": "Tamaño",
+    "expires": "Caduca",
+    "download": "Descargar",
+    "downloadFailed": "Error al descargar — el ticket pudo caducar",
+    "deleted": "Archivo eliminado",
+    "deleteFailed": "Error al eliminar",
+    "deleteConfirm": "¿Eliminar este archivo permanentemente?"
   }
 }

@@ -33,6 +33,8 @@ import (
 	"github.com/iulita-ai/iulita/internal/doctor"
 	"github.com/iulita-ai/iulita/internal/domain"
 	"github.com/iulita-ai/iulita/internal/eventbus"
+	"github.com/iulita-ai/iulita/internal/httpartifact"
+	"github.com/iulita-ai/iulita/internal/httpfetch"
 	"github.com/iulita-ai/iulita/internal/i18n"
 	"github.com/iulita-ai/iulita/internal/llm"
 	"github.com/iulita-ai/iulita/internal/llm/claude"
@@ -54,6 +56,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/skill/exchange"
 	"github.com/iulita-ai/iulita/internal/skill/geolocation"
 	googleskill "github.com/iulita-ai/iulita/internal/skill/google"
+	httpfetchskill "github.com/iulita-ai/iulita/internal/skill/httpfetch"
 	insightskill "github.com/iulita-ai/iulita/internal/skill/insights"
 	localeskill "github.com/iulita-ai/iulita/internal/skill/locale"
 	"github.com/iulita-ai/iulita/internal/skill/memory"
@@ -986,6 +989,116 @@ func main() {
 	webSearchSkill.SetReloader(registry, cfgStore)
 	registry.RegisterWithManifest(webSearchSkill, webManifest)
 	registry.RegisterInGroup(webfetch.New(web.NewSafeHTTPClient(15*time.Second, httpClient)), "websearch")
+
+	// Prometheus metrics are created once here when enabled: the HTTP engine
+	// takes an early bounded-hooks adapter, the event-bus subscribers attach
+	// later on the same instance.
+	var promMetrics *metrics.Metrics
+	if cfg.Metrics.Enabled {
+		promMetrics = metrics.New()
+	}
+
+	// http_request: strict HTTP engine. Proxy-only — the same deployment-owned
+	// [proxy].url the main transport uses; no env/direct fallback ever. When
+	// the proxy is missing/invalid the tool stays unregistered (the rest of
+	// Iulita keeps running), and when the feature flag is off it is disabled.
+	var httpArtifactStore *httpartifact.Store
+	var httpEngineRef *httpfetch.Engine
+	httpToolRegistered := false
+	{
+		hcfg := cfg.Skills.HTTP
+		limits := httpfetch.DefaultLimits()
+		if hcfg.MaxDownloadBytes > 0 {
+			limits.MaxDownloadBytes = clampInt64Http(hcfg.MaxDownloadBytes, limits.MaxDownloadBytes)
+		}
+		if hcfg.ConsentThresholdBytes > 0 {
+			// Operator may lower the consent threshold, never raise it.
+			limits.ConsentThresholdBytes = clampInt64Http(hcfg.ConsentThresholdBytes, limits.ConsentThresholdCeiling)
+		}
+		if hcfg.MaxUploadBytes > 0 {
+			limits.MaxUploadBytes = clampInt64Http(hcfg.MaxUploadBytes, 1<<30)
+		}
+		if hcfg.InlineMaxBytes > 0 {
+			limits.InlineMaxBytes = clampInt64Http(hcfg.InlineMaxBytes, limits.ConsentThresholdBytes)
+		}
+		if hcfg.MaxChainSteps > 0 {
+			limits.MaxChainSteps = min(hcfg.MaxChainSteps, 10)
+		}
+		if hcfg.MaxRedirects > 0 {
+			limits.MaxRedirects = min(hcfg.MaxRedirects, 5)
+		}
+		if d, perr := time.ParseDuration(hcfg.RequestTimeout); perr == nil && d > 0 {
+			limits.RequestTimeout = d
+		}
+		if d, perr := time.ParseDuration(hcfg.ChainBudget); perr == nil && d > 0 {
+			limits.ChainBudget = d
+		}
+		if d, perr := time.ParseDuration(hcfg.WallTimeout); perr == nil && d > 0 {
+			limits.WallTimeout = d
+		}
+		// Artifact store for downloads: constructed when downloads are
+		// enabled AND the dashboard runs with authentication (delivery is
+		// owner-scoped by definition). Without it the engine refuses
+		// download mode before the network — no unverifiable "downloaded"
+		// claims.
+		var httpArtifacts httpfetch.ArtifactStore
+		if hcfg.Enabled && hcfg.DownloadsEnabled && authService != nil {
+			ttl := 24 * time.Hour
+			if d, perr := time.ParseDuration(hcfg.ArtifactTTL); perr == nil && d > 0 {
+				ttl = d
+			}
+			artStore, aerr := httpartifact.NewStore(hcfg.ArtifactDir, store, httpartifact.Limits{
+				TTL:         ttl,
+				QuotaGlobal: hcfg.QuotaGlobalBytes,
+				QuotaUser:   hcfg.QuotaUserBytes,
+				DiskReserve: 1_000_000_000,
+			}, logger)
+			if aerr != nil {
+				logger.Warn("http artifact store unavailable; downloads disabled", zap.Error(aerr))
+			} else {
+				artStore.StartSweeper(ctx, 15*time.Minute)
+				httpArtifacts = artStore
+				httpArtifactStore = artStore
+			}
+		}
+		httpEngine, perr := httpfetch.NewEngine(httpfetch.EngineConfig{
+			ProxyURL: cfg.Proxy.URL,
+			Limits:   limits,
+			Policy: httpfetch.Policy{
+				Enabled:        hcfg.Enabled,
+				AllowedMethods: methodSet(hcfg.AllowedMethods),
+				AllowedPorts:   portSet(hcfg.AllowedPorts),
+			},
+			Credentials:  credential.NewHTTPResolver(credStore),
+			Artifacts:    httpArtifacts,
+			RawArtifacts: hcfg.RawArtifactsEnabled && httpArtifacts != nil,
+			Metrics:      httpMetricsAdapter{m: promMetrics},
+			Logger:       logger,
+		})
+		if perr != nil {
+			logger.Warn("http_request tool unavailable: proxy required for strict HTTP engine",
+				zap.String("code", perr.Code), zap.String("reason", perr.Message))
+		} else {
+			httpManifest, lmerr := httpfetchskill.LoadManifest()
+			if lmerr != nil {
+				logger.Warn("failed to load http skill manifest", zap.Error(lmerr))
+			}
+			registry.RegisterWithManifest(httpfetchskill.New(httpfetch.NewFactory(httpEngine)), httpManifest)
+			httpEngineRef = httpEngine
+			httpToolRegistered = true
+			logger.Info("http_request tool registered",
+				zap.Bool("enabled", hcfg.Enabled),
+				zap.Bool("downloads", httpArtifactStore != nil),
+				zap.String("proxy_scheme", func() string {
+					u, uerr := url.Parse(cfg.Proxy.URL)
+					if uerr != nil {
+						return ""
+					}
+					return u.Scheme
+				}()))
+		}
+	}
+
 	// Web capability always on — DDG fallback requires no API key.
 	caps = append(caps, "web")
 	registry.SetCapabilities(caps)
@@ -1246,6 +1359,12 @@ func main() {
 			ShellExecEnabled:  cfg.Skills.ShellExec.Enabled && len(cfg.Skills.ShellExec.AllowedBins) > 0,
 			WebfetchAvailable: true,                                              // webfetch is always registered unconditionally
 			HTTPClient:        web.NewSafeHTTPClient(15*time.Second, httpClient), // SSRF-safe client for proxy skills
+			HTTPToolAvailable: httpToolRegistered && cfg.Skills.HTTP.Enabled,     // strict http_request tool usable by text-only skills
+		}
+		if httpToolRegistered {
+			// Legacy proxy GETs ride the strict engine when it exists; without
+			// it the legacy client path stays (independent lifecycles, §10.3).
+			extCaps.HTTPFetcher = &httpPlanFetcherAdapter{factory: httpfetch.NewFactory(httpEngineRef)}
 		}
 		extMgr = skillmgr.NewManager(store, registry, cfg.Skills.External, extCaps, logger)
 		extMgr.RegisterSource(skillmgr.NewClawhHubSource("", web.NewSafeHTTPClient(30*time.Second, httpClient), logger))
@@ -1296,6 +1415,9 @@ func main() {
 	// Assistant
 	asst := assistant.New(llmProvider, store, registry, cfg.App.SystemPrompt, cfg.App.DefaultTimezone, cfg.Claude.ContextWindow, logger)
 	asst.SetModelInfo(primaryModel, primaryProvider)
+	// Extended skill deadlines (HTTP consent waits, downloads) stay cancellable
+	// by application shutdown instead of detaching from everything.
+	asst.SetLifecycleRoot(ctx)
 
 	// Self-improvement review handler — created here (before config-reload wiring)
 	// so its runtime-toggle flags can be hot-reloaded; registered on the worker below.
@@ -1558,8 +1680,7 @@ func main() {
 
 	// Prometheus metrics subscriber.
 	if cfg.Metrics.Enabled {
-		m := metrics.New()
-		m.RegisterSubscribers(bus)
+		promMetrics.RegisterSubscribers(bus)
 		logger.Info("prometheus metrics enabled")
 	}
 
@@ -1912,6 +2033,7 @@ func main() {
 			TodoProviders:     todoProviders,
 			CredentialManager: credStore,
 			Embedder:          embedder,
+			HTTPArtifacts:     httpArtifactStore, // nil unless downloads enabled + auth wired
 			ModelManager:      modelManager, ModelHTTPClient: llmHTTPClient, LegacyModelSettings: legacySettings, LegacyClassifierActive: legacyClassifierActive,
 		})
 		wg.Add(1)
@@ -2674,4 +2796,89 @@ func buildTransport(proxyURL string, logger *zap.Logger) *http.Transport {
 	}
 
 	return transport
+}
+
+// httpMetricsAdapter bridges the engine's bounded hooks onto Prometheus
+// metrics; a nil Metrics instance makes every observation a no-op.
+type httpMetricsAdapter struct {
+	m *metrics.Metrics
+}
+
+func (a httpMetricsAdapter) StepDone(method, statusClass, outcome string, seconds float64, bytesRead int64, download bool) {
+	if a.m == nil {
+		return
+	}
+	a.m.HTTPRequests.WithLabelValues(method, statusClass, outcome).Inc()
+	a.m.HTTPDuration.WithLabelValues(method).Observe(seconds)
+	dir := "inline"
+	if download {
+		dir = "download"
+	}
+	a.m.HTTPBytesRead.WithLabelValues(dir).Add(float64(bytesRead))
+}
+
+func (a httpMetricsAdapter) TransferAcquired() {
+	if a.m != nil {
+		a.m.HTTPInflight.Inc()
+	}
+}
+func (a httpMetricsAdapter) TransferReleased() {
+	if a.m != nil {
+		a.m.HTTPInflight.Dec()
+	}
+}
+func (a httpMetricsAdapter) PendingHeld() {
+	if a.m != nil {
+		a.m.HTTPPendingConsent.Inc()
+	}
+}
+func (a httpMetricsAdapter) PendingReleased() {
+	if a.m != nil {
+		a.m.HTTPPendingConsent.Dec()
+	}
+}
+func (a httpMetricsAdapter) ConsentAsked(reason, outcome string) {
+	if a.m != nil {
+		a.m.HTTPConsentAsks.WithLabelValues(reason, outcome).Inc()
+	}
+}
+func (a httpMetricsAdapter) ArtifactBytes(op string, bytes int64) {
+	if a.m != nil {
+		a.m.HTTPArtifactBytes.WithLabelValues(op).Add(float64(bytes))
+	}
+}
+
+// clampInt64Http bounds a configured limit to [0, max].
+func clampInt64Http(v, ceiling int64) int64 {
+	if v < 0 {
+		return 0
+	}
+	if v > ceiling {
+		return ceiling
+	}
+	return v
+}
+
+// methodSet upper-cases configured method names; empty means all allowed.
+func methodSet(methods []string) map[string]bool {
+	if len(methods) == 0 {
+		return nil
+	}
+	out := make(map[string]bool, len(methods))
+	for _, m := range methods {
+		out[strings.ToUpper(strings.TrimSpace(m))] = true
+	}
+	return out
+}
+
+// portSet converts configured ports to a set; empty means all 1-65535.
+func portSet(ports []int) map[int]bool {
+	if len(ports) == 0 {
+		return nil
+	}
+	out := make(map[int]bool, len(ports))
+	for _, p := range ports {
+		out[p] = true
+	}
+	return out
 }

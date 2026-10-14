@@ -184,6 +184,54 @@
             </n-form>
           </n-tab-pane>
 
+          <!-- HTTP origin grants tab -->
+          <n-tab-pane :name="t('credentials.httpGrantsTab')" :tab="t('credentials.httpGrantsTab')">
+            <n-text :depth="3" style="display: block; margin-bottom: 8px">
+              {{ t('credentials.httpGrantsHint') }}
+            </n-text>
+            <n-data-table
+              :columns="grantColumns"
+              :data="detailGrants"
+              :loading="loadingGrants"
+              size="small"
+            />
+            <n-empty v-if="!loadingGrants && detailGrants.length === 0" :description="t('credentials.noGrants')" />
+
+            <n-divider />
+
+            <n-text strong>{{ t('credentials.addGrant') }}</n-text>
+            <n-form style="margin-top: 8px">
+              <n-form-item :label="t('credentials.grantPrincipal')">
+                <n-select v-model:value="grantForm.principal_type" :options="grantPrincipalOptions" />
+              </n-form-item>
+              <n-form-item v-if="grantForm.principal_type === 'user'" :label="t('credentials.grantPrincipalId')">
+                <n-input v-model:value="grantForm.principal_id" :placeholder="t('credentials.grantPrincipalIdPlaceholder')" />
+              </n-form-item>
+              <n-form-item :label="t('credentials.grantCaller')">
+                <n-input v-model:value="grantForm.caller_id" placeholder="http_request" />
+              </n-form-item>
+              <n-form-item :label="t('credentials.grantOrigin')">
+                <n-input-group>
+                  <n-select v-model:value="grantForm.scheme" :options="grantSchemeOptions" style="width: 110px" />
+                  <n-input v-model:value="grantForm.host" placeholder="api.example.com" />
+                  <n-input v-model:value="grantForm.port" placeholder="443" style="width: 90px" />
+                </n-input-group>
+              </n-form-item>
+              <n-form-item :label="t('credentials.grantUsages')">
+                <n-select v-model:value="grantForm.usages" multiple :options="grantUsageOptions" />
+              </n-form-item>
+              <n-button
+                type="primary"
+                size="small"
+                :loading="granting"
+                :disabled="!grantForm.host || (grantForm.principal_type === 'user' && !grantForm.principal_id)"
+                @click="handleCreateGrant"
+              >
+                {{ t('credentials.addGrant') }}
+              </n-button>
+            </n-form>
+          </n-tab-pane>
+
           <!-- Audit tab -->
           <n-tab-pane :name="t('credentials.auditTab')" :tab="t('credentials.auditTab')">
             <n-data-table
@@ -206,7 +254,7 @@ import { useI18n } from 'vue-i18n'
 import {
   NSpace, NPageHeader, NDataTable, NButton, NTag, NText, NEmpty,
   NModal, NForm, NFormItem, NInput, NSelect,
-  NDrawer, NDrawerContent, NTabs, NTabPane,
+  NDrawer, NDrawerContent, NTabs, NTabPane, NInputGroup,
   NDescriptions, NDescriptionsItem, NDynamicTags, NPopconfirm,
   NDivider, NDatePicker,
   useMessage,
@@ -218,6 +266,7 @@ import type {
   CredentialDetail,
   CredentialBinding,
   CredentialAudit,
+  HTTPGrantView,
 } from '../api'
 
 const { t } = useI18n()
@@ -231,6 +280,7 @@ const loading = ref(false)
 const typeOptions = [
   { label: 'API Key', value: 'api_key' },
   { label: 'Bearer Token', value: 'bearer' },
+  { label: 'HTTP Basic (JSON {"username","password"})', value: 'http_basic' },
   { label: 'OAuth2 Client', value: 'oauth2_client' },
   { label: 'OAuth2 Tokens', value: 'oauth2_tokens' },
   { label: 'Service Account JSON', value: 'service_account_json' },
@@ -331,15 +381,94 @@ const bindForm = ref({
   consumer_id: '',
 })
 
+// HTTP origin grants
+const detailGrants = ref<HTTPGrantView[]>([])
+const loadingGrants = ref(false)
+const granting = ref(false)
+const grantForm = ref({
+  principal_type: 'user' as 'user' | 'global',
+  principal_id: '',
+  caller_id: 'http_request',
+  scheme: 'https',
+  host: '',
+  port: '443',
+  usages: ['basic', 'bearer', 'header', 'multipart'] as string[],
+})
+
+const grantPrincipalOptions = [
+  { label: 'User', value: 'user' },
+  { label: 'Global (requires caller binding)', value: 'global' },
+]
+const grantSchemeOptions = [
+  { label: 'https', value: 'https' },
+  { label: 'http', value: 'http' },
+]
+const grantUsageOptions = [
+  { label: 'basic', value: 'basic' },
+  { label: 'bearer', value: 'bearer' },
+  { label: 'header', value: 'header' },
+  { label: 'multipart', value: 'multipart' },
+]
+
+const grantColumns = [
+  { title: 'Origin', key: 'origin', render: (g: HTTPGrantView) => `${g.scheme}://${g.host}:${g.port}` },
+  { title: 'Principal', key: 'principal', render: (g: HTTPGrantView) => g.principal_type === 'user' ? `user ${g.principal_id || '?'}` : `global${g.caller_id ? ` (${g.caller_id})` : ''}` },
+  { title: 'Usages', key: 'usages', render: (g: HTTPGrantView) => g.usages.join(', ') },
+  { title: 'Expires', key: 'expires_at', render: (g: HTTPGrantView) => g.expires_at ? new Date(g.expires_at).toLocaleDateString() : '—' },
+  {
+    title: '',
+    key: 'actions',
+    width: 90,
+    render: (g: HTTPGrantView) =>
+      h(NButton, { size: 'tiny', type: 'error', quaternary: true, onClick: () => handleDeleteGrant(g) }, () => t('common.delete')),
+  },
+]
+
+async function handleCreateGrant() {
+  if (!detailCredential.value || !grantForm.value.host) return
+  granting.value = true
+  try {
+    await api.createHTTPGrant(detailCredential.value.id, {
+      ...grantForm.value,
+      port: grantForm.value.port || (grantForm.value.scheme === 'https' ? '443' : '80'),
+    } as Partial<HTTPGrantView>)
+    message.success(t('credentials.grantAdded'))
+    grantForm.value.host = ''
+    detailGrants.value = await api.getHTTPGrants(detailCredential.value.id)
+  } catch (e: any) {
+    message.error(e.message || t('credentials.grantError'))
+  } finally {
+    granting.value = false
+  }
+}
+
+async function handleDeleteGrant(g: HTTPGrantView) {
+  try {
+    await api.deleteHTTPGrant(g.id)
+    message.success(t('credentials.grantDeleted'))
+    if (detailCredential.value) {
+      detailGrants.value = await api.getHTTPGrants(detailCredential.value.id)
+    }
+  } catch (e: any) {
+    message.error(e.message || t('credentials.grantError'))
+  }
+}
+
 async function openDetail(row: CredentialView) {
   showDetailDrawer.value = true
   rotateValue.value = ''
   bindForm.value = { consumer_type: 'config_key', consumer_id: '' }
+  grantForm.value = {
+    principal_type: 'user', principal_id: '', caller_id: 'http_request',
+    scheme: 'https', host: '', port: '443', usages: ['basic', 'bearer', 'header', 'multipart'],
+  }
   detailCredential.value = null
   detailBindings.value = []
   auditEntries.value = []
+  detailGrants.value = []
   loadingBindings.value = true
   loadingAudit.value = true
+  loadingGrants.value = true
 
   try {
     const detail = await api.getCredential(row.id)
@@ -357,6 +486,15 @@ async function openDetail(row: CredentialView) {
     message.error(e.message || t('credentials.error'))
   } finally {
     loadingAudit.value = false
+  }
+
+  try {
+    detailGrants.value = await api.getHTTPGrants(row.id)
+  } catch {
+    // Endpoint absent on older deployments — empty list, no error spam.
+    detailGrants.value = []
+  } finally {
+    loadingGrants.value = false
   }
 }
 

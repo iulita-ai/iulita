@@ -54,8 +54,47 @@ See [Memory and Insights](memory-and-insights.md) for full details.
 |------|-------|-------------|
 | `websearch` | `query`, `count` | Web search via Brave API + DuckDuckGo fallback. 1-10 results. |
 | `webfetch` | `url` | Fetch and summarize a web page. Uses go-readability for content extraction. SSRF-protected. |
+| `http_request` | structured plan | Raw HTTP(S) API client (any method, headers, auth, bodies, cookie chains, downloads) through the mandatory system proxy. See below. |
 
 The web search chain is `Brave → DuckDuckGo` via `FallbackSearcher`. DuckDuckGo needs no API key, so web search always works.
+
+### HTTP Client (`http_request`, on by default)
+
+A strict, structured alternative to curl for API work: the model submits a
+closed JSON plan (single `request` or a `steps` chain of up to 10), and the
+engine executes it under server-side policy. Key guarantees:
+
+- **Proxy-only.** Uses the deployment `[proxy].url`; a missing or broken
+  proxy is a structured failure — never a direct connection, and
+  `HTTP_PROXY`/`NO_PROXY` cannot bypass it.
+- **Consent.** Mutating methods (POST/PUT/PATCH/DELETE/custom) and downloads
+  beyond 100 MB require an identity-bound confirmation in the chat channel
+  (Telegram/Slack/Webchat buttons, console prompt). The response body of a
+  3xx/4xx/5xx is preserved for diagnostics; a broken connection after a
+  mutation reports `outcome_unknown` instead of silently retrying.
+- **Credentials.** `auth.basic/bearer` references stored credentials
+  (create an `http_basic` credential with `{"username","password"}` JSON).
+  Resolution is origin-bound: a credential only travels to the exact
+  scheme+host+port it was granted for (`http_credential_grants`), and global
+  credentials require an explicit published grant.
+- **Chains.** Later steps reference extracted values (`{"$var":"id"}`) from
+  JSON Pointer, headers, or status; cookies stay bound to the exact origin
+  that set them. Redirects default to `none`; `same_origin` follows up to 5
+  hops on the same origin and never downgrades HTTPS→HTTP.
+- **Downloads.** `response.mode: "download"` streams into owner-scoped
+  artifacts (fsync + atomic rename + SQLite commit; TTL 24h; quota-managed)
+  and is retrieved from the dashboard **Files** view via a one-time
+  download ticket. Unknown-size transfers pause at the threshold and ask
+  before reading further; nothing is buffered in RAM.
+- **Limits.** Uploads 16 MiB, inline reads 2 MiB, previews 32 KiB, per-step
+  60s, chain budget 5 min, operation wall 35 min (consent waits excluded
+  from active budgets). See `[skills.http]` in
+  [configuration](configuration.md#skillshttp).
+
+Enabled by default: the tool registers whenever `[proxy].url` is configured
+(and `downloads_enabled` is effective once dashboard authentication is
+active). Without a proxy the tool is simply unavailable (`proxy_required`)
+and the rest of Iulita runs normally. Disable with `skills.http.enabled = false`.
 
 ### Directives
 
