@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestIncludeRawArtifactStoresOwnerCopy(t *testing.T) {
@@ -136,13 +137,15 @@ func TestHTTPSOriginUsesConnectTunnel(t *testing.T) {
 	}
 	res := runPlan(t, e, `{"version":1,"request":{"url":"https://api.example.test/v1/items"}}`)
 
-	// The tunnel was requested for the origin host:443.
+	// The tunnel was requested for the origin host:443 (bounded wait —
+	// the proxy goroutine may observe the request slightly after the
+	// engine has already failed the torn-down tunnel).
 	select {
 	case target := <-cp.connects:
 		if target != "api.example.test:443" {
 			t.Fatalf("CONNECT target = %q", target)
 		}
-	default:
+	case <-time.After(3 * time.Second):
 		t.Fatal("proxy never received a CONNECT request — direct connection?")
 	}
 
