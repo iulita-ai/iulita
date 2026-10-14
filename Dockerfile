@@ -39,7 +39,9 @@ RUN /iulita download-model /opt/iulita/models
 # --- Stage 3: Runtime ---
 FROM alpine:3.21
 
-RUN apk add --no-cache ca-certificates tzdata
+# ffmpeg: voice transcription transcodes Telegram's OGG/Opus to mp3 —
+# GLM-ASR (and some other Whisper-compatible endpoints) only accept wav/mp3.
+RUN apk add --no-cache ca-certificates tzdata ffmpeg
 
 RUN adduser -D -u 1000 -h /app iulita
 WORKDIR /app

@@ -1490,6 +1490,14 @@ func main() {
 		return transcription.NewOpenAI(key, model, baseURL, httpClient)
 	}
 	transcriber := buildTranscriber()
+	// Strict endpoints (GLM-ASR) only accept wav/mp3: transcode Telegram's
+	// OGG/Opus voice notes when ffmpeg is present in the image.
+	if transcriber != nil {
+		if ff := transcription.FindFFmpeg(); ff != "" {
+			transcriber = transcription.NewTranscoding(transcriber, ff)
+			logger.Info("voice transcription transcoding enabled", zap.String("ffmpeg", ff))
+		}
+	}
 
 	mgr := channelmgr.New(channelmgr.Config{
 		Store:                store,
