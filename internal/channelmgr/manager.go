@@ -1062,3 +1062,22 @@ func (m *Manager) senderFor(ctx context.Context, chatID string) channel.Streamin
 	}
 	return m.firstRunning()
 }
+
+// UpdateTranscriber swaps the voice transcription provider at runtime and
+// propagates it to every running Telegram channel (dashboard credential
+// hot-reload; nil disables voice transcription).
+func (m *Manager) UpdateTranscriber(t telegram.TranscriptionProvider) {
+	m.mu.Lock()
+	m.transcriber = t
+	var tgs []*telegram.Channel
+	for _, mc := range m.running {
+		if mc.tg != nil {
+			tgs = append(tgs, mc.tg)
+		}
+	}
+	m.mu.Unlock()
+
+	for _, tg := range tgs {
+		tg.SetTranscriber(t)
+	}
+}

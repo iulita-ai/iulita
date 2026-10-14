@@ -1416,14 +1416,42 @@ func main() {
 	}
 
 	// Voice message transcription (any Whisper-compatible endpoint).
-	var transcriber telegram.TranscriptionProvider
-	if cfg.Transcription.Provider == "openai" && cfg.Transcription.APIKey != "" {
-		transcriber = transcription.NewOpenAI(cfg.Transcription.APIKey, cfg.Transcription.Model, cfg.Transcription.BaseURL, httpClient)
+	// Every setting resolves from the credential store first (dashboard-managed,
+	// no sealed-secret re-rolls) with the config values as fallback; a key
+	// alone enables the feature (provider defaults to "openai").
+	buildTranscriber := func() telegram.TranscriptionProvider {
+		key := cfg.Transcription.APIKey
+		if v, ok := cfgStore.GetEffective("transcription.api_key"); ok && v != "" {
+			key = v
+		}
+		if key == "" {
+			return nil
+		}
+		provider := cfg.Transcription.Provider
+		if v, ok := cfgStore.GetEffective("transcription.provider"); ok && v != "" {
+			provider = v
+		}
+		if provider == "" {
+			provider = "openai"
+		}
+		model := cfg.Transcription.Model
+		if v, ok := cfgStore.GetEffective("transcription.model"); ok && v != "" {
+			model = v
+		}
+		baseURL := cfg.Transcription.BaseURL
+		if v, ok := cfgStore.GetEffective("transcription.base_url"); ok && v != "" {
+			baseURL = v
+		}
+		if provider != "openai" {
+			return nil
+		}
 		logger.Info("voice transcription enabled",
-			zap.String("provider", "openai"),
-			zap.String("model", cfg.Transcription.Model),
-			zap.String("base_url", cfg.Transcription.BaseURL))
+			zap.String("provider", provider),
+			zap.String("model", model),
+			zap.String("base_url", baseURL))
+		return transcription.NewOpenAI(key, model, baseURL, httpClient)
 	}
+	transcriber := buildTranscriber()
 
 	mgr := channelmgr.New(channelmgr.Config{
 		Store:                store,
@@ -1454,6 +1482,17 @@ func main() {
 	eventbus.RegisterSkillTelemetrySubscriber(bus, store, logger)
 	eventbus.RegisterConfigAuditSubscriber(bus, store, logger)
 	eventbus.RegisterFailureAlertSubscriber(bus, mgr, 3, logger)
+
+	// Transcription hot-reload — voice turns on/off the moment the dashboard
+	// credential changes, no pod restart needed.
+	bus.Subscribe(eventbus.ConfigChanged, func(_ context.Context, evt eventbus.Event) error {
+		p, ok := evt.Payload.(eventbus.ConfigChangedPayload)
+		if !ok || !strings.HasPrefix(p.Key, "transcription.") {
+			return nil
+		}
+		mgr.UpdateTranscriber(buildTranscriber())
+		return nil
+	})
 
 	// Telegram token hot-reload subscriber — restarts config-sourced Telegram on token change.
 	bus.Subscribe(eventbus.ConfigChanged, func(_ context.Context, evt eventbus.Event) error {
