@@ -262,3 +262,13 @@ func NewOperationID() string {
 	}
 	return "op_" + hex.EncodeToString(b[:])
 }
+
+// StandingGrantStore persists user-issued standing mutation approvals.
+// Engine-side narrow interface; the SQLite implementation lives in storage.
+type StandingGrantStore interface {
+	// HasStandingGrant reports whether an unrevoked, unexpired grant covers
+	// the exact origin (or globally) for this owner.
+	HasStandingGrant(ctx context.Context, scope Scope, origin Origin) (bool, error)
+	// SaveStandingGrant records a grant issued by this owner's decision.
+	SaveStandingGrant(ctx context.Context, scope Scope, origin Origin, standing string, expiresAt time.Time) error
+}

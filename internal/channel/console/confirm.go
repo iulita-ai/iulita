@@ -27,10 +27,7 @@ func (cc *consoleConfirmer) Confirm(ctx context.Context, action interact.Confirm
 	pending := &pendingConsolePrompt{
 		question: fmt.Sprintf("🔐 %s\n\n%s\n\nApprove this exact operation (%s)?",
 			action.Reason, action.Preview, action.OperationID),
-		options: []interact.Option{
-			{ID: "confirm_approve", Label: "✅ Approve"},
-			{ID: "confirm_deny", Label: "❌ Deny"},
-		},
+		options: consoleConfirmOptions(action.Reason),
 		replyCh: replyCh,
 	}
 
@@ -54,15 +51,37 @@ func (cc *consoleConfirmer) Confirm(ctx context.Context, action interact.Confirm
 
 	select {
 	case answer := <-replyCh:
-		if answer == "confirm_approve" {
+		switch answer {
+		case "confirm_approve":
 			return interact.Decision{Approved: true, Actor: expect, MaxBytes: action.MaxBytes}, nil
+		case "confirm_always_origin":
+			return interact.Decision{Approved: true, Actor: expect, MaxBytes: action.MaxBytes, Standing: interact.StandingOrigin}, nil
+		case "confirm_always":
+			return interact.Decision{Approved: true, Actor: expect, MaxBytes: action.MaxBytes, Standing: interact.StandingGlobal}, nil
+		default:
+			return interact.Decision{Approved: false, Actor: expect}, interact.ErrConfirmRejected
 		}
-		return interact.Decision{Approved: false, Actor: expect}, interact.ErrConfirmRejected
 	case <-timer.C:
 		return interact.Decision{}, interact.ErrPromptTimeout
 	case <-ctx.Done():
 		return interact.Decision{}, interact.ErrCancelled
 	}
+}
+
+// consoleConfirmOptions renders the consent choices; standing options only
+// for mutations (downloads always re-ask).
+func consoleConfirmOptions(reason string) []interact.Option {
+	opts := []interact.Option{
+		{ID: "confirm_approve", Label: "✅ Approve"},
+		{ID: "confirm_deny", Label: "❌ Deny"},
+	}
+	if reason == interact.ConfirmMutation {
+		opts = append(opts,
+			interact.Option{ID: "confirm_always_origin", Label: "🔁 Always for this origin"},
+			interact.Option{ID: "confirm_always", Label: "♾️ Always"},
+		)
+	}
+	return opts
 }
 
 // ConfirmerFor returns a ConfirmationAsker for the console channel.

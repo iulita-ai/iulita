@@ -18,9 +18,11 @@ import (
 // confirmPrefix marks callback data belonging to security confirmations.
 const confirmPrefix = "cfm:"
 
-// pendingConfirm is one awaiting identity-bound confirmation.
+// pendingConfirm is one awaiting identity-bound confirmation. The channel
+// carries the verdict: "1" one-shot approve, "O" always-for-origin,
+// "G" always (global), "0" deny.
 type pendingConfirm struct {
-	replyCh    chan bool
+	replyCh    chan string
 	expectFrom int64  // Telegram user ID of the requesting principal (0 = any allowed)
 	domainUser string // domain user ID for the decision actor
 	nonce      string
@@ -45,7 +47,7 @@ func (cs *confirmState) set(nonce string, pc *pendingConfirm) {
 	for _, v := range cs.pending {
 		if v.replyCh != pc.replyCh {
 			select {
-			case v.replyCh <- false:
+			case v.replyCh <- "0":
 			default:
 			}
 		}
@@ -86,7 +88,6 @@ type telegramConfirmer struct {
 // Confirm sends the inline-keyboard question and waits for the bound click.
 func (tc *telegramConfirmer) Confirm(ctx context.Context, action interact.Confirmation, expect interact.Actor) (interact.Decision, error) {
 	nonce := action.Nonce
-	allowData := confirmPrefix + nonce + ":1"
 	denyData := confirmPrefix + nonce + ":0"
 
 	text := fmt.Sprintf("🔐 Confirmation required (%s)\n\n%s\n\nThis approves exactly this operation (id %s).",
@@ -96,21 +97,30 @@ func (tc *telegramConfirmer) Confirm(ctx context.Context, action interact.Confir
 	}
 	text += "\n\nApprove?"
 
+	// Standing choices ("always") apply to mutation consents only; one-shot
+	// + deny for everything else (large downloads always re-ask).
+	row := []models.InlineKeyboardButton{
+		{Text: "✅ Approve", CallbackData: confirmPrefix + nonce + ":1"},
+		{Text: "❌ Deny", CallbackData: denyData},
+	}
+	keyboard := [][]models.InlineKeyboardButton{row}
+	if action.Reason == interact.ConfirmMutation {
+		keyboard = append(keyboard, []models.InlineKeyboardButton{
+			{Text: "🔁 Always for " + confirmOriginLabel(action), CallbackData: confirmPrefix + nonce + ":O"},
+			{Text: "♾️ Always", CallbackData: confirmPrefix + nonce + ":G"},
+		})
+	}
+
 	msg, err := tc.channel.bot.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: tc.chatID,
-		Text:   text,
-		ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
-			{
-				{Text: "✅ Approve", CallbackData: allowData},
-				{Text: "❌ Deny", CallbackData: denyData},
-			},
-		}},
+		ChatID:      tc.chatID,
+		Text:        text,
+		ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: keyboard},
 	})
 	if err != nil {
 		return interact.Decision{}, fmt.Errorf("sending confirmation: %w", err)
 	}
 
-	replyCh := make(chan bool, 1)
+	replyCh := make(chan string, 1)
 	pc := &pendingConfirm{
 		replyCh:    replyCh,
 		expectFrom: tc.fromTg,
@@ -126,11 +136,20 @@ func (tc *telegramConfirmer) Confirm(ctx context.Context, action interact.Confir
 	defer timer.Stop()
 
 	select {
-	case approved := <-replyCh:
-		if !approved {
+	case verdict := <-replyCh:
+		switch verdict {
+		case "1", "O", "G":
+			decision := interact.Decision{Approved: true, Actor: expect, MaxBytes: action.MaxBytes}
+			if verdict == "O" {
+				decision.Standing = interact.StandingOrigin
+			}
+			if verdict == "G" {
+				decision.Standing = interact.StandingGlobal
+			}
+			return decision, nil
+		default:
 			return interact.Decision{Approved: false, Actor: expect}, interact.ErrConfirmRejected
 		}
-		return interact.Decision{Approved: true, Actor: expect, MaxBytes: action.MaxBytes}, nil
 	case <-timer.C:
 		return interact.Decision{}, interact.ErrPromptTimeout
 	case <-ctx.Done():
@@ -148,7 +167,7 @@ func (c *Channel) HandleConfirmCallback(cq *models.CallbackQuery) bool {
 	if len(parts) != 2 {
 		return true
 	}
-	nonce, verdict := parts[0], parts[1] == "1"
+	nonce, verdict := parts[0], parts[1]
 
 	if cq.Message.Message == nil {
 		return true
@@ -186,7 +205,7 @@ func (c *Channel) HandleConfirmCallback(cq *models.CallbackQuery) bool {
 
 	_, _ = c.bot.AnswerCallbackQuery(context.Background(), &bot.AnswerCallbackQueryParams{ //nolint:errcheck // ack
 		CallbackQueryID: cq.ID,
-		Text:            map[bool]string{true: "Approved", false: "Denied"}[verdict],
+		Text:            map[string]string{"1": "Approved", "O": "Approved (always for this origin)", "G": "Approved (always)", "0": "Denied"}[verdict],
 	})
 
 	select {
@@ -194,6 +213,24 @@ func (c *Channel) HandleConfirmCallback(cq *models.CallbackQuery) bool {
 	default:
 	}
 	return true
+}
+
+// confirmOriginLabel renders a short origin label for the standing button.
+func confirmOriginLabel(action interact.Confirmation) string {
+	if i := strings.Index(action.Preview, "://"); i > 0 {
+		rest := action.Preview[i+3:]
+		end := len(rest)
+		for j := 0; j < len(rest); j++ {
+			if rest[j] == '/' || rest[j] == ' ' || rest[j] == '\n' {
+				end = j
+				break
+			}
+		}
+		if host := rest[:end]; host != "" {
+			return host
+		}
+	}
+	return "this origin"
 }
 
 // ConfirmerFor returns a ConfirmationAsker bound to the chat and the

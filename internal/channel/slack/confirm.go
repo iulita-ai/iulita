@@ -18,8 +18,8 @@ import (
 const confirmPrefix = "cfm:"
 
 type pendingSlackConfirm struct {
-	replyCh     chan bool
-	expectSlack string // Slack user ID of the chat owner (requesting principal)
+	replyCh     chan string // "1" | "O" | "G" | "0"
+	expectSlack string      // Slack user ID of the chat owner (requesting principal)
 	nonce       string
 }
 
@@ -38,7 +38,7 @@ func (cs *confirmState) set(nonce string, pc *pendingSlackConfirm) {
 	for _, v := range cs.pending {
 		if v.replyCh != pc.replyCh {
 			select {
-			case v.replyCh <- false:
+			case v.replyCh <- "0":
 			default:
 			}
 		}
@@ -89,18 +89,27 @@ func (sc *slackConfirmer) Confirm(ctx context.Context, action interact.Confirmat
 	}
 
 	confirmBlock := "cfm:" + nonce
+	buttons := []slackapi.BlockElement{
+		slackapi.NewButtonBlockElement(confirmBlock+":1", "confirm_approve",
+			slackapi.NewTextBlockObject("plain_text", "✅ Approve", false, false)),
+		slackapi.NewButtonBlockElement(confirmBlock+":0", "confirm_deny",
+			slackapi.NewTextBlockObject("plain_text", "❌ Deny", false, false)),
+	}
+	if action.Reason == interact.ConfirmMutation {
+		buttons = append(buttons,
+			slackapi.NewButtonBlockElement(confirmBlock+":O", "confirm_always_origin",
+				slackapi.NewTextBlockObject("plain_text", "🔁 Always for this origin", false, false)),
+			slackapi.NewButtonBlockElement(confirmBlock+":G", "confirm_always",
+				slackapi.NewTextBlockObject("plain_text", "♾️ Always", false, false)),
+		)
+	}
 	opts := []slackapi.MsgOption{
 		slackapi.MsgOptionBlocks(
 			slackapi.NewSectionBlock(
 				slackapi.NewTextBlockObject("mrkdwn", text, false, false),
 				nil, nil,
 			),
-			slackapi.NewActionBlock(confirmBlock,
-				slackapi.NewButtonBlockElement(confirmBlock+":1", "confirm_approve",
-					slackapi.NewTextBlockObject("plain_text", "✅ Approve", false, false)),
-				slackapi.NewButtonBlockElement(confirmBlock+":0", "confirm_deny",
-					slackapi.NewTextBlockObject("plain_text", "❌ Deny", false, false)),
-			),
+			slackapi.NewActionBlock(confirmBlock, buttons...),
 		),
 	}
 	if meta.threadTS != "" {
@@ -110,7 +119,7 @@ func (sc *slackConfirmer) Confirm(ctx context.Context, action interact.Confirmat
 		return interact.Decision{}, fmt.Errorf("posting confirmation: %w", err)
 	}
 
-	replyCh := make(chan bool, 1)
+	replyCh := make(chan string, 1)
 	pc := &pendingSlackConfirm{replyCh: replyCh, expectSlack: meta.userID, nonce: nonce}
 	sc.channel.confirms.set(nonce, pc)
 	defer sc.channel.confirms.abandon(pc)
@@ -119,11 +128,20 @@ func (sc *slackConfirmer) Confirm(ctx context.Context, action interact.Confirmat
 	defer timer.Stop()
 
 	select {
-	case approved := <-replyCh:
-		if !approved {
+	case verdict := <-replyCh:
+		switch verdict {
+		case "1", "O", "G":
+			decision := interact.Decision{Approved: true, Actor: expect, MaxBytes: action.MaxBytes}
+			if verdict == "O" {
+				decision.Standing = interact.StandingOrigin
+			}
+			if verdict == "G" {
+				decision.Standing = interact.StandingGlobal
+			}
+			return decision, nil
+		default:
 			return interact.Decision{Approved: false, Actor: expect}, interact.ErrConfirmRejected
 		}
-		return interact.Decision{Approved: true, Actor: expect, MaxBytes: action.MaxBytes}, nil
 	case <-timer.C:
 		return interact.Decision{}, interact.ErrPromptTimeout
 	case <-ctx.Done():
@@ -143,7 +161,7 @@ func (c *Channel) handleConfirmCallback(actionID, slackUserID string) bool {
 	if len(parts) != 3 {
 		return true // malformed — consumed silently
 	}
-	nonce, verdict := parts[1], parts[2] == "1"
+	nonce, verdict := parts[1], parts[2]
 
 	pc, ok := c.confirms.take(nonce)
 	if !ok {

@@ -129,6 +129,8 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 		{(*domain.HTTPCredentialGrant)(nil), "http_credential_grants"},
 		// HTTP tool: download artifacts metadata (additive, plan §9.2).
 		{(*domain.HTTPArtifact)(nil), "http_artifacts"},
+		// HTTP tool: standing mutation approvals ("always allow") (additive).
+		{(*domain.HTTPStandingGrant)(nil), "http_standing_grants"},
 	}
 
 	// Rename legacy "dreams" table to "insights" (preserves existing data).
