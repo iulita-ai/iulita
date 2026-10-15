@@ -78,6 +78,7 @@ func newPrivateModels(t *testing.T) (*privateModels, *privateProvider) {
 }
 
 type nativeSimulator struct {
+	harness *harness
 	stream  grpc.BidiStreamingClient[v1.ClientControlFrame, v1.ServerControlFrame]
 	epoch   uint64
 	frames  chan *v1.ServerControlFrame
@@ -100,7 +101,7 @@ func startNative(t *testing.T, h *harness, token string, mirror *v1.SessionMirro
 	if err != nil {
 		t.Fatal(err)
 	}
-	n := &nativeSimulator{stream: stream, epoch: welcome.ControlStreamEpoch, frames: make(chan *v1.ServerControlFrame, 32), faults: make(chan error, 1), session: mirror.SessionId}
+	n := &nativeSimulator{harness: h, stream: stream, epoch: welcome.ControlStreamEpoch, frames: make(chan *v1.ServerControlFrame, 32), faults: make(chan error, 1), session: mirror.SessionId}
 	categories := []string{"status", "location", "notifications"}
 	if mirror.ScreenContentAllowed {
 		categories = append(categories, "ui_tree")
@@ -164,20 +165,27 @@ func (n *nativeSimulator) command(t *testing.T) *v1.Command {
 }
 func (n *nativeSimulator) receipt(t *testing.T, command *v1.Command, state v1.ReceiptState) {
 	t.Helper()
+	started := time.Now()
 	id := uuid.NewString()
 	n.send(t, &v1.ClientControlFrame_Receipt{Receipt: &v1.CommandReceipt{ReceiptId: id, CommandId: command.CommandId, TaskId: command.TaskId, ServerSeq: command.ServerSeq, State: state, SessionGeneration: command.SessionGeneration, OccurredAt: timestamppb.Now(), DispatchStarted: state == v1.ReceiptState_RECEIPT_STATE_STARTED, PayloadDigestSha256: command.PayloadDigestSha256}})
-	timer := time.NewTimer(time.Second)
+	// This is the simulator's wire wait, not a command/session/lease deadline.
+	// A loaded race runner may need more than one second to commit the receipt;
+	// require its exact ACK without retrying or relaxing any server authority.
+	timer := time.NewTimer(5 * time.Second)
 	defer timer.Stop()
 	for {
 		select {
 		case f := <-n.frames:
 			if f.GetReceiptAck() != nil && f.GetReceiptAck().ReceiptId == id {
+				if elapsed := time.Since(started); elapsed >= time.Second {
+					t.Logf("receipt committed and acknowledged after %s", elapsed)
+				}
 				return
 			}
 		case err := <-n.faults:
 			t.Fatal(err)
 		case <-timer.C:
-			t.Fatal("receipt ACK timeout")
+			t.Fatalf("receipt ACK timeout after %s; %s", time.Since(started), phoneFailureState(t, n.harness, command))
 		}
 	}
 }
