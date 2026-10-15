@@ -9,6 +9,7 @@ import (
 	"image"
 	"image/png"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -185,6 +186,9 @@ func (n *nativeSimulator) receipt(t *testing.T, command *v1.Command, state v1.Re
 		case err := <-n.faults:
 			t.Fatal(err)
 		case <-timer.C:
+			buf := make([]byte, 2<<20)
+			length := runtime.Stack(buf, true)
+			t.Logf("receipt wait goroutines:\n%s", buf[:length])
 			t.Fatalf("receipt ACK timeout after %s; %s", time.Since(started), phoneFailureState(t, n.harness, command))
 		}
 	}
