@@ -1,13 +1,12 @@
 # Release guide
 
-This guide summarizes the public releases from v0.38.0 through v0.47.0 and the
-additional backend in the current source tree. Follow the linked release for its
+This guide summarizes the public releases from v0.38.0 through v0.48.0. Follow the linked release for its
 exact changelog. A source feature is not automatically available in an older
 container or binary.
 
-## Current source: mobile and remote-client backend (unreleased)
+## v0.48.0: mobile and remote-client backend
 
-The current source adds isolated OAuth2 and gRPC, owner-scoped multiple chats,
+[v0.48.0](https://github.com/iulita-ai/iulita/releases/tag/v0.48.0) adds isolated OAuth2 and gRPC, owner-scoped multiple chats,
 device tasks, consent-bound private model processing and constrained UI leases.
 CLI clients have Device Flow; unattended services have separate registrations
 and chat-only Client Credentials. Registrations support disable, secret rotation

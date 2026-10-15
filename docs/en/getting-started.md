@@ -194,6 +194,6 @@ If the assistant correctly recalls "blue", memory is working end-to-end.
 
 Read [the release guide](release-notes.md) before upgrading. The existing TUI
 runs Iulita locally; it is not the new remote CLI. Remote mobile, CLI and service
-integrations use [a separate OAuth/gRPC API](mobile-api.md), currently unreleased
+integrations use [a separate OAuth/gRPC API](mobile-api.md), available from v0.48.0
 and disabled by default. `mobile-init`, `mobile-rotate` and `mobile-client` are
 operator commands, not an Android application or interactive remote chat client.

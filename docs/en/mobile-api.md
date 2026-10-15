@@ -1,8 +1,7 @@
 # Mobile, CLI and service API
 
 ::: warning Availability
-This chapter describes the backend in the current source tree. It has not been
-included in a published release through v0.47.0. All mobile feature flags default
+Available starting with v0.48.0. All mobile feature flags default
 to `false`. There is no Android, iOS or remote CLI application shipped with this
 backend; server simulators do not establish Pixel/GrapheneOS compatibility.
 :::

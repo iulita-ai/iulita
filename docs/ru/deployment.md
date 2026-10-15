@@ -291,7 +291,7 @@ make setup-hooks
 ONNX-модель встроена в образ по `/opt/iulita/models`, вне writable data volume;
 ffmpeg включён для конвертации аудио.
 
-Бекенд mobile/CLI/service ещё не выпущен и по умолчанию выключен. Ему нужны
+Бекенд mobile/CLI/service доступен с v0.48.0 и по умолчанию выключен. Ему нужны
 собственные TLS listeners, ключи realm, OAuth DB и явная офлайн-инициализация.
 UI/Vision flags закрыты до совместной проверки с нативным клиентом.
 См. [руководство API](mobile-api.md). Не используйте старый WebChat и токены

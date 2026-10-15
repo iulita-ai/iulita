@@ -118,7 +118,7 @@ Web Chat ────┼→ Channel Manager → Assistant → LLM Provider Chain
 | `llm/ollama` | Ollama local LLM for dev/background tasks |
 | `llm/openai` | OpenAI-compatible text adapter |
 | `llm/deepseek`, `llm/zai`, `modelruntime` | Verified model profiles, routing and credential admission |
-| `mobile` | Isolated OAuth/gRPC backend for mobile, CLI and service clients (unreleased, off by default) |
+| `mobile` | Isolated OAuth/gRPC backend for mobile, CLI and service clients (v0.48.0+, off by default) |
 | `llm/onnx` | Local ONNX embeddings (all-MiniLM-L6-v2, 384 dims) |
 | `storage/sqlite` | SQLite with FTS5 + ONNX vectors, WAL mode |
 | `skill/*` | 25+ tool implementations |
@@ -217,7 +217,7 @@ internal/
   auth/              # JWT auth + bcrypt
   i18n/              # internationalization (6 languages, TOML catalogs)
   llm/               # LLM providers (Claude, DeepSeek, Z.ai, OpenAI, Ollama, ONNX)
-  mobile/            # isolated OAuth/gRPC backend (unreleased, off by default)
+  mobile/            # isolated OAuth/gRPC backend (v0.48.0+, off by default)
   scheduler/         # task queue (scheduler + worker)
   skill/             # skill implementations
   skillmgr/          # external skill manager (ClawhHub, URL, local)
@@ -270,7 +270,7 @@ docs/                # documentation (6 languages)
 
 Full public documentation is available in the [`docs/`](docs/) directory:
 
-- [Release guide](docs/en/release-notes.md) — released features through v0.47.0 and unreleased source changes
+- [Release guide](docs/en/release-notes.md) — released features through v0.48.0
 - [Mobile, CLI and service API](docs/en/mobile-api.md) — isolated OAuth/gRPC, scopes, registration and operations; disabled by default, no client application included
 - [Model profiles and routing](docs/model-routing.md) — connections, verification, roles, classification and fallback
 

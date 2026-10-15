@@ -194,6 +194,6 @@ iulita
 
 Перед обновлением прочитайте [обзор релизов](release-notes.md). Существующий TUI
 запускает Iulita локально и не является новым удалённым CLI. Интеграции mobile,
-CLI и service используют [отдельный OAuth/gRPC API](mobile-api.md), пока
-не выпущенный и выключенный по умолчанию. `mobile-init`, `mobile-rotate`,
+CLI и service используют [отдельный OAuth/gRPC API](mobile-api.md), доступный с v0.48.0
+и выключенный по умолчанию. `mobile-init`, `mobile-rotate`,
 `mobile-client` — команды оператора, а не Android-приложение или удалённый чат.

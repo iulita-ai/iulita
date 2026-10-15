@@ -291,7 +291,7 @@ rollback requirement. Retain a consistent SQLite backup and configuration key.
 The runtime image preloads ONNX models under `/opt/iulita/models`, outside the
 writable data volume, and includes ffmpeg for voice format conversion.
 
-The mobile/CLI/service backend is currently unreleased and disabled by default.
+The mobile/CLI/service backend is available from v0.48.0 and disabled by default.
 It requires its own TLS listeners, realm keys, OAuth store and explicit offline
 initialization. UI/Vision flags remain blocked by the native acceptance gate.
 See [the API operator guide](mobile-api.md). Do not route it through legacy
