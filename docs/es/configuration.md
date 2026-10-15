@@ -102,32 +102,32 @@ Configuracion editable en tiempo de ejecucion almacenada en la tabla SQLite `con
 | Clave | Predeterminado | Descripcion |
 |-------|----------------|-------------|
 | `app.system_prompt` | (incorporado) | Prompt base del sistema para el asistente |
-| `app.context_window` | 200000 | Presupuesto de tokens para el contexto |
-| `app.request_timeout` | 120s | Timeout por mensaje |
+| `claude.context_window` | 200000 | Presupuesto de tokens para el contexto |
+| `claude.request_timeout` | 120s | Timeout por mensaje |
 
 ### Claude (LLM Principal)
 
 | Clave | Predeterminado | Descripcion |
 |-------|----------------|-------------|
 | `claude.api_key` | — | Clave API de Anthropic (requerida) |
-| `claude.model` | `claude-sonnet-4-5-20250929` | ID del modelo |
-| `claude.max_tokens` | 8192 | Tokens maximos de salida |
+| `claude.model` | `claude-sonnet-4-6` | ID del modelo |
+| `claude.max_tokens` | 4096 | Tokens maximos de salida |
 | `claude.base_url` | — | Sobreescribir URL base de la API |
-| `claude.thinking` | 0 | Presupuesto de pensamiento extendido (0 = deshabilitado) |
+| `claude.thinking` | `off` | Modo thinking: `off`, `low`, `medium`, `high` |
 
 ### Ollama (LLM Local)
 
 | Clave | Predeterminado | Descripcion |
 |-------|----------------|-------------|
 | `ollama.url` | `http://localhost:11434` | URL del servidor Ollama |
-| `ollama.model` | `llama3` | Nombre del modelo |
+| `ollama.model` | — | Nombre del modelo |
 
 ### OpenAI (Compatibilidad)
 
 | Clave | Predeterminado | Descripcion |
 |-------|----------------|-------------|
 | `openai.api_key` | — | Clave API |
-| `openai.model` | `gpt-4` | ID del modelo |
+| `openai.model` | — | ID del modelo |
 | `openai.base_url` | `https://api.openai.com/v1` | URL base de la API |
 
 ### Telegram
@@ -136,7 +136,7 @@ Configuracion editable en tiempo de ejecucion almacenada en la tabla SQLite `con
 |-------|----------------|-------------|
 | `telegram.token` | — | Token del bot (recargable en caliente) |
 | `telegram.allowed_ids` | `[]` | Lista blanca de IDs de usuario (vacio = todos) |
-| `telegram.debounce_window` | 2s | Ventana de fusion de mensajes |
+| `telegram.debounce_window` | 1.5s | Ventana de fusion de mensajes |
 
 ### Almacenamiento
 
@@ -148,7 +148,6 @@ Configuracion editable en tiempo de ejecucion almacenada en la tabla SQLite `con
 
 | Clave | Predeterminado | Descripcion |
 |-------|----------------|-------------|
-| `server.enabled` | true | Habilitar servidor del panel de control |
 | `server.address` | `:8080` | Direccion de escucha (solo reinicio) |
 
 ### Autenticacion
@@ -156,8 +155,8 @@ Configuracion editable en tiempo de ejecucion almacenada en la tabla SQLite `con
 | Clave | Predeterminado | Descripcion |
 |-------|----------------|-------------|
 | `auth.jwt_secret` | (auto-generado) | Clave de firma JWT |
-| `auth.token_ttl` | 24h | TTL del token de acceso |
-| `auth.refresh_ttl` | 7d | TTL del token de refresco |
+| `auth.token_expiry` | 24h | TTL del token de acceso |
+| `auth.refresh_expiry` | 168h | TTL del token de refresco |
 
 ### Proxy
 

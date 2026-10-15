@@ -163,7 +163,7 @@ Web chat basado en WebSocket embebido en el panel de control.
 
 ### Protocolo
 
-**Conexion**: WebSocket en `/ws/chat?user_id=<uuid>&username=<name>&chat_id=<optional>`
+**Conexion**: WebSocket en `/ws/chat?token=<access-token>`
 
 **Mensajes entrantes** (cliente → servidor):
 ```json
@@ -204,7 +204,7 @@ La funcion de marcadores permite a los usuarios guardar respuestas del asistente
 
 ### Autenticacion
 
-WebChat **no** usa el UserResolver. El frontend obtiene un token JWT via `/api/auth/login`, extrae `user_id` del payload y lo pasa como parametro de consulta WebSocket. El canal confia en este `user_id` directamente.
+El servidor valida el token de acceso y la cuenta actual antes del upgrade. Deriva la identidad y `web:<user_id>` en el servidor; los campos del cliente no permiten suplantar otra cuenta. El Origin enviado debe coincidir con el host y el esquema. La caducidad o sustitución de la conexión cancela el trabajo pendiente. WebChat mantiene un chat por usuario; la API multichat usa OAuth independiente.
 
 ### Serializacion de Escritura
 

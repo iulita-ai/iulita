@@ -2,6 +2,22 @@
 
 Iulita supports multiple LLM providers through a decorator-based architecture. Providers can be composed into chains with retry, fallback, caching, routing, and classification layers.
 
+
+## Profiles and task roles
+
+**Settings → Models** manages encrypted connections and independent profiles for
+Claude, OpenAI-compatible services, Ollama, DeepSeek and Z.ai. Everyday, complex,
+vision and background roles use a versioned policy. New profiles require explicit
+text/tool checks and image checks where appropriate. Paid classification and
+backup profiles need their own evidence and activation. These checks incur usage.
+See [model profiles and routing](../model-routing.md) for presets, eligibility,
+revocation, migration and accounting. Catalog and price tables are snapshots;
+account-specific probe results determine availability.
+
+Legacy adapters/decorators below explain individual components, not the complete
+managed routing policy. Preserved legacy Claude routing can still use Haiku;
+new explicit profiles stay pinned within a tool loop.
+
 ## Provider Interface
 
 ```go
@@ -114,10 +130,10 @@ When the Claude API returns a context overflow error:
 | Key | Default | Description |
 |-----|---------|-------------|
 | `claude.api_key` | — | Anthropic API key (required) |
-| `claude.model` | `claude-sonnet-4-5-20250929` | Model ID |
-| `claude.max_tokens` | 8192 | Max output tokens |
+| `claude.model` | `claude-sonnet-4-6` | Model ID |
+| `claude.max_tokens` | 4096 | Max output tokens |
 | `claude.base_url` | — | Override API base URL |
-| `claude.thinking` | 0 | Extended thinking budget (0 = disabled) |
+| `claude.thinking` | `off` | Thinking mode: `off`, `low`, `medium`, `high` |
 
 ## Ollama Provider
 
@@ -144,7 +160,7 @@ Calls `POST /api/chat` with messages in OpenAI-compatible format. `ListModels()`
 | Key | Default | Description |
 |-----|---------|-------------|
 | `ollama.url` | `http://localhost:11434` | Ollama server URL |
-| `ollama.model` | `llama3` | Model name |
+| `ollama.model` | — | Model name |
 
 ## OpenAI Provider
 
@@ -160,7 +176,7 @@ OpenAI-compatible REST client. Works with any OpenAI-compatible service (Togethe
 | Key | Default | Description |
 |-----|---------|-------------|
 | `openai.api_key` | — | API key |
-| `openai.model` | `gpt-4` | Model ID |
+| `openai.model` | — | Model ID |
 | `openai.base_url` | `https://api.openai.com/v1` | API base URL |
 
 ## ONNX Embedding Provider
@@ -194,13 +210,10 @@ Tries providers in order, returns first success. Useful for `Claude → OpenAI` 
 
 ### CachingProvider
 
-Caches LLM responses by input hash:
-
-- **Key**: SHA-256 of `systemPrefix[:200] + "|" + message`
-- **TTL**: 60 minutes (configurable)
-- **Max entries**: 1000 (LRU eviction)
-- **Skip**: requests with tools or tool exchanges (non-deterministic)
-- **Storage**: SQLite `response_cache` table
+Response caching is opt-in for stateless requests with a complete identity.
+Keys include model/policy identity and request content; conversations, attachments,
+tools and opaque reasoning bypass response caching. A cache hit creates no new
+provider attempt. Phone private processing bypasses ordinary persistent caches.
 
 ### CachedEmbeddingProvider
 
@@ -234,71 +247,28 @@ For providers without native tool calling (Ollama, OpenAI):
 3. Strips `Tools` from the request
 4. Parses XML tool calls from the response using regex
 
-## Smart Model Routing
+## Managed routing and failure handling
 
-Iulita auto-registers a Claude Haiku provider when a Claude API key is configured. This enables automatic cost optimization:
+The shared router resolves explicit profiles and roles, pins a policy snapshot
+for the tool loop and preserves provider/profile identity for accounting.
+Planner work uses the complex role; background work, compression and delegation
+use the configured background policy. The opt-in classifier only sees bounded
+ambiguous current text, without history or tools. Its quality gate and ordered
+backup behavior are described in [the routing guide](../model-routing.md#paid-selection-and-backup-profiles).
 
-### Automatic Route Hints
+Credential admission applies to pinned snapshots too. Emergency revoke blocks
+new calls and attempts cancellation of admitted calls. Authentication, balance,
+input and configuration errors are not availability failover triggers. Visible
+output or started tool rounds prevent switching profiles. Private phone sends
+use their exact consent-bound profile/endpoint and do not retry or fail over.
+Claude SDK retries are disabled; outer routing owns retry policy.
 
-Background tasks are routed to Haiku via `RouteHint: llm.RouteHintCheap`:
+## Legacy chain assembly
 
-| Task | File | Why Haiku |
-|------|------|-----------|
-| Context compression | `compression.go` | Pure summarization |
-| Insight generation | `insight_generate.go` | Short creative text |
-| Insight scoring | `insight_generate.go` | Single digit output |
-| Tech fact analysis | `techfact_analyze.go` | JSON extraction |
-| Bookmark refinement | `refine_bookmark.go` | Extract key sentences |
-| Heartbeat check-in | `heartbeat.go` | Brief message or skip |
+Legacy setup may compose adapter → retry → fallback → cache → routing/classifier.
+That diagram does not describe managed profile admission or private phone work.
+Ollama and the basic OpenAI-compatible adapter are text-only at the raw adapter
+boundary; XML tool emulation is a separate wrapper, not native tool support.
 
-### Skill-Level Synthesis Routing
-
-Skills can declare that the LLM call synthesizing their output can use a cheaper model:
-
-```go
-// Optional interface — skills that return simple data implement this.
-type SynthesisModelDeclarer interface {
-    SynthesisRouteHint() string
-}
-```
-
-Skills with cheap synthesis: `datetime`, `exchange_rate`, `geolocation`, `recall`, `list_insights`, `websearch`.
-
-When the LLM calls one of these skills, the next iteration's synthesis call routes to Haiku automatically. The hint resets after each call — it never persists beyond one iteration.
-
-### Sub-Agent Routing
-
-Agent types have default route hints:
-
-| Agent Type | Default Route | Reason |
-|------------|--------------|--------|
-| summarizer | `claude-haiku` | Pure summarization |
-| researcher | default (Sonnet) | Needs reasoning for search queries |
-| analyst | default (Sonnet) | Pattern identification |
-| planner | default (Sonnet) | Step decomposition |
-| coder | default (Sonnet) | Code generation |
-
-### Model Pricing
-
-Default prices (per million tokens):
-
-| Model | Input | Output |
-|-------|-------|--------|
-| claude-opus-4-6 | $5.00 | $25.00 |
-| claude-sonnet-4-6 | $3.00 | $15.00 |
-| claude-haiku-4-5 | $1.00 | $5.00 |
-
-## Provider Chain Assembly
-
-The chain is built in `cmd/iulita/main.go`:
-
-```
-Claude Provider
-    └→ Retry Provider
-        └→ [Optional] Fallback Provider (+ OpenAI)
-            └→ [Optional] Caching Provider
-                └→ [Optional] Routing Provider
-                    └→ [Optional] Classifying Provider (+ Ollama)
-```
-
-Each layer is added conditionally based on configuration.
+Prices are estimates from the configured catalog, not current provider invoices.
+Unknown usage and prices remain unknown. See [model usage](../model-routing.md#usage-and-operations).

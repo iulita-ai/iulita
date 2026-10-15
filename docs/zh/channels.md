@@ -163,7 +163,7 @@ tuiModel (bubbletea)
 
 ### 协议
 
-**连接**：WebSocket 位于 `/ws/chat?user_id=<uuid>&username=<name>&chat_id=<optional>`
+**连接**：WebSocket 位于 `/ws/chat?token=<access-token>`
 
 **传入消息**（客户端 → 服务器）：
 ```json
@@ -204,7 +204,7 @@ tuiModel (bubbletea)
 
 ### 认证
 
-WebChat **不使用** UserResolver。前端通过 `/api/auth/login` 获取 JWT 令牌，从载荷中提取 `user_id`，并作为 WebSocket 查询参数传递。通道直接信任此 `user_id`。
+服务器在升级连接前验证访问令牌和当前账户，身份和 `web:<user_id>` 由服务器确定，不能信任客户端传入的身份。提供的 Origin 必须匹配主机和协议。令牌过期或连接被替换时，会取消待处理工作。WebChat 每位用户只有一个聊天槽；多会话 API 使用独立 OAuth。
 
 ### 写入序列化
 

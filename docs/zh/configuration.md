@@ -102,32 +102,32 @@ IULITA_PROXY_URL           → proxy.url
 | 键 | 默认值 | 描述 |
 |------|--------|------|
 | `app.system_prompt` | （内置） | 助手的基础系统提示词 |
-| `app.context_window` | 200000 | 上下文令牌预算 |
-| `app.request_timeout` | 120s | 每条消息的超时时间 |
+| `claude.context_window` | 200000 | 上下文令牌预算 |
+| `claude.request_timeout` | 120s | 每条消息的超时时间 |
 
 ### Claude（主要 LLM）
 
 | 键 | 默认值 | 描述 |
 |------|--------|------|
 | `claude.api_key` | — | Anthropic API 密钥（必需） |
-| `claude.model` | `claude-sonnet-4-5-20250929` | 模型 ID |
-| `claude.max_tokens` | 8192 | 最大输出令牌数 |
+| `claude.model` | `claude-sonnet-4-6` | 模型 ID |
+| `claude.max_tokens` | 4096 | 最大输出令牌数 |
 | `claude.base_url` | — | 覆盖 API 基础 URL |
-| `claude.thinking` | 0 | 扩展思考预算（0 = 禁用） |
+| `claude.thinking` | `off` | 思考模式：`off`、`low`、`medium`、`high` |
 
 ### Ollama（本地 LLM）
 
 | 键 | 默认值 | 描述 |
 |------|--------|------|
 | `ollama.url` | `http://localhost:11434` | Ollama 服务器 URL |
-| `ollama.model` | `llama3` | 模型名称 |
+| `ollama.model` | — | 模型名称 |
 
 ### OpenAI（兼容）
 
 | 键 | 默认值 | 描述 |
 |------|--------|------|
 | `openai.api_key` | — | API 密钥 |
-| `openai.model` | `gpt-4` | 模型 ID |
+| `openai.model` | — | 模型 ID |
 | `openai.base_url` | `https://api.openai.com/v1` | API 基础 URL |
 
 ### Telegram
@@ -136,7 +136,7 @@ IULITA_PROXY_URL           → proxy.url
 |------|--------|------|
 | `telegram.token` | — | 机器人令牌（支持热重载） |
 | `telegram.allowed_ids` | `[]` | 用户 ID 白名单（空 = 所有） |
-| `telegram.debounce_window` | 2s | 消息合并时间窗口 |
+| `telegram.debounce_window` | 1.5s | 消息合并时间窗口 |
 
 ### 存储
 
@@ -148,7 +148,6 @@ IULITA_PROXY_URL           → proxy.url
 
 | 键 | 默认值 | 描述 |
 |------|--------|------|
-| `server.enabled` | true | 启用仪表盘服务器 |
 | `server.address` | `:8080` | 监听地址（仅重启） |
 
 ### 认证
@@ -156,8 +155,8 @@ IULITA_PROXY_URL           → proxy.url
 | 键 | 默认值 | 描述 |
 |------|--------|------|
 | `auth.jwt_secret` | （自动生成） | JWT 签名密钥 |
-| `auth.token_ttl` | 24h | 访问令牌 TTL |
-| `auth.refresh_ttl` | 7d | 刷新令牌 TTL |
+| `auth.token_expiry` | 24h | 访问令牌 TTL |
+| `auth.refresh_expiry` | 168h | 刷新令牌 TTL |
 
 ### 代理
 

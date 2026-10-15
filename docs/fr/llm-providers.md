@@ -114,10 +114,10 @@ Lorsque l'API Claude retourne une erreur de depassement de contexte :
 | Cle | Defaut | Description |
 |-----|--------|-------------|
 | `claude.api_key` | — | Cle API Anthropic (requise) |
-| `claude.model` | `claude-sonnet-4-5-20250929` | Identifiant du modele |
-| `claude.max_tokens` | 8192 | Jetons de sortie maximum |
+| `claude.model` | `claude-sonnet-4-6` | Identifiant du modele |
+| `claude.max_tokens` | 4096 | Jetons de sortie maximum |
 | `claude.base_url` | — | Surcharger l'URL de base de l'API |
-| `claude.thinking` | 0 | Budget de reflexion etendue (0 = desactive) |
+| `claude.thinking` | `off` | Mode thinking : `off`, `low`, `medium`, `high` |
 
 ## Fournisseur Ollama
 
@@ -144,7 +144,7 @@ Appelle `POST /api/chat` avec les messages en format compatible OpenAI. `ListMod
 | Cle | Defaut | Description |
 |-----|--------|-------------|
 | `ollama.url` | `http://localhost:11434` | URL du serveur Ollama |
-| `ollama.model` | `llama3` | Nom du modele |
+| `ollama.model` | — | Nom du modele |
 
 ## Fournisseur OpenAI
 
@@ -160,7 +160,7 @@ Client REST compatible OpenAI. Fonctionne avec tout service compatible OpenAI (T
 | Cle | Defaut | Description |
 |-----|--------|-------------|
 | `openai.api_key` | — | Cle API |
-| `openai.model` | `gpt-4` | Identifiant du modele |
+| `openai.model` | — | Identifiant du modele |
 | `openai.base_url` | `https://api.openai.com/v1` | URL de base de l'API |
 
 ## Fournisseur d'embeddings ONNX

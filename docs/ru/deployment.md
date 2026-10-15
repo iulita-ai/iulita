@@ -25,7 +25,7 @@ make build         # фронтенд + Go-бинарник → ./bin/iulita
 make build-go      # только Go-бинарник (пропустить пересборку фронтенда)
 ```
 
-**Требования**: Go 1.25+, Node.js 22+, npm
+**Требования**: Go 1.26+ (toolchain 1.27.2), Node.js 22+, npm
 
 ## Docker
 
@@ -73,12 +73,12 @@ docker compose up -d
 Этап 1 (ui-builder): node:22-alpine
     → npm ci + npm run build
 
-Этап 2 (go-builder): golang:1.25-alpine
-    → CGO_ENABLED=1 (требуется для SQLite)
+Этап 2 (go-builder): golang:1.27.2-alpine
+    → CGO_ENABLED=1 (сборка образа; SQLite реализован на Go)
     → Копирует UI dist перед Go-сборкой
 
 Этап 3 (runtime): alpine:3.21
-    → ca-certificates + tzdata
+    → ca-certificates + tzdata + ffmpeg
     → Непривилегированный пользователь "iulita" (UID 1000)
     → Экспонирует порт 8080
     → Entrypoint: iulita --server
@@ -100,7 +100,7 @@ IULITA_STORAGE_PATH=/app/data/iulita.db
 IULITA_SERVER_ADDRESS=:8080
 IULITA_PROXY_URL=socks5://proxy:1080
 IULITA_JWT_SECRET=your-secret-here
-IULITA_CLAUDE_MODEL=claude-sonnet-4-5-20250929
+IULITA_CLAUDE_MODEL=claude-sonnet-4-6
 ```
 
 ## Обратный прокси
@@ -282,3 +282,18 @@ make setup-hooks
 ```
 
 Устанавливает git pre-commit hook, который запускает `gitleaks detect` для предотвращения случайного коммита секретов.
+
+
+## Обновления и необязательный удалённый API
+
+Прочитайте [обзор релизов](release-notes.md), включая требования v0.39 к откату
+базы. Сохраняйте согласованную копию SQLite и ключ шифрования конфигурации.
+ONNX-модель встроена в образ по `/opt/iulita/models`, вне writable data volume;
+ffmpeg включён для конвертации аудио.
+
+Бекенд mobile/CLI/service ещё не выпущен и по умолчанию выключен. Ему нужны
+собственные TLS listeners, ключи realm, OAuth DB и явная офлайн-инициализация.
+UI/Vision flags закрыты до совместной проверки с нативным клиентом.
+См. [руководство API](mobile-api.md). Не используйте старый WebChat и токены
+дашборда/воркеров. Включите OAuth DB и ключи realm в резервное копирование;
+восстановление требует явной инвалидации signing epoch.

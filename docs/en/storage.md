@@ -233,3 +233,15 @@ The `Repository` interface in `internal/storage/storage.go` has 60+ methods orga
 | Agent Jobs | CRUD, GetDue |
 | Google | Account CRUD, token storage |
 | External Skills | Install, List, Get, Delete |
+
+
+## Isolated mobile and remote-client subsystem
+
+The optional `internal/mobile` backend has its own OAuth realm, TLS/gRPC listener,
+conversation tables and persistent OAuth/task metadata. It shares existing account
+authority while keeping dashboard credentials and legacy history paths separate.
+Raw phone data, images and private model answers use bounded ephemeral memory,
+not ordinary transcripts, facts, embeddings or persistent response caches.
+Account authority reads use a separate read-only SQLite pool so pending writers
+cannot starve an active reservation holder. See [the API guide](mobile-api.md)
+for registrations, revocation, backup, acceptance gates and current availability.

@@ -233,3 +233,16 @@ combined = (1-vectorWeight)*ftsScore + vectorWeight*vecScore
 | Agent Jobs | CRUD, GetDue |
 | Google | CRUD аккаунтов, хранение токенов |
 | Внешние навыки | Install, List, Get, Delete |
+
+
+## Отдельный бекенд мобильных и удалённых клиентов
+
+Необязательный `internal/mobile` имеет свой OAuth realm, TLS/gRPC listener,
+таблицы чатов и постоянные метаданные OAuth/задач. Он использует существующие
+аккаунты, сохраняя отдельные credentials и изоляцию от старой истории.
+Сырые данные телефона, изображения и приватные ответы модели находятся
+в ограниченной ephemeral памяти, вне transcript, фактов, embeddings и
+постоянного кэша. Проверки account authority читают через отдельный read-only
+SQLite pool: ожидающие writers не блокируют чтение держателя reservation.
+См. [руководство API](mobile-api.md): регистрации, отзыв, резервные копии,
+acceptance gates и текущая доступность.

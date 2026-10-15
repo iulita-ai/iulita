@@ -254,3 +254,25 @@ When enabled (`metrics.enabled = true`), metrics are exposed on a separate port:
 | `iulita_active_sessions` | Gauge | — |
 
 Metrics are populated by subscribing to the event bus (non-blocking).
+
+
+## Models, Files and Slack
+
+**Settings → Models** is administrator-only: encrypted connections, profile
+probes, staged task roles, classifier evaluation, backup profiles and emergency
+revoke. Checks are explicit paid operations; opening settings does not start
+provider traffic. See [model routing](../model-routing.md).
+
+The **Files** view lists owner-scoped HTTP download artifacts and uses one-time
+download tickets. Standing HTTP mutation permissions are managed through
+`/api/http-standing-grants`; revoking them does not change credential-origin grants.
+
+Slack has separate bot posting policy and personal read-only connection controls;
+Slack Activity is administrator-only and metadata-only. Voice settings support
+hot reload; see [Channels](channels.md#voice-input).
+
+The `/ws` event feed requires a current administrator account and access token.
+WebChat uses `/ws/chat`, validates the current account and derives identity on
+the server. Both validate a supplied Origin and close on access-token expiration.
+The frontend refreshes credentials before reconnecting. The [remote API](mobile-api.md)
+uses separate OAuth and gRPC, not these dashboard sessions.

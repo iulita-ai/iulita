@@ -24,7 +24,7 @@ Console-first: launches a full-screen TUI chat by default. Also runs as a headle
 - **Token usage dashboard** — per-model, per-day cost tracking; admin dashboard page with filters and summaries; chat-based stats via `token_stats` skill
 - **Bookmark (quick save)** — save any assistant response as a fact with one click, background LLM refinement
 - **Console TUI** — full-screen chat with markdown rendering, streaming, slash commands
-- **Multi-channel** — Telegram bot, Web Chat (WebSocket), Console TUI
+- **Multi-channel** — Telegram, Slack, Discord, Web Chat (WebSocket), Console TUI
 - **Temporal decay** — older memories naturally lose relevance (configurable half-life)
 - **Hybrid search** — FTS5 full-text + ONNX vector embeddings with MMR reranking
 - **25+ skills** — web search, Google Workspace, Todoist, Craft, weather, shell exec, multi-agent, and more
@@ -34,7 +34,9 @@ Console-first: launches a full-screen TUI chat by default. Also runs as a headle
 - **Web dashboard** — Vue 3 SPA for managing facts, insights, tasks, channels, users, and settings
 - **Multi-user** — JWT auth, user-scoped data, cross-channel fact sharing
 - **i18n** — 6 languages (English, Russian, Chinese, Spanish, French, Hebrew + RTL)
-- **Smart model routing** — auto-routes to Claude Haiku for background tasks and skill synthesis, Sonnet for reasoning; skills declare their own cost tier via `SynthesisModelDeclarer`
+- **Model profiles and routing** — Claude, DeepSeek, Z.ai/GLM, OpenAI and Ollama; verified task roles, opt-in paid classification, backup profiles and credential revocation
+- **Voice input** — Whisper-compatible endpoints or Z.ai GLM-ASR, dashboard configuration and ffmpeg format conversion
+- **Structured HTTP** — proxy-only `http_request`, origin-bound credentials, consent, chains and downloadable artifacts
 - **ClawhHub marketplace** — install community skills from the marketplace or via URL
 - **Zero-config local install** — XDG paths, keyring secrets, interactive setup wizard
 
@@ -114,7 +116,9 @@ Web Chat ────┼→ Channel Manager → Assistant → LLM Provider Chain
 | `agent` | Multi-agent orchestration: parallel sub-agents, budget enforcement, depth limits |
 | `llm/claude` | Claude API with prompt caching, streaming, extended thinking, context overflow recovery |
 | `llm/ollama` | Ollama local LLM for dev/background tasks |
-| `llm/openai` | OpenAI-compatible provider (fallback) |
+| `llm/openai` | OpenAI-compatible text adapter |
+| `llm/deepseek`, `llm/zai`, `modelruntime` | Verified model profiles, routing and credential admission |
+| `mobile` | Isolated OAuth/gRPC backend for mobile, CLI and service clients (unreleased, off by default) |
 | `llm/onnx` | Local ONNX embeddings (all-MiniLM-L6-v2, 384 dims) |
 | `storage/sqlite` | SQLite with FTS5 + ONNX vectors, WAL mode |
 | `skill/*` | 25+ tool implementations |
@@ -137,6 +141,8 @@ Web Chat ────┼→ Channel Manager → Assistant → LLM Provider Chain
 | `directives` | Persistent user preferences for the AI |
 | `insights` | AI-generated cross-reference insights |
 | `websearch` / `webfetch` | Web search (Brave + DuckDuckGo) and page summarization |
+| `http_request` | Structured HTTP via mandatory proxy with consent, chains and artifacts |
+| `slack_search` / `slack_post` | Personal read/search and guarded bot posting |
 | `google` | Gmail, Calendar, Contacts, Tasks via OAuth2 |
 | `todoist` | Full Todoist task management (CRUD, projects, labels, filters) |
 | `tasks` | Unified task view across Todoist, Google Tasks, Craft |
@@ -210,7 +216,8 @@ internal/
   domain/            # domain models
   auth/              # JWT auth + bcrypt
   i18n/              # internationalization (6 languages, TOML catalogs)
-  llm/               # LLM providers (Claude, Ollama, OpenAI, ONNX)
+  llm/               # LLM providers (Claude, DeepSeek, Z.ai, OpenAI, Ollama, ONNX)
+  mobile/            # isolated OAuth/gRPC backend (unreleased, off by default)
   scheduler/         # task queue (scheduler + worker)
   skill/             # skill implementations
   skillmgr/          # external skill manager (ClawhHub, URL, local)
@@ -234,7 +241,7 @@ docs/                # documentation (6 languages)
 - **SQLite** (WAL mode) via [bun](https://bun.uptrace.dev/) ORM + FTS5 + ONNX vector search
 - **anthropic-sdk-go** — Claude API with prompt caching and extended thinking
 - **bubbletea + lipgloss + glamour** — console TUI
-- **telegram-bot-api/v5** — Telegram bot with streaming edits
+- **go-telegram/bot** — typed Telegram API, reactions, HTML replies and streaming
 - **GoFiber** — dashboard HTTP server + WebSocket hub
 - **Vue 3 + Naive UI + UnoCSS** — dashboard frontend
 - **vue-i18n** — frontend internationalization (6 languages)
@@ -261,7 +268,11 @@ docs/                # documentation (6 languages)
 
 ## Documentation
 
-Full documentation is available in the [`docs/`](docs/) directory:
+Full public documentation is available in the [`docs/`](docs/) directory:
+
+- [Release guide](docs/en/release-notes.md) — released features through v0.47.0 and unreleased source changes
+- [Mobile, CLI and service API](docs/en/mobile-api.md) — isolated OAuth/gRPC, scopes, registration and operations; disabled by default, no client application included
+- [Model profiles and routing](docs/model-routing.md) — connections, verification, roles, classification and fallback
 
 - [Getting Started](docs/en/getting-started.md) — installation, first run, CLI reference
 - [Architecture](docs/en/architecture.md) — system overview, message flow, key interfaces

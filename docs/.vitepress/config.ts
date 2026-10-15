@@ -9,6 +9,7 @@ function sidebarEn() {
       items: [
         { text: 'Getting Started', link: '/en/getting-started' },
         { text: 'Architecture', link: '/en/architecture' },
+        { text: 'Release guide', link: '/en/release-notes' },
       ]
     },
     {
@@ -16,6 +17,7 @@ function sidebarEn() {
       items: [
         { text: 'Memory & Insights', link: '/en/memory-and-insights' },
         { text: 'Channels', link: '/en/channels' },
+        { text: 'Mobile, CLI & service API', link: '/en/mobile-api' },
         { text: 'Skills', link: '/en/skills' },
         { text: 'Scheduler', link: '/en/scheduler' },
       ]
@@ -24,6 +26,7 @@ function sidebarEn() {
       text: 'Providers & Storage',
       items: [
         { text: 'LLM Providers', link: '/en/llm-providers' },
+        { text: 'Model profiles & routing', link: '/model-routing' },
         { text: 'Storage', link: '/en/storage' },
       ]
     },
@@ -47,6 +50,7 @@ function sidebarRu() {
       items: [
         { text: 'Быстрый старт', link: '/ru/getting-started' },
         { text: 'Архитектура', link: '/ru/architecture' },
+        { text: 'Обзор релизов', link: '/ru/release-notes' },
       ]
     },
     {
@@ -54,6 +58,7 @@ function sidebarRu() {
       items: [
         { text: 'Память и инсайты', link: '/ru/memory-and-insights' },
         { text: 'Каналы', link: '/ru/channels' },
+        { text: 'API: mobile, CLI и service', link: '/ru/mobile-api' },
         { text: 'Навыки', link: '/ru/skills' },
         { text: 'Планировщик', link: '/ru/scheduler' },
       ]
@@ -62,6 +67,7 @@ function sidebarRu() {
       text: 'Провайдеры и хранилище',
       items: [
         { text: 'LLM-провайдеры', link: '/ru/llm-providers' },
+        { text: 'Профили и routing (EN)', link: '/model-routing' },
         { text: 'Хранилище', link: '/ru/storage' },
       ]
     },
@@ -85,6 +91,8 @@ function sidebarZh() {
       items: [
         { text: '快速开始', link: '/zh/getting-started' },
         { text: '架构', link: '/zh/architecture' },
+        { text: 'Release guide (EN)', link: '/en/release-notes' },
+        { text: 'Mobile / CLI / service API (EN)', link: '/en/mobile-api' },
       ]
     },
     {
@@ -123,6 +131,8 @@ function sidebarEs() {
       items: [
         { text: 'Primeros pasos', link: '/es/getting-started' },
         { text: 'Arquitectura', link: '/es/architecture' },
+        { text: 'Release guide (EN)', link: '/en/release-notes' },
+        { text: 'Mobile / CLI / service API (EN)', link: '/en/mobile-api' },
       ]
     },
     {
@@ -161,6 +171,8 @@ function sidebarFr() {
       items: [
         { text: 'Démarrage rapide', link: '/fr/getting-started' },
         { text: 'Architecture', link: '/fr/architecture' },
+        { text: 'Release guide (EN)', link: '/en/release-notes' },
+        { text: 'Mobile / CLI / service API (EN)', link: '/en/mobile-api' },
       ]
     },
     {
@@ -199,6 +211,8 @@ function sidebarHe() {
       items: [
         { text: 'התחלה מהירה', link: '/he/getting-started' },
         { text: 'ארכיטקטורה', link: '/he/architecture' },
+        { text: 'Release guide (EN)', link: '/en/release-notes' },
+        { text: 'Mobile / CLI / service API (EN)', link: '/en/mobile-api' },
       ]
     },
     {

@@ -48,7 +48,8 @@ Runtime config overrides in the database can be encrypted:
 
 ## SSRF Protection
 
-All outbound HTTP requests (web fetch, web search, external skills) go through SSRF protection.
+Web fetch/search and relevant external-skill URL fetches use SSRF protection.
+The structured `http_request` engine additionally requires an explicit proxy.
 
 ### Blocked IP Ranges
 
@@ -165,3 +166,30 @@ Fixed window: total count of LLM/tool actions per hour across all chats. Auto-re
 - **Code detection**: rejects skills with code files unless properly isolated
 - **Prompt injection scanning**: warns on suspicious patterns in skill body
 - **Max archive size**: configurable (default 50MB for ClawhHub)
+
+
+## Browser sessions and isolated remote API
+
+Dashboard `/ws/chat` validates the current account and access token; supplied
+identity fields are not authority. `/ws` is an admin-only event feed. A supplied
+Origin must match the host and transport security; expiration cancels the socket's
+pending work. Proxy logs must not retain token-bearing WebSocket query strings.
+
+The [mobile/remote API](mobile-api.md) uses a separate RS256 OAuth realm, private
+keys and persistent revocation checks. Dashboard JWT settings above do not apply.
+Services get chat scopes only; CLI cannot receive/sync as a phone executor.
+Private phone results, UI content and model answers use ephemeral storage and
+explicit recipient/input consent, outside ordinary history, events and caches.
+UI/Vision remain unavailable at startup until joint native acceptance.
+
+## HTTP grants and proxy boundary
+
+`http_request` separates mutation approval, credential-origin grants and large
+transfer confirmation. Standing mutation approvals can be revoked through
+`/api/http-standing-grants`; downloads over 100 MB always ask again. A network
+failure after a mutation can mean `outcome_unknown`, not permission to retry.
+
+Pre-flight target validation through a proxy is not a connect-time destination
+check inside that proxy. Configure proxy-side destination ACLs and DNS-rebinding
+protection; do not infer them from the application's URL checks. There is no
+direct fallback when the mandatory HTTP-tool proxy is unavailable.

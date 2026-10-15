@@ -25,7 +25,7 @@ make build         # frontend + Go binary → ./bin/iulita
 make build-go      # Go binary only (skip frontend rebuild)
 ```
 
-**Prerequisites**: Go 1.25+, Node.js 22+, npm
+**Prerequisites**: Go 1.26+ (toolchain 1.27.2), Node.js 22+, npm
 
 ## Docker
 
@@ -73,12 +73,12 @@ docker compose up -d
 Stage 1 (ui-builder): node:22-alpine
     → npm ci + npm run build
 
-Stage 2 (go-builder): golang:1.25-alpine
-    → CGO_ENABLED=1 (required for SQLite)
+Stage 2 (go-builder): golang:1.27.2-alpine
+    → CGO_ENABLED=1 (container build; SQLite itself is pure Go)
     → Copies UI dist before Go build
 
 Stage 3 (runtime): alpine:3.21
-    → ca-certificates + tzdata
+    → ca-certificates + tzdata + ffmpeg
     → Non-root user "iulita" (UID 1000)
     → Exposes port 8080
     → Entrypoint: iulita --server
@@ -100,7 +100,7 @@ IULITA_STORAGE_PATH=/app/data/iulita.db
 IULITA_SERVER_ADDRESS=:8080
 IULITA_PROXY_URL=socks5://proxy:1080
 IULITA_JWT_SECRET=your-secret-here
-IULITA_CLAUDE_MODEL=claude-sonnet-4-5-20250929
+IULITA_CLAUDE_MODEL=claude-sonnet-4-6
 ```
 
 ## Reverse Proxy
@@ -282,3 +282,18 @@ make setup-hooks
 ```
 
 Installs a git pre-commit hook that runs `gitleaks detect` to prevent accidental secret commits.
+
+
+## Upgrade and optional remote API
+
+Review [the release guide](release-notes.md), including the v0.39 database
+rollback requirement. Retain a consistent SQLite backup and configuration key.
+The runtime image preloads ONNX models under `/opt/iulita/models`, outside the
+writable data volume, and includes ffmpeg for voice format conversion.
+
+The mobile/CLI/service backend is currently unreleased and disabled by default.
+It requires its own TLS listeners, realm keys, OAuth store and explicit offline
+initialization. UI/Vision flags remain blocked by the native acceptance gate.
+See [the API operator guide](mobile-api.md). Do not route it through legacy
+WebChat or reuse dashboard/worker tokens. Keep mobile DBs and realm keys in the
+backup plan; restoration requires an explicit signing-epoch invalidation.

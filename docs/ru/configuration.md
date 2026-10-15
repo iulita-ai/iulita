@@ -102,32 +102,32 @@ IULITA_PROXY_URL           → proxy.url
 | Ключ | По умолчанию | Описание |
 |------|-------------|----------|
 | `app.system_prompt` | (встроенный) | Базовый системный промпт ассистента |
-| `app.context_window` | 200000 | Бюджет токенов для контекста |
-| `app.request_timeout` | 120s | Тайм-аут на сообщение |
+| `claude.context_window` | 200000 | Бюджет токенов для контекста |
+| `claude.request_timeout` | 120s | Тайм-аут на сообщение |
 
 ### Claude (основной LLM)
 
 | Ключ | По умолчанию | Описание |
 |------|-------------|----------|
 | `claude.api_key` | — | API-ключ Anthropic (обязателен) |
-| `claude.model` | `claude-sonnet-4-5-20250929` | ID модели |
-| `claude.max_tokens` | 8192 | Максимум выходных токенов |
+| `claude.model` | `claude-sonnet-4-6` | ID модели |
+| `claude.max_tokens` | 4096 | Максимум выходных токенов |
 | `claude.base_url` | — | Переопределение базового URL API |
-| `claude.thinking` | 0 | Бюджет расширенного мышления (0 = отключено) |
+| `claude.thinking` | `off` | Режим thinking: `off`, `low`, `medium`, `high` |
 
 ### Ollama (локальный LLM)
 
 | Ключ | По умолчанию | Описание |
 |------|-------------|----------|
 | `ollama.url` | `http://localhost:11434` | URL сервера Ollama |
-| `ollama.model` | `llama3` | Название модели |
+| `ollama.model` | — | Название модели |
 
 ### OpenAI (совместимость)
 
 | Ключ | По умолчанию | Описание |
 |------|-------------|----------|
 | `openai.api_key` | — | API-ключ |
-| `openai.model` | `gpt-4` | ID модели |
+| `openai.model` | — | ID модели |
 | `openai.base_url` | `https://api.openai.com/v1` | Базовый URL API |
 
 ### Telegram
@@ -136,7 +136,7 @@ IULITA_PROXY_URL           → proxy.url
 |------|-------------|----------|
 | `telegram.token` | — | Токен бота (горячая перезагрузка) |
 | `telegram.allowed_ids` | `[]` | Белый список ID пользователей (пустой = все) |
-| `telegram.debounce_window` | 2s | Окно объединения сообщений |
+| `telegram.debounce_window` | 1.5s | Окно объединения сообщений |
 
 ### Хранилище
 
@@ -148,7 +148,6 @@ IULITA_PROXY_URL           → proxy.url
 
 | Ключ | По умолчанию | Описание |
 |------|-------------|----------|
-| `server.enabled` | true | Включить сервер дашборда |
 | `server.address` | `:8080` | Адрес прослушивания (только перезапуск) |
 
 ### Аутентификация
@@ -156,8 +155,8 @@ IULITA_PROXY_URL           → proxy.url
 | Ключ | По умолчанию | Описание |
 |------|-------------|----------|
 | `auth.jwt_secret` | (автогенерация) | Ключ подписи JWT |
-| `auth.token_ttl` | 24h | TTL токена доступа |
-| `auth.refresh_ttl` | 7d | TTL refresh-токена |
+| `auth.token_expiry` | 24h | TTL токена доступа |
+| `auth.refresh_expiry` | 168h | TTL refresh-токена |
 
 ### Прокси
 
@@ -198,7 +197,7 @@ IULITA_PROXY_URL           → proxy.url
 | `scheduler.enabled` | true | Включить планировщик задач |
 | `scheduler.worker_token` | — | Bearer-токен для удалённых воркеров |
 
-### Скиллы: HTTP-инструмент (`[skills.http]`)
+### Скиллы: HTTP-инструмент (`[skills.http]`) {#skillshttp}
 
 Настройки строгого инструмента `http_request`. Прокси всегда берётся из
 `[proxy].url` и обязательна. Большинство лимитов применяется при старте;
@@ -300,3 +299,22 @@ IULITA_PROXY_URL           → proxy.url
 3. **Формат**: `base64(12-байт-nonce ‖ шифротекст)`
 4. **Авто-шифрование**: ключи, объявленные как `secret_keys` в SKILL.md, всегда шифруются
 5. **Без утечки**: API дашборда возвращает пустые значения для зашифрованных ключей
+
+
+## Модели, голос и удалённые клиенты
+
+Профили, зашифрованные подключения, платные проверки и роли задач настраиваются
+в **Настройки → Модели**. См. [маршрутизацию моделей](../model-routing.md).
+Эта policy задаётся отдельно от старых provider defaults выше.
+
+Голос: `transcription.provider`, `.api_key`, `.model`, `.base_url`.
+Provider `openai` — Whisper-совместимый endpoint, `zai` — GLM-ASR.
+Настройки дашборда перекрывают TOML и применяются без перезапуска.
+См. [голосовой ввод](channels.md#voice-input).
+
+Флаги удалённого API требуют перезапуска и по умолчанию равны `false`:
+`mobile.chat_enabled`, `mobile.device_enabled`, `mobile.ui_enabled`,
+`mobile.vision_enabled`. `mobile.runtime_file` указывает runtime JSON.
+UI и Vision заблокированы build-owned gate проверки с нативным клиентом.
+[Руководство API](mobile-api.md) описывает инициализацию, TLS, OAuth-регистрации,
+Device Flow, service scopes и ротацию.

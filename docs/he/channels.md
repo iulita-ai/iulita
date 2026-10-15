@@ -163,7 +163,7 @@ Handler (Assistant.HandleMessage)
 
 ### פרוטוקול
 
-**חיבור**: WebSocket ב-`/ws/chat?user_id=<uuid>&username=<name>&chat_id=<optional>`
+**חיבור**: WebSocket ב-`/ws/chat?token=<access-token>`
 
 **הודעות נכנסות** (לקוח → שרת):
 ```json
@@ -204,7 +204,7 @@ Handler (Assistant.HandleMessage)
 
 ### אימות
 
-WebChat **לא** משתמש ב-UserResolver. הממשק הקדמי משיג טוקן JWT דרך `/api/auth/login`, שולף `user_id` מהנתונים, ומעביר אותו כפרמטר שאילתת WebSocket. הערוץ סומך על `user_id` זה ישירות.
+השרת מאמת את טוקן הגישה ואת החשבון הנוכחי לפני שדרוג החיבור, וקובע בעצמו את הזהות ואת `web:<user_id>`. שדות זהות מהלקוח אינם מאפשרים בחירת חשבון אחר. Origin שנשלח חייב להתאים למארח ולפרוטוקול. פקיעת הטוקן או החלפת החיבור מבטלות עבודה ממתינה. WebChat משתמש בשיחה אחת לכל משתמש; API לשיחות מרובות משתמש ב-OAuth נפרד.
 
 ### סריאליזציית כתיבה
 

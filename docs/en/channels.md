@@ -15,7 +15,8 @@ Each channel declares its capabilities via a bitmask on every message:
 | Typing indicator | Yes | Yes | No |
 | HTML | No | No | Yes |
 
-Capabilities are per-message (not per-channel), allowing mixed behavior when multiple channels share one assistant. Skills can check capabilities via `channel.CapsFrom(ctx)` to adapt their output format.
+The table describes declared capability flags; Telegram reactions are also
+handled directly by the adapter. Capabilities are per-message (not per-channel), allowing mixed behavior when multiple channels share one assistant. Skills can check capabilities via `channel.CapsFrom(ctx)` to adapt their output format.
 
 ## Console TUI
 
@@ -80,18 +81,24 @@ Full-featured Telegram bot with streaming, debouncing, and interactive prompts.
 
 ### Features
 
-- **User whitelist**: `allowed_ids` restricts who can chat with the bot. Empty = allow all (warning logged)
-- **Message debouncing**: rapid messages from the same chat are coalesced (configurable window)
-- **Streaming edits**: responses appear incrementally via `EditMessageText` (rate-limited to 1 edit/1.5s)
-- **Message chunking**: messages over 4000 chars are split at paragraph/line/word boundaries, preserving code blocks
-- **Reply threading**: first chunk replies to the user's message; subsequent chunks are standalone
-- **Typing indicator**: `ChatTyping` action sent every 4 seconds while processing
-- **Health monitoring**: `GetMe()` called every 60 seconds to detect connectivity issues
-- **Interactive prompts**: inline keyboards for skill interactions (weather location, etc.)
-- **Media support**: photos (largest size), documents (30MB limit), voice/audio (with transcription)
-- **Built-in commands**: `/clear` (clear history), custom registered commands
-- **Bookmark button**: 💾 inline keyboard button on every assistant response; click saves the full response as a fact with background LLM refinement
-- **Live status messages**: real-time status updates during tool execution and agent orchestration, showing which skill is running and agent progress
+- Long polling through `go-telegram/bot`, with typed reaction and callback updates.
+- Streaming edits, or experimental drafts with `telegram.draft_streaming = true`
+  (default off). Draft errors fall back to the edit path.
+- Markdown converted to Telegram HTML: nested styles, blockquotes, expandable
+  long quotes, spoilers, and monospace tables with emoji-aware column widths.
+  Long replies split at block boundaries without cutting formatting tags.
+- Processing reaction 👀; save a recent response with 🔖 or the 💾 button;
+  native copy button on supported responses.
+- Photos, documents, voice/audio, location pins and venue cards. Sending a venue
+  requires explicit approval; private location data is not a reusable send grant.
+- `/clear` clears stored history and attempts native deletion of recent bot
+  messages within Telegram's limits (generally the last 48 hours).
+- Native Todoist checklists where supported; a one-way mirror, without Todoist
+  completion sync.
+- Suspected secret replies use ephemeral delivery without bookmark/copy buttons.
+  If that API fails, a regular-send fallback exists: do not treat this feature as
+  a guaranteed private delivery mechanism.
+- User whitelist, message coalescing, interactive prompts and tool status updates.
 
 ### Message Processing Pipeline
 
@@ -110,7 +117,7 @@ Incoming Telegram Update
     │
     ▼
 Construct IncomingMessage
-    │ Caps = Streaming | Markdown | Typing | Buttons
+    │ Caps = Streaming | Markdown | Typing | Buttons | Locations
     │
     ├── Resolve user (platform → iulita UUID)
     ├── Lookup locale from DB
@@ -141,13 +148,10 @@ The debouncer coalesces rapid messages from the same chat to prevent multiple LL
 
 ### Message Chunking
 
-Long responses are split into Telegram-compatible chunks (4000 chars max):
-
-1. Try splitting at paragraph boundaries (`\n\n`)
-2. Try splitting at line boundaries (`\n`)
-3. Try splitting at word boundaries (` `)
-4. Hard split as last resort
-5. **Code block awareness**: if splitting inside a ``` block, close it with ``` and reopen in the next chunk
+The HTML renderer splits responses into bounded Telegram chunks at block
+boundaries. Oversized code blocks are rewrapped in each chunk. Raw HTML from
+model output is stripped and text nodes are escaped. Stored bookmarks keep the
+original Markdown, not the display HTML.
 
 ### Configuration
 
@@ -155,7 +159,46 @@ Long responses are split into Telegram-compatible chunks (4000 chars max):
 |-----|---------|-------------|
 | `telegram.token` | — | Bot token (hot-reloadable) |
 | `telegram.allowed_ids` | `[]` | User ID whitelist (empty = allow all) |
-| `telegram.debounce_window` | 2s | Message coalescing window |
+| `telegram.debounce_window` | 1.5s | Message coalescing window |
+| `telegram.draft_streaming` | false | Experimental draft streaming |
+
+### Voice input {#voice-input}
+
+Voice notes and audio are transcribed to text before assistant processing. The
+input guard is 24 MB. Configure `transcription.provider`, `.api_key`, `.model`
+and `.base_url` in dashboard settings; these settings take precedence over TOML
+and support hot reload. Use provider `openai` for a Whisper-compatible endpoint
+or `zai` for GLM-ASR. For a third-party compatible endpoint, set provider explicitly.
+
+```toml
+[transcription]
+provider = "openai"
+model = "whisper-large-v3"
+base_url = "https://api.groq.com/openai/v1"
+# Store transcription.api_key through dashboard settings.
+```
+
+If neither provider nor key is set, an existing Z.ai connection can enable
+`glm-asr-2512` automatically. Explicit Z.ai mode can also reuse that connection's
+key and endpoint. A key without a provider is not sufficient in the current
+implementation: set `provider = "openai"` explicitly.
+
+The container includes ffmpeg. When the transcoding wrapper is active, formats
+other than MP3/WAV are converted to 16 kHz mono MP3. If ffmpeg is missing or
+conversion fails, the original bytes are sent; strict endpoints can reject them.
+GLM-ASR has a documented 30-second clip limit; longer notes are not automatically
+segmented. Audio is sent to the selected transcription endpoint; a local Iulita
+installation does not imply local-only transcription.
+
+## Slack
+
+The Socket Mode bot and owner-only personal OAuth read/search integration can
+be enabled independently. Configure the bot channel and personal connection in
+the dashboard. `slack_search` provides search/history/replies; personal OAuth
+rejects write scopes. `slack_post` uses per-channel approval or automatic mode,
+an allowlist, quiet hours, hourly caps and a secret filter. Search content cannot
+silently grant autonomous posting authority. The admin Slack Activity view
+contains bounded metadata rather than message bodies and queries.
 
 ## WebChat
 
@@ -163,13 +206,15 @@ WebSocket-based web chat embedded in the dashboard.
 
 ### Protocol
 
-**Connection**: WebSocket at `/ws/chat?user_id=<uuid>&username=<name>&chat_id=<optional>`
+**Connection**: WebSocket at `/ws/chat?token=<access-token>`. For non-browser
+clients, an `Authorization: Bearer …` header is also accepted at upgrade.
+Do not record token-bearing URLs in proxy access logs.
 
 **Incoming messages** (client → server):
 ```json
 {
   "text": "user message",
-  "chat_id": "web:abc123",
+  "client_message_id": "stable-request-id",
   "prompt_id": "prompt_123_1",       // only for prompt responses
   "prompt_answer": "option_id",      // only for prompt responses
   "remember_message_id": "nano_ts"   // only for bookmark requests
@@ -204,7 +249,13 @@ The bookmark feature allows users to save assistant responses as facts via a UI 
 
 ### Authentication
 
-WebChat does **not** use the UserResolver. The frontend obtains a JWT token via `/api/auth/login`, extracts `user_id` from the payload, and passes it as a WebSocket query parameter. The channel trusts this `user_id` directly.
+The server validates the access token and current account before upgrade, and
+derives the identity and `web:<user_id>` chat ID itself. Client-supplied identity
+overrides cannot select another account or chat. A supplied browser Origin must
+match the host and secure/insecure scheme. Expired or replaced sockets cancel
+pending work; the frontend refreshes credentials before reconnecting. WebChat
+retains one chat slot per user. For separate conversations, use the
+[mobile/remote API](mobile-api.md), with its own OAuth registration.
 
 ### Write Serialization
 
@@ -231,7 +282,9 @@ When the assistant needs to send a proactive message (reminder, heartbeat):
 
 1. Look up which channel instance owns the `chatID` via DB
 2. If found and running, use that channel's sender
-3. Fallback: use the first running channel
+3. Legacy proactive delivery can fall back to the first running channel. Private
+   phone bindings instead require the exact registered instance and destination;
+   no fallback or raw-result delivery is allowed.
 
 ### Supported Channel Types
 
@@ -239,6 +292,8 @@ When the assistant needs to send a proactive message (reminder, heartbeat):
 |------|--------|------------|
 | Telegram | Config or DB | Token hot-reload |
 | WebChat | DB (bootstrap) | — |
+| Slack | DB | Runtime instance configuration |
+| Discord | DB | Runtime instance configuration |
 | Console | Console mode only | — |
 
 ## User Resolution

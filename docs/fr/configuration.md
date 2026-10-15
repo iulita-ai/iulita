@@ -102,32 +102,32 @@ Configuration modifiable a l'execution stockee dans la table SQLite `config_over
 | Cle | Defaut | Description |
 |-----|--------|-------------|
 | `app.system_prompt` | (integre) | Prompt systeme de base de l'assistant |
-| `app.context_window` | 200000 | Budget de jetons pour le contexte |
-| `app.request_timeout` | 120s | Delai par message |
+| `claude.context_window` | 200000 | Budget de jetons pour le contexte |
+| `claude.request_timeout` | 120s | Delai par message |
 
 ### Claude (LLM principal)
 
 | Cle | Defaut | Description |
 |-----|--------|-------------|
 | `claude.api_key` | — | Cle API Anthropic (requise) |
-| `claude.model` | `claude-sonnet-4-5-20250929` | Identifiant du modele |
-| `claude.max_tokens` | 8192 | Jetons de sortie maximum |
+| `claude.model` | `claude-sonnet-4-6` | Identifiant du modele |
+| `claude.max_tokens` | 4096 | Jetons de sortie maximum |
 | `claude.base_url` | — | Surcharger l'URL de base de l'API |
-| `claude.thinking` | 0 | Budget de reflexion etendue (0 = desactive) |
+| `claude.thinking` | `off` | Mode thinking : `off`, `low`, `medium`, `high` |
 
 ### Ollama (LLM local)
 
 | Cle | Defaut | Description |
 |-----|--------|-------------|
 | `ollama.url` | `http://localhost:11434` | URL du serveur Ollama |
-| `ollama.model` | `llama3` | Nom du modele |
+| `ollama.model` | — | Nom du modele |
 
 ### OpenAI (compatibilite)
 
 | Cle | Defaut | Description |
 |-----|--------|-------------|
 | `openai.api_key` | — | Cle API |
-| `openai.model` | `gpt-4` | Identifiant du modele |
+| `openai.model` | — | Identifiant du modele |
 | `openai.base_url` | `https://api.openai.com/v1` | URL de base de l'API |
 
 ### Telegram
@@ -136,7 +136,7 @@ Configuration modifiable a l'execution stockee dans la table SQLite `config_over
 |-----|--------|-------------|
 | `telegram.token` | — | Jeton du bot (rechargeable a chaud) |
 | `telegram.allowed_ids` | `[]` | Liste blanche d'IDs utilisateur (vide = tous) |
-| `telegram.debounce_window` | 2s | Fenetre de regroupement des messages |
+| `telegram.debounce_window` | 1.5s | Fenetre de regroupement des messages |
 
 ### Stockage
 
@@ -148,7 +148,6 @@ Configuration modifiable a l'execution stockee dans la table SQLite `config_over
 
 | Cle | Defaut | Description |
 |-----|--------|-------------|
-| `server.enabled` | true | Activer le serveur du tableau de bord |
 | `server.address` | `:8080` | Adresse d'ecoute (redemarrage uniquement) |
 
 ### Authentification
@@ -156,8 +155,8 @@ Configuration modifiable a l'execution stockee dans la table SQLite `config_over
 | Cle | Defaut | Description |
 |-----|--------|-------------|
 | `auth.jwt_secret` | (genere automatiquement) | Cle de signature JWT |
-| `auth.token_ttl` | 24h | TTL du jeton d'acces |
-| `auth.refresh_ttl` | 7d | TTL du jeton de rafraichissement |
+| `auth.token_expiry` | 24h | TTL du jeton d'acces |
+| `auth.refresh_expiry` | 168h | TTL du jeton de rafraichissement |
 
 ### Proxy
 

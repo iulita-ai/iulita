@@ -114,10 +114,10 @@ Response {
 | 键 | 默认值 | 描述 |
 |------|--------|------|
 | `claude.api_key` | — | Anthropic API 密钥（必需） |
-| `claude.model` | `claude-sonnet-4-5-20250929` | 模型 ID |
-| `claude.max_tokens` | 8192 | 最大输出令牌数 |
+| `claude.model` | `claude-sonnet-4-6` | 模型 ID |
+| `claude.max_tokens` | 4096 | 最大输出令牌数 |
 | `claude.base_url` | — | 覆盖 API 基础 URL |
-| `claude.thinking` | 0 | 扩展思考预算（0 = 禁用） |
+| `claude.thinking` | `off` | 思考模式：`off`、`low`、`medium`、`high` |
 
 ## Ollama 提供商
 
@@ -144,7 +144,7 @@ Response {
 | 键 | 默认值 | 描述 |
 |------|--------|------|
 | `ollama.url` | `http://localhost:11434` | Ollama 服务器 URL |
-| `ollama.model` | `llama3` | 模型名称 |
+| `ollama.model` | — | 模型名称 |
 
 ## OpenAI 提供商
 
@@ -160,7 +160,7 @@ Response {
 | 键 | 默认值 | 描述 |
 |------|--------|------|
 | `openai.api_key` | — | API 密钥 |
-| `openai.model` | `gpt-4` | 模型 ID |
+| `openai.model` | — | 模型 ID |
 | `openai.base_url` | `https://api.openai.com/v1` | API 基础 URL |
 
 ## ONNX 嵌入提供商

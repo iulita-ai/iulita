@@ -102,32 +102,32 @@ IULITA_PROXY_URL           → proxy.url
 | מפתח | ברירת מחדל | תיאור |
 |-----|---------|-------------|
 | `app.system_prompt` | (מובנה) | פרומפט מערכת בסיסי לעוזר |
-| `app.context_window` | 200000 | תקציב טוקנים להקשר |
-| `app.request_timeout` | 120s | timeout לכל הודעה |
+| `claude.context_window` | 200000 | תקציב טוקנים להקשר |
+| `claude.request_timeout` | 120s | timeout לכל הודעה |
 
 ### Claude (LLM ראשי)
 
 | מפתח | ברירת מחדל | תיאור |
 |-----|---------|-------------|
 | `claude.api_key` | — | מפתח API של Anthropic (נדרש) |
-| `claude.model` | `claude-sonnet-4-5-20250929` | מזהה מודל |
-| `claude.max_tokens` | 8192 | מקסימום טוקני פלט |
+| `claude.model` | `claude-sonnet-4-6` | מזהה מודל |
+| `claude.max_tokens` | 4096 | מקסימום טוקני פלט |
 | `claude.base_url` | — | דריסת כתובת בסיס API |
-| `claude.thinking` | 0 | תקציב חשיבה מורחבת (0 = מושבת) |
+| `claude.thinking` | `off` | מצב חשיבה: `off`, `low`, `medium`, `high` |
 
 ### Ollama (LLM מקומי)
 
 | מפתח | ברירת מחדל | תיאור |
 |-----|---------|-------------|
 | `ollama.url` | `http://localhost:11434` | כתובת שרת Ollama |
-| `ollama.model` | `llama3` | שם מודל |
+| `ollama.model` | — | שם מודל |
 
 ### OpenAI (תאימות)
 
 | מפתח | ברירת מחדל | תיאור |
 |-----|---------|-------------|
 | `openai.api_key` | — | מפתח API |
-| `openai.model` | `gpt-4` | מזהה מודל |
+| `openai.model` | — | מזהה מודל |
 | `openai.base_url` | `https://api.openai.com/v1` | כתובת בסיס API |
 
 ### Telegram
@@ -136,7 +136,7 @@ IULITA_PROXY_URL           → proxy.url
 |-----|---------|-------------|
 | `telegram.token` | — | טוקן בוט (ניתן לטעינה חמה) |
 | `telegram.allowed_ids` | `[]` | רשימה לבנה של מזהי משתמשים (ריק = כולם) |
-| `telegram.debounce_window` | 2s | חלון איחוד הודעות |
+| `telegram.debounce_window` | 1.5s | חלון איחוד הודעות |
 
 ### Storage
 
@@ -148,7 +148,6 @@ IULITA_PROXY_URL           → proxy.url
 
 | מפתח | ברירת מחדל | תיאור |
 |-----|---------|-------------|
-| `server.enabled` | true | הפעל שרת לוח בקרה |
 | `server.address` | `:8080` | כתובת האזנה (הפעלה מחדש בלבד) |
 
 ### Auth
@@ -156,8 +155,8 @@ IULITA_PROXY_URL           → proxy.url
 | מפתח | ברירת מחדל | תיאור |
 |-----|---------|-------------|
 | `auth.jwt_secret` | (נוצר אוטומטית) | מפתח חתימת JWT |
-| `auth.token_ttl` | 24h | TTL טוקן גישה |
-| `auth.refresh_ttl` | 7d | TTL טוקן רענון |
+| `auth.token_expiry` | 24h | TTL טוקן גישה |
+| `auth.refresh_expiry` | 168h | TTL טוקן רענון |
 
 ### Proxy
 

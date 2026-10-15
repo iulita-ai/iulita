@@ -102,32 +102,32 @@ Runtime-editable configuration stored in the `config_overrides` SQLite table. Ma
 | Key | Default | Description |
 |-----|---------|-------------|
 | `app.system_prompt` | (built-in) | Base system prompt for the assistant |
-| `app.context_window` | 200000 | Token budget for context |
-| `app.request_timeout` | 120s | Per-message timeout |
+| `claude.context_window` | 200000 | Token budget for context |
+| `claude.request_timeout` | 120s | Per-message timeout |
 
 ### Claude (Primary LLM)
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `claude.api_key` | — | Anthropic API key (required) |
-| `claude.model` | `claude-sonnet-4-5-20250929` | Model ID |
-| `claude.max_tokens` | 8192 | Max output tokens |
+| `claude.model` | `claude-sonnet-4-6` | Model ID |
+| `claude.max_tokens` | 4096 | Max output tokens |
 | `claude.base_url` | — | Override API base URL |
-| `claude.thinking` | 0 | Extended thinking budget (0 = disabled) |
+| `claude.thinking` | `off` | Thinking mode: `off`, `low`, `medium`, `high` |
 
 ### Ollama (Local LLM)
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `ollama.url` | `http://localhost:11434` | Ollama server URL |
-| `ollama.model` | `llama3` | Model name |
+| `ollama.model` | — | Model name |
 
 ### OpenAI (Compatibility)
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `openai.api_key` | — | API key |
-| `openai.model` | `gpt-4` | Model ID |
+| `openai.model` | — | Model ID |
 | `openai.base_url` | `https://api.openai.com/v1` | API base URL |
 
 ### Telegram
@@ -136,7 +136,7 @@ Runtime-editable configuration stored in the `config_overrides` SQLite table. Ma
 |-----|---------|-------------|
 | `telegram.token` | — | Bot token (hot-reloadable) |
 | `telegram.allowed_ids` | `[]` | User ID whitelist (empty = all) |
-| `telegram.debounce_window` | 2s | Message coalescing window |
+| `telegram.debounce_window` | 1.5s | Message coalescing window |
 
 ### Storage
 
@@ -148,7 +148,6 @@ Runtime-editable configuration stored in the `config_overrides` SQLite table. Ma
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `server.enabled` | true | Enable dashboard server |
 | `server.address` | `:8080` | Listen address (restart-only) |
 
 ### Auth
@@ -156,8 +155,8 @@ Runtime-editable configuration stored in the `config_overrides` SQLite table. Ma
 | Key | Default | Description |
 |-----|---------|-------------|
 | `auth.jwt_secret` | (auto-generated) | JWT signing key |
-| `auth.token_ttl` | 24h | Access token TTL |
-| `auth.refresh_ttl` | 7d | Refresh token TTL |
+| `auth.token_expiry` | 24h | Access token TTL |
+| `auth.refresh_expiry` | 168h | Refresh token TTL |
 
 ### Proxy
 
@@ -198,7 +197,7 @@ Runtime-editable configuration stored in the `config_overrides` SQLite table. Ma
 | `scheduler.enabled` | true | Enable task scheduler |
 | `scheduler.worker_token` | — | Bearer token for remote workers |
 
-### Skills: HTTP tool (`[skills.http]`)
+### Skills: HTTP tool (`[skills.http]`) {#skillshttp}
 
 Strict `http_request` tool settings. The proxy always comes from
 `[proxy].url` and is mandatory for this tool. Most limits are startup-only;
@@ -300,3 +299,21 @@ Secret config values in the DB are encrypted:
 3. **Format**: `base64(12-byte-nonce ‖ ciphertext)`
 4. **Auto-encrypt**: keys declared as `secret_keys` in SKILL.md are always encrypted
 5. **Never leaked**: dashboard API returns empty values for encrypted keys
+
+
+## Models, voice and remote clients
+
+Model profiles, encrypted connections, paid verification and task roles are
+managed in **Settings → Models**; see [model routing](../model-routing.md).
+This policy is separate from legacy provider defaults above.
+
+Voice settings are `transcription.provider`, `.api_key`, `.model`, `.base_url`.
+Use provider `openai` for a Whisper-compatible endpoint or `zai` for GLM-ASR.
+Dashboard settings override TOML and hot reload. See [voice input](channels.md#voice-input).
+
+Mobile/remote flags are restart-only, all default `false`:
+`mobile.chat_enabled`, `mobile.device_enabled`, `mobile.ui_enabled`,
+`mobile.vision_enabled`. `mobile.runtime_file` points to explicit runtime JSON.
+UI and Vision remain blocked by the build-owned native acceptance gate.
+See [the API guide](mobile-api.md) for initialization, TLS, separate OAuth
+registrations, Device Flow, service scopes and rotation.

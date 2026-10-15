@@ -114,10 +114,10 @@ Block 2: SystemPrompt (ללא cache control)
 | מפתח | ברירת מחדל | תיאור |
 |-----|---------|-------------|
 | `claude.api_key` | — | מפתח API של Anthropic (נדרש) |
-| `claude.model` | `claude-sonnet-4-5-20250929` | מזהה מודל |
-| `claude.max_tokens` | 8192 | מקסימום טוקני פלט |
+| `claude.model` | `claude-sonnet-4-6` | מזהה מודל |
+| `claude.max_tokens` | 4096 | מקסימום טוקני פלט |
 | `claude.base_url` | — | דריסת כתובת בסיס API |
-| `claude.thinking` | 0 | תקציב חשיבה מורחבת (0 = מושבת) |
+| `claude.thinking` | `off` | מצב חשיבה: `off`, `low`, `medium`, `high` |
 
 ## ספק Ollama
 
@@ -144,7 +144,7 @@ Block 2: SystemPrompt (ללא cache control)
 | מפתח | ברירת מחדל | תיאור |
 |-----|---------|-------------|
 | `ollama.url` | `http://localhost:11434` | כתובת שרת Ollama |
-| `ollama.model` | `llama3` | שם מודל |
+| `ollama.model` | — | שם מודל |
 
 ## ספק OpenAI
 
@@ -160,7 +160,7 @@ Block 2: SystemPrompt (ללא cache control)
 | מפתח | ברירת מחדל | תיאור |
 |-----|---------|-------------|
 | `openai.api_key` | — | מפתח API |
-| `openai.model` | `gpt-4` | מזהה מודל |
+| `openai.model` | — | מזהה מודל |
 | `openai.base_url` | `https://api.openai.com/v1` | כתובת בסיס API |
 
 ## ספק הטבעות ONNX

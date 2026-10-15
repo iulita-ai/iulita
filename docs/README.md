@@ -18,10 +18,13 @@ The documentation site is available at [iulita.ai](https://iulita.ai).
 | Document | Description |
 |----------|-------------|
 | [Getting Started](en/getting-started.md) | Installation, first run, CLI reference |
+| [Release guide](en/release-notes.md) | Changes through v0.47.0 and unreleased source capabilities |
+| [Remote API](en/mobile-api.md) | Mobile, CLI and service OAuth/gRPC, scopes, rotation and operations |
+| [Model profiles](model-routing.md) | Verified profiles, task roles, classifier and backup policy |
 | [Architecture](en/architecture.md) | System overview, component map, message flow, key interfaces |
 | [Memory and Insights](en/memory-and-insights.md) | Fact storage, recall, temporal decay, MMR, embeddings, hybrid search |
-| [Channels](en/channels.md) | Console TUI, Telegram, WebChat, channel capabilities |
-| [LLM Providers](en/llm-providers.md) | Claude, Ollama, OpenAI, ONNX embeddings, provider chain |
+| [Channels](en/channels.md) | Console TUI, Telegram, Slack, Discord, WebChat, voice input |
+| [LLM Providers](en/llm-providers.md) | Claude, DeepSeek, Z.ai/GLM, OpenAI, Ollama, ONNX, task routing |
 | [Skills](en/skills.md) | All 20+ skills, approval levels, text skills, ClawhHub marketplace |
 | [i18n / l10n](en/i18n.md) | 6 languages, TOML catalogs, frontend i18n, RTL support |
 | [Configuration](en/configuration.md) | Layered config, XDG paths, keyring, hot-reload, encryption |
