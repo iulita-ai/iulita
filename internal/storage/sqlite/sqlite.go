@@ -10,6 +10,7 @@ import (
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/sqlitedialect"
 	"github.com/uptrace/bun/driver/sqliteshim"
+	"golang.org/x/sync/semaphore"
 )
 
 // memDBCounter gives each in-memory store a unique shared-cache name.
@@ -20,10 +21,11 @@ type EmbedFunc func(ctx context.Context, texts []string) ([][]float32, error)
 
 // Store implements storage.Repository using SQLite via bun.
 type Store struct {
-	db           *bun.DB
-	halfLifeDays float64   // temporal decay half-life for memory ranking
-	mmrLambda    float64   // MMR diversity parameter (0 = disabled)
-	embedFunc    EmbedFunc // optional: auto-embed on save
+	db                   *bun.DB
+	securityReservations *semaphore.Weighted
+	halfLifeDays         float64   // temporal decay half-life for memory ranking
+	mmrLambda            float64   // MMR diversity parameter (0 = disabled)
+	embedFunc            EmbedFunc // optional: auto-embed on save
 }
 
 // SetHalfLifeDays configures the temporal decay half-life for memory ranking.
@@ -84,7 +86,7 @@ func New(path string) (*Store, error) {
 		}
 	}
 
-	return &Store{db: db}, nil
+	return &Store{db: db, securityReservations: semaphore.NewWeighted(1)}, nil
 }
 
 func (s *Store) RunMigrations(ctx context.Context) error {

@@ -18,6 +18,10 @@ native session mirrors. Runtime restart or a detected wall-clock step changes
 the clock ID and fences sessions tied to the old clock. Clients must still
 account for round-trip delay, resolution, clock error, drift and sample age.
 
+Account security reservations now queue before competing for the SQLite writer.
+Waiting requests respect cancellation without entering the business operation;
+transactional account and token revocation checks remain in place.
+
 All mobile defaults remain off. UI/Vision remain behind the joint native
 acceptance gate; this backend release does not ship an Android application or
 automatically enable phone access. See [the integration guide](mobile-api.md).

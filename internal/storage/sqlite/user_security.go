@@ -13,6 +13,14 @@ import (
 // not prevent a concurrent password/disable/delete commit. Never use this for
 // streams, network/provider calls or waiting for a user decision.
 func (s *Store) WithUserSecurity(ctx context.Context, id string, fn func(*domain.User) error) error {
+	// Queue local reservations before opening competing SQLite writers. SQLite's
+	// busy handler is not fair and may sleep through context cancellation; a
+	// validation burst must not starve Control receipts or revocation checks.
+	// The real BEGIN IMMEDIATE below remains the cross-process authority fence.
+	if err := s.securityReservations.Acquire(ctx, 1); err != nil {
+		return err
+	}
+	defer s.securityReservations.Release(1)
 	conn, err := s.db.DB.Conn(ctx)
 	if err != nil {
 		return err
