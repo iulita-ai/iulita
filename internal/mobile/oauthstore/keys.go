@@ -212,21 +212,34 @@ func (r *Realm) JWKS() JWKS {
 // Claims contains the strict mobile access-token claims.
 type Claims struct {
 	jwt.RegisteredClaims
-	Audience     string `json:"aud"`
-	ClientID     string `json:"client_id"`
-	DeviceID     string `json:"device_id"`
-	FamilyID     string `json:"family_id"`
-	Stage        Stage  `json:"token_stage"`
-	Scope        string `json:"scope"`
-	OwnerEpoch   uint64 `json:"owner_security_epoch"`
-	DeviceEpoch  uint64 `json:"device_epoch"`
-	SigningEpoch uint64 `json:"signing_epoch"`
-	AuthTime     int64  `json:"auth_time,omitempty"`
+	PrincipalType string `json:"principal_type,omitempty"`
+	ServiceID     string `json:"service_id,omitempty"`
+	ClientEpoch   uint64 `json:"client_epoch,omitempty"`
+	Audience      string `json:"aud"`
+	ClientID      string `json:"client_id"`
+	DeviceID      string `json:"device_id"`
+	FamilyID      string `json:"family_id"`
+	Stage         Stage  `json:"token_stage"`
+	Scope         string `json:"scope"`
+	OwnerEpoch    uint64 `json:"owner_security_epoch"`
+	DeviceEpoch   uint64 `json:"device_epoch"`
+	SigningEpoch  uint64 `json:"signing_epoch"`
+	AuthTime      int64  `json:"auth_time,omitempty"`
 }
 
 // GetAudience returns the configured mobile token audience.
 func (c Claims) GetAudience() (jwt.ClaimStrings, error) { return jwt.ClaimStrings{c.Audience}, nil }
 func (r *Realm) validClaims(c *Claims) bool {
+	if c.PrincipalType == "service" {
+		if c.Issuer != r.issuer || c.Audience != r.audience || !canonicalID(c.Subject) || !canonicalID(c.ID) || !canonicalID(c.ServiceID) || !clientIDPattern.MatchString(c.ClientID) || c.Stage != Active || c.DeviceID != "" || c.FamilyID != "" || c.DeviceEpoch != 0 || c.AuthTime != 0 || !boundedEpoch(c.OwnerEpoch) || !boundedEpoch(c.ClientEpoch) || c.SigningEpoch != r.epoch || c.NotBefore != nil || c.IssuedAt == nil || c.ExpiresAt == nil {
+			return false
+		}
+		ttl := c.ExpiresAt.Sub(c.IssuedAt.Time)
+		return c.IssuedAt.Unix() > 0 && !c.IssuedAt.After(time.Now().Add(time.Second)) && ttl > 0 && ttl <= 5*time.Minute && len(strings.Fields(c.Scope)) > 0 && validScopes(strings.Fields(c.Scope)) && subset(strings.Fields(c.Scope), serviceCeiling)
+	}
+	if c.PrincipalType != "" || c.ServiceID != "" || c.ClientEpoch != 0 {
+		return false
+	}
 	if c.IssuedAt != nil && c.IssuedAt.Unix() <= 0 {
 		return false
 	}

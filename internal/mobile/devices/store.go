@@ -39,6 +39,7 @@ type Store struct {
 	accounts browseroauth.Accounts
 	chats    *conversations.Repository
 	content  *ephemeral.Store
+	options  Options
 }
 
 // Identity binds a device operation to verified mobile credentials.
@@ -48,8 +49,8 @@ type Identity struct {
 }
 
 var schema = []string{
-	`CREATE TABLE IF NOT EXISTS mobile_phone_schema(version INTEGER PRIMARY KEY CHECK(version=2))`,
-	`INSERT INTO mobile_phone_schema SELECT 2 WHERE NOT EXISTS(SELECT 1 FROM mobile_phone_schema)`,
+	`CREATE TABLE IF NOT EXISTS mobile_phone_schema(version INTEGER PRIMARY KEY CHECK(version=3))`,
+	`INSERT INTO mobile_phone_schema SELECT 3 WHERE NOT EXISTS(SELECT 1 FROM mobile_phone_schema)`,
 	`CREATE TABLE IF NOT EXISTS mobile_device_streams(owner_id TEXT NOT NULL,device_id TEXT NOT NULL,epoch INTEGER NOT NULL,family_id TEXT REFERENCES oauth_families(id),server_seq INTEGER NOT NULL DEFAULT 0,token_expires_at INTEGER NOT NULL,expires_at INTEGER NOT NULL,capabilities BLOB,PRIMARY KEY(owner_id,device_id),FOREIGN KEY(owner_id,device_id) REFERENCES oauth_devices(owner_id,id))`,
 	`CREATE TABLE IF NOT EXISTS mobile_native_sessions(owner_id TEXT NOT NULL,device_id TEXT NOT NULL,id TEXT NOT NULL,generation INTEGER NOT NULL,stream_epoch INTEGER NOT NULL,family_id TEXT REFERENCES oauth_families(id),state TEXT NOT NULL,metadata BLOB NOT NULL,expires_at INTEGER NOT NULL,PRIMARY KEY(owner_id,device_id,id),FOREIGN KEY(owner_id,device_id) REFERENCES oauth_devices(owner_id,id))`,
 	`CREATE TABLE IF NOT EXISTS mobile_phone_tasks(id TEXT PRIMARY KEY,owner_id TEXT NOT NULL,device_id TEXT NOT NULL,conversation_id TEXT NOT NULL,turn_id TEXT NOT NULL,history_generation INTEGER NOT NULL,action INTEGER NOT NULL,request_digest BLOB NOT NULL,caller_family_id TEXT NOT NULL REFERENCES oauth_families(id),viewer_device_id TEXT NOT NULL,state TEXT NOT NULL,cancellation_requested INTEGER NOT NULL DEFAULT 0,reason INTEGER NOT NULL DEFAULT 0,session_id TEXT NOT NULL,session_generation INTEGER NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL,consent_revision TEXT NOT NULL,destination TEXT NOT NULL,finished_at INTEGER NOT NULL DEFAULT 0,approval_authority BLOB,FOREIGN KEY(owner_id,device_id) REFERENCES oauth_devices(owner_id,id),FOREIGN KEY(owner_id,viewer_device_id) REFERENCES oauth_devices(owner_id,id))`,
@@ -69,46 +70,55 @@ var schema = []string{
 }
 
 // Open opens the store with its required schema and safety settings.
-func Open(ctx context.Context, path string, auth *oauthstore.Store, accounts browseroauth.Accounts, chats *conversations.Repository, content *ephemeral.Store) (*Store, error) {
+func Open(ctx context.Context, path string, auth *oauthstore.Store, accounts browseroauth.Accounts, chats *conversations.Repository, content *ephemeral.Store, options ...Options) (*Store, error) {
 	if auth == nil || accounts == nil || chats == nil || content == nil {
 		return nil, ErrInvalid
 	}
-	db, err := sqlitedb.Open(ctx, path, false)
-	if err != nil {
-		return nil, err
-	}
-	s := &Store{db, auth, accounts, chats, content}
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		db.Close() //nolint:errcheck,gosec // Cleanup only; preserve the operation result.
-		return nil, err
-	}
-	defer tx.Rollback() //nolint:errcheck // Cleanup only; preserve the operation result.
-	var version int
-	if err = tx.QueryRowContext(ctx, `SELECT MAX(version) FROM oauth_schema`).Scan(&version); err != nil || version != 3 {
-		db.Close() //nolint:errcheck,gosec // Cleanup only; preserve the operation result.
+	s := &Store{auth: auth, accounts: accounts, chats: chats, content: content}
+	if len(options) > 1 {
 		return nil, ErrInvalid
 	}
-	if err = s.migratePhone(ctx, tx); err != nil {
-		tx.Rollback() //nolint:errcheck,gosec // Cleanup only; preserve the operation result.
-		db.Close()    //nolint:errcheck,gosec // Cleanup only; preserve the operation result.
-		return nil, err
-	}
-	for _, q := range schema {
-		if _, err = tx.ExecContext(ctx, q); err != nil {
-			tx.Rollback() //nolint:errcheck,gosec // Cleanup only; preserve the operation result.
-			db.Close()    //nolint:errcheck,gosec // Cleanup only; preserve the operation result.
+	if len(options) == 1 {
+		if err := s.configure(options[0]); err != nil {
 			return nil, err
 		}
 	}
-	if tx.QueryRowContext(ctx, `SELECT MAX(version) FROM mobile_phone_schema`).Scan(&version) != nil || version != 2 {
+	db, stepErr2 := sqlitedb.Open(ctx, path, false)
+	if stepErr2 != nil {
+		return nil, stepErr2
+	}
+	s.db = db
+	tx, stepErr2 := db.BeginTx(ctx, nil)
+	if stepErr2 != nil {
+		db.Close() //nolint:errcheck,gosec // Cleanup only; preserve the operation result.
+		return nil, stepErr2
+	}
+	defer tx.Rollback() //nolint:errcheck // Cleanup only; preserve the operation result.
+	var version int
+	if stepErr2 = tx.QueryRowContext(ctx, `SELECT MAX(version) FROM oauth_schema`).Scan(&version); stepErr2 != nil || version != 4 {
+		db.Close() //nolint:errcheck,gosec // Cleanup only; preserve the operation result.
+		return nil, ErrInvalid
+	}
+	if stepErr2 = s.migratePhone(ctx, tx); stepErr2 != nil {
+		tx.Rollback() //nolint:errcheck,gosec // Cleanup only; preserve the operation result.
+		db.Close()    //nolint:errcheck,gosec // Cleanup only; preserve the operation result.
+		return nil, stepErr2
+	}
+	for _, q := range append(append([]string{}, schema...), extensionSchema...) {
+		if _, stepErr2 = tx.ExecContext(ctx, q); stepErr2 != nil {
+			tx.Rollback() //nolint:errcheck,gosec // Cleanup only; preserve the operation result.
+			db.Close()    //nolint:errcheck,gosec // Cleanup only; preserve the operation result.
+			return nil, stepErr2
+		}
+	}
+	if tx.QueryRowContext(ctx, `SELECT MAX(version) FROM mobile_phone_schema`).Scan(&version) != nil || version != 3 {
 		tx.Rollback() //nolint:errcheck,gosec // Cleanup only; preserve the operation result.
 		db.Close()    //nolint:errcheck,gosec // Cleanup only; preserve the operation result.
 		return nil, ErrInvalid
 	}
-	if err = tx.Commit(); err != nil {
+	if stepErr2 = tx.Commit(); stepErr2 != nil {
 		db.Close() //nolint:errcheck,gosec // Cleanup only; preserve the operation result.
-		return nil, err
+		return nil, stepErr2
 	}
 	return s, nil
 }

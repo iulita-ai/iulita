@@ -11,23 +11,26 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/iulita-ai/iulita/internal/mobile/devices"
 )
 
 // Settings contains persistent-store or runtime configuration.
 type Settings struct {
-	Issuer              string   `json:"issuer"`
-	Audience            string   `json:"audience"`
-	AccountDB           string   `json:"account_db"`
-	OAuthDB             string   `json:"oauth_db"`
-	RealmDir            string   `json:"realm_dir"`
-	TLSCert             string   `json:"tls_cert"`
-	TLSKey              string   `json:"tls_key"`
-	GRPCAddress         string   `json:"grpc_address"`
-	OAuthAddress        string   `json:"oauth_address"`
-	ClientID            string   `json:"client_id"`
-	RedirectURI         string   `json:"redirect_uri"`
-	AndroidPackage      string   `json:"android_package,omitempty"`
-	AndroidFingerprints []string `json:"android_release_fingerprints,omitempty"`
+	Scenarios           []devices.Scenario `json:"scenarios,omitempty"`
+	Issuer              string             `json:"issuer"`
+	Audience            string             `json:"audience"`
+	AccountDB           string             `json:"account_db"`
+	OAuthDB             string             `json:"oauth_db"`
+	RealmDir            string             `json:"realm_dir"`
+	TLSCert             string             `json:"tls_cert"`
+	TLSKey              string             `json:"tls_key"`
+	GRPCAddress         string             `json:"grpc_address"`
+	OAuthAddress        string             `json:"oauth_address"`
+	ClientID            string             `json:"client_id"`
+	RedirectURI         string             `json:"redirect_uri"`
+	AndroidPackage      string             `json:"android_package,omitempty"`
+	AndroidFingerprints []string           `json:"android_release_fingerprints,omitempty"`
 }
 
 // ReadSettings loads and validates explicit runtime settings.

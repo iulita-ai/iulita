@@ -26,7 +26,9 @@ type Provider struct {
 // New creates a new Claude provider.
 // baseURL is optional — if non-empty, overrides the default Anthropic API endpoint.
 func New(apiKey, model string, maxTokens int, baseURL string, httpClient *http.Client) *Provider {
-	opts := []option.RequestOption{option.WithAPIKey(apiKey)}
+	// Retries belong outside credential admission. Private phone processing must
+	// never repeat an upstream send after a lost response or transient failure.
+	opts := []option.RequestOption{option.WithAPIKey(apiKey), option.WithMaxRetries(0)}
 	if baseURL != "" {
 		opts = append(opts, option.WithBaseURL(baseURL))
 	}

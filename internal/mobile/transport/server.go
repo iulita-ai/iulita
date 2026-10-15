@@ -49,6 +49,7 @@ type Server struct {
 	v1.UnimplementedChatServiceServer
 	v1.UnimplementedDeviceServiceServer
 	v1.UnimplementedArtifactServiceServer
+	v1.UnimplementedPhoneServiceServer
 	config  Config
 	grpc    *grpc.Server
 	slots   chan struct{}
@@ -78,7 +79,7 @@ func New(c Config) (*Server, error) {
 	}
 	// Native UI/Vision remain gated by joint Android evidence; accepting a
 	// server configuration value alone must never open experimental authority.
-	if c.Features.UIEnabled || c.Features.VisionEnabled {
+	if c.Features.UIEnabled && !c.Devices.SupportsUI() || c.Features.VisionEnabled && !c.Devices.SupportsVision() {
 		return nil, errors.New("mobile UI and Vision require joint native readiness")
 	}
 	s := &Server{config: c, slots: make(chan struct{}, 64), owners: map[string]int{}, streams: map[string]int{}}
@@ -90,6 +91,7 @@ func New(c Config) (*Server, error) {
 	v1.RegisterChatServiceServer(s.grpc, s)
 	v1.RegisterDeviceServiceServer(s.grpc, s)
 	v1.RegisterArtifactServiceServer(s.grpc, s)
+	v1.RegisterPhoneServiceServer(s.grpc, s)
 	return s, nil
 }
 
@@ -175,6 +177,9 @@ func (s *Server) authorize(ctx context.Context, method string) (*principal, erro
 	if err != nil {
 		return nil, status.Error(codes.PermissionDenied, "method unavailable")
 	}
+	if c.PrincipalType == "service" && ((p.Feature != v1.Feature_FEATURE_CHAT && p.Feature != v1.Feature_FEATURE_IDENTITY) || p.Binding != v1.ResourceBinding_RESOURCE_BINDING_OWNER || p.FreshAuthentication || method == v1.ChatService_RespondToPrompt_FullMethodName || method == v1.ChatService_RespondToConfirmation_FullMethodName) {
+		return nil, status.Error(codes.PermissionDenied, "service principal cannot use device or fresh-user authority")
+	}
 	enabled := false
 	switch p.Feature {
 	case v1.Feature_FEATURE_IDENTITY:
@@ -183,6 +188,10 @@ func (s *Server) authorize(ctx context.Context, method string) (*principal, erro
 		enabled = s.config.Features.ChatEnabled
 	case v1.Feature_FEATURE_DEVICE:
 		enabled = s.config.Features.DeviceEnabled
+	case v1.Feature_FEATURE_UI:
+		enabled = s.config.Features.UIEnabled
+	case v1.Feature_FEATURE_VISION:
+		enabled = s.config.Features.VisionEnabled
 	}
 	if !enabled {
 		return nil, mobileError(codes.FailedPrecondition, v1.ErrorReason_ERROR_REASON_FEATURE_DISABLED)

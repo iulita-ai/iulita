@@ -43,3 +43,19 @@ func permits(a Authority, t Tool) bool {
 	}
 	return true
 }
+
+type externalBindingKey struct{}
+
+// WithExternalBinding records a server-verified private channel binding.
+func WithExternalBinding(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, externalBindingKey{}, id)
+}
+
+// ExternalBinding returns the server-owned external-origin fence, if present.
+func ExternalBinding(ctx context.Context) string {
+	id, ok := ctx.Value(externalBindingKey{}).(string)
+	if !ok {
+		return ""
+	}
+	return id
+}

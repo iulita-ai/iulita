@@ -18,6 +18,9 @@ service ArtifactService {
 
 enum ArtifactMediaType { ARTIFACT_MEDIA_TYPE_UNSPECIFIED = 0; ARTIFACT_MEDIA_TYPE_PNG = 1; ARTIFACT_MEDIA_TYPE_JPEG = 2; ARTIFACT_MEDIA_TYPE_WEBP = 3; }
 message ArtifactBinding { string task_id = 1; string session_id = 2; uint64 session_generation = 3; string snapshot_id = 4; uint64 window_id = 5; string package_name = 6; string consent_revision = 7; }
+// At most 64 nonempty contiguous chunks per object, each at most 64 KiB.
+// The last available chunk slot must finish total_bytes; rejected chunks do not
+// advance the offset. Retries preserve the original operation and payload.
 message UploadArtifactRequest {
   ClientContext client = 1; Operation operation = 2; string upload_id = 3;
   ArtifactBinding binding = 4; ArtifactMediaType media_type = 5; uint64 total_bytes = 6;

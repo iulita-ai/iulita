@@ -100,12 +100,12 @@ func RotateOffline(ctx context.Context, keyDir, oauthPath, accountPath, issuer, 
 	}
 	defer tx.Rollback() //nolint:errcheck // Cleanup only; preserve the operation result.
 	var oauthVersion, chatVersion int
-	if tx.QueryRowContext(ctx, `SELECT MAX(version) FROM oauth_schema`).Scan(&oauthVersion) != nil || oauthVersion != 3 || accountTx.QueryRowContext(ctx, `SELECT MAX(version) FROM mobile_chat_schema`).Scan(&chatVersion) != nil || chatVersion != 3 {
+	if tx.QueryRowContext(ctx, `SELECT MAX(version) FROM oauth_schema`).Scan(&oauthVersion) != nil || oauthVersion != 4 || accountTx.QueryRowContext(ctx, `SELECT MAX(version) FROM mobile_chat_schema`).Scan(&chatVersion) != nil || chatVersion != 3 {
 		return ErrInvalid
 	}
 	if exists(ctx, tx, "mobile_phone_schema") {
 		var phoneVersion int
-		if tx.QueryRowContext(ctx, `SELECT MAX(version) FROM mobile_phone_schema`).Scan(&phoneVersion) != nil || phoneVersion != 2 {
+		if tx.QueryRowContext(ctx, `SELECT MAX(version) FROM mobile_phone_schema`).Scan(&phoneVersion) != nil || phoneVersion != 3 {
 			return ErrInvalid
 		}
 	}
@@ -163,7 +163,7 @@ func RotateOffline(ctx context.Context, keyDir, oauthPath, accountPath, issuer, 
 			}
 		}
 	}
-	for _, q := range []string{`UPDATE oauth_owners SET epoch=epoch+1`, `UPDATE oauth_devices SET epoch=epoch+1`, `UPDATE oauth_families SET revoked=1`, `UPDATE oauth_sessions SET active=0`, `UPDATE oauth_nonces SET consumed=1`} {
+	for _, q := range []string{`UPDATE oauth_owners SET epoch=epoch+1`, `UPDATE oauth_devices SET epoch=epoch+1`, `UPDATE oauth_families SET revoked=1`, `UPDATE oauth_sessions SET active=0`, `UPDATE oauth_nonces SET consumed=1`, `UPDATE oauth_service_access SET revoked=1`, `UPDATE oauth_device_requests SET state='denied' WHERE state IN ('pending','approved')`} {
 		if _, err = tx.ExecContext(ctx, q); err != nil {
 			return err
 		}

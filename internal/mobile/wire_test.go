@@ -39,8 +39,8 @@ func TestEveryRPCDeclaresPolicyAndCredentialStage(t *testing.T) {
 		}
 		return true
 	})
-	if count != 26 {
-		t.Fatalf("review new or missing RPC policies: got %d, want 26", count)
+	if count != 31 {
+		t.Fatalf("review new or missing RPC policies: got %d, want 31", count)
 	}
 	for _, method := range []string{"", "/iulita.mobile.v2.ChatService/SendMessage", "/iulita.mobile.v1.ChatService/Login", "/ws/chat", "/iulita.mobile.v1.Turn/SendMessage"} {
 		if _, err := MethodPolicy(method); err == nil {

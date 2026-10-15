@@ -19,6 +19,7 @@ import (
 
 // wsIncomingMessage is the JSON structure received from the browser.
 type wsIncomingMessage struct {
+	ClientMessageID   string `json:"client_message_id,omitempty"`
 	Text              string `json:"text"`
 	ChatID            string `json:"chat_id"`                       // optional override; defaults to user ID
 	PromptID          string `json:"prompt_id,omitempty"`           // set when replying to a prompt
@@ -226,6 +227,7 @@ func (c *Channel) handleConnection(conn *websocket.Conn) {
 		resolvedUserID := userID
 
 		msg := channel.IncomingMessage{
+			ClientMessageID:   incoming.ClientMessageID,
 			ChatID:            chatID,
 			UserID:            userID,
 			ResolvedUserID:    resolvedUserID,

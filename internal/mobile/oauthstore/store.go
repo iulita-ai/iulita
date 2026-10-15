@@ -30,7 +30,7 @@ type Store struct {
 	realm *Realm
 }
 
-const schemaVersion = 3
+const schemaVersion = 4
 
 var schema = []string{
 	`CREATE TABLE oauth_schema(version INTEGER PRIMARY KEY CHECK(version=2))`,
@@ -90,6 +90,13 @@ func Initialize(ctx context.Context, path string, realm *Realm) (*Store, error) 
 			return nil, err
 		}
 	}
+	for _, stmt := range clientsSchema {
+		if _, err = tx.ExecContext(ctx, stmt); err != nil {
+			tx.Rollback() //nolint:errcheck,gosec // Preserve initialization error.
+			db.Close()    //nolint:errcheck,gosec // Preserve initialization error.
+			return nil, err
+		}
+	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO oauth_realm VALUES(?,?,?,?)`, realm.id, realm.kid, realm.epoch, realm.binding())
 	if err == nil {
 		err = tx.Commit()
@@ -133,6 +140,12 @@ func Open(ctx context.Context, path string, realm *Realm) (*Store, error) {
 		err = s.migrateLifecycle()
 		if err == nil {
 			version = 3
+		}
+	}
+	if err == nil && version == 3 && id == realm.id && kid == realm.kid && epoch == realm.epoch && equalHash(binding, realm.binding()) {
+		err = s.migrateClients(ctx)
+		if err == nil {
+			version = 4
 		}
 	}
 	if err != nil || version != schemaVersion || id != realm.id || kid != realm.kid || epoch != realm.epoch || !equalHash(binding, realm.binding()) {

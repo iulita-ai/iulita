@@ -85,6 +85,7 @@ func (s *Store) CredentialStamp(version string) []byte {
 // Authorization contains the validated browser authorization request.
 type Authorization struct {
 	ClientID, RedirectURI, Scope, State, Challenge, KeyThumbprint, DeviceHint string
+	DeviceFlowID                                                              string
 	FreshAuth                                                                 bool
 }
 
@@ -138,7 +139,7 @@ func (s *Store) flow(ctx context.Context, cookie, id, csrf, phase string) (Brows
 
 // CreateBrowserFlow persists an expiring browser login and consent flow.
 func (s *Store) CreateBrowserFlow(ctx context.Context, cookie string, a Authorization) (BrowserFlow, string, error) {
-	if !ValidSecret(cookie) || !ValidSecret(a.Challenge) || !ValidSecret(a.KeyThumbprint) || a.ClientID == "" || a.RedirectURI == "" || a.State == "" {
+	if !ValidSecret(cookie) || !ValidSecret(a.KeyThumbprint) || a.ClientID == "" || (a.DeviceFlowID == "" && (!ValidSecret(a.Challenge) || a.RedirectURI == "" || a.State == "")) || (a.DeviceFlowID != "" && (!canonicalID(a.DeviceFlowID) || a.Challenge != "" || a.RedirectURI != "" || a.State != "")) {
 		return BrowserFlow{}, "", ErrInvalid
 	}
 	csrf, err := Secret()

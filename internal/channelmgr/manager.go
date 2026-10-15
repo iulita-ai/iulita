@@ -1114,3 +1114,18 @@ func (m *Manager) UpdateTranscriber(t telegram.TranscriptionProvider) {
 		tg.SetTranscriber(t)
 	}
 }
+
+// SendToInstance delivers only through the named live instance, without fallback.
+func (m *Manager) SendToInstance(ctx context.Context, instance, chat, text string) error {
+	m.mu.RLock()
+	managed := m.running[instance]
+	var sender channel.StreamingSender
+	if managed != nil {
+		sender = channelSender(managed)
+	}
+	m.mu.RUnlock()
+	if sender == nil {
+		return fmt.Errorf("channel instance unavailable")
+	}
+	return sender.SendMessage(ctx, chat, text)
+}

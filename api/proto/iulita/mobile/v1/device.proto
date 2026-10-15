@@ -44,7 +44,7 @@ message SessionMirror {
   string session_id = 1; uint64 session_generation = 2; SessionState state = 3;
   repeated string allowed_packages = 4; repeated ActionKind allowed_actions = 5;
   google.protobuf.Timestamp expires_at = 6; bool screen_content_allowed = 7;
-  bool screenshot_allowed = 8; string policy_revision = 9;
+  bool screenshot_allowed = 8; string policy_revision = 9; bytes approved_envelope_sha256 = 10;
   // Report of a NATIVE-created session, never a server-created grant.
 }
 message DeviceCapabilities {
@@ -135,8 +135,8 @@ message LocationReading { double latitude = 1; double longitude = 2; double accu
 message NotificationReading { string package_name = 1; string title = 2; string text = 3; google.protobuf.Timestamp posted_at = 4; }
 message NotificationBatch { repeated NotificationReading notifications = 1; }
 message Bounds { int32 left = 1; int32 top = 2; int32 right = 3; int32 bottom = 4; }
-message UINode { string handle = 1; string class_name = 2; string text = 3; string description = 4; Bounds bounds = 5; repeated ActionKind actions = 6; }
-message UITree { string snapshot_id = 1; string package_name = 2; uint64 window_id = 3; repeated UINode nodes = 4; google.protobuf.Timestamp expires_at = 5; }
+message UINode { string handle = 1; string class_name = 2; string text = 3; string description = 4; Bounds bounds = 5; repeated ActionKind actions = 6; string resource_id = 7; bool sensitive = 8; bool password = 9; }
+message UITree { string snapshot_id = 1; string package_name = 2; uint64 window_id = 3; repeated UINode nodes = 4; google.protobuf.Timestamp expires_at = 5; ScenarioBinding scenario = 6; bool application_window = 7; bool unlocked = 8; bool foreground = 9; bool safety_control_visible = 10; bool single_window_capture = 11; }
 message Observation {
   string observation_id = 1; ObservationCategory category = 2;
   google.protobuf.Timestamp collected_at = 3; google.protobuf.Timestamp expires_at = 4;

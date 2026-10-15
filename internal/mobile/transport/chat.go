@@ -81,6 +81,9 @@ func (s *Server) CreateConversation(ctx context.Context, in *v1.CreateConversati
 		if err != nil {
 			return nil, err
 		}
+		if auth(ctx).Claims.PrincipalType == "service" && set.MemoryMode != "isolated" {
+			return nil, conversations.ErrInvalid
+		}
 		if _, err = s.config.Engine.Resolve(ctx, auth(ctx).Claims.Subject, set.ProfileID); err != nil {
 			return nil, conversations.ErrInvalid
 		}
@@ -123,6 +126,9 @@ func (s *Server) UpdateConversation(ctx context.Context, in *v1.UpdateConversati
 			parsed, err := settings(in.Settings)
 			if err != nil {
 				return nil, err
+			}
+			if auth(ctx).Claims.PrincipalType == "service" && parsed.MemoryMode != "isolated" {
+				return nil, conversations.ErrInvalid
 			}
 			if _, err = s.config.Engine.Resolve(ctx, auth(ctx).Claims.Subject, parsed.ProfileID); err != nil {
 				return nil, conversations.ErrInvalid

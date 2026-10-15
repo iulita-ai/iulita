@@ -49,8 +49,9 @@ type Message struct {
 
 // Repository stores owned conversations, turns and durable operation metadata.
 type Repository struct {
-	db      *sql.DB
-	cursors *securetoken.Signer
+	db             *sql.DB
+	authorityReads *sql.DB
+	cursors        *securetoken.Signer
 }
 
 // OpenExisting opens an initialized conversation store without bootstrapping it.
@@ -66,11 +67,16 @@ func OpenExisting(ctx context.Context, path string, cursors *securetoken.Signer)
 		db.Close() //nolint:errcheck,gosec // Cleanup only; preserve the operation result.
 		return nil, err
 	}
-	return &Repository{db: db, cursors: cursors}, nil
+	reads, err := sqlitedb.OpenReadOnly(ctx, path)
+	if err != nil {
+		db.Close() //nolint:errcheck,gosec // Preserve the reader initialization error.
+		return nil, err
+	}
+	return &Repository{db: db, authorityReads: reads, cursors: cursors}, nil
 }
 
 // Close releases the resources owned by this instance.
-func (r *Repository) Close() error { return r.db.Close() }
+func (r *Repository) Close() error { return errors.Join(r.authorityReads.Close(), r.db.Close()) }
 func validID(s string) bool {
 	u, err := uuid.Parse(s)
 	return err == nil && u.String() == s && u != uuid.Nil

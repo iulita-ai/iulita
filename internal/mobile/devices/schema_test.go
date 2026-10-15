@@ -27,8 +27,8 @@ func TestPhoneV1MigrationInvalidatesUnboundNativeAuthority(t *testing.T) {
 		if strings.Contains(q, "mobile_sync") {
 			continue
 		}
-		q = strings.ReplaceAll(q, "CHECK(version=2)", "CHECK(version=1)")
-		q = strings.ReplaceAll(q, "SELECT 2 WHERE NOT EXISTS", "SELECT 1 WHERE NOT EXISTS")
+		q = strings.ReplaceAll(q, "CHECK(version=3)", "CHECK(version=1)")
+		q = strings.ReplaceAll(q, "SELECT 3 WHERE NOT EXISTS", "SELECT 1 WHERE NOT EXISTS")
 		q = strings.ReplaceAll(q, ",family_id TEXT REFERENCES oauth_families(id)", "")
 		q = strings.ReplaceAll(q, ",approval_authority BLOB", "")
 		if _, err = db.Exec(q); err != nil {
@@ -72,7 +72,7 @@ func TestPhoneV1MigrationInvalidatesUnboundNativeAuthority(t *testing.T) {
 	var revoked, state string
 	var expiry int64
 	var canceled bool
-	if err = db.QueryRow(`SELECT MAX(version) FROM mobile_phone_schema`).Scan(&version); err != nil || version != 2 {
+	if err = db.QueryRow(`SELECT MAX(version) FROM mobile_phone_schema`).Scan(&version); err != nil || version != 3 {
 		t.Fatal("schema version", version, err)
 	}
 	if err = db.QueryRow(`SELECT epoch,expires_at FROM mobile_device_streams`).Scan(&epoch, &expiry); err != nil || epoch != 2 || expiry != 0 {
@@ -86,5 +86,37 @@ func TestPhoneV1MigrationInvalidatesUnboundNativeAuthority(t *testing.T) {
 	}
 	if err = db.QueryRow(`SELECT state FROM mobile_phone_commands`).Scan(&state); err != nil || state != "unknown_outcome" {
 		t.Fatal("old command requeued", err)
+	}
+}
+
+func TestPhoneV2MigrationAddsExplicitV3Marker(t *testing.T) {
+	ctx := context.Background()
+	db, err := sqlitedb.Open(ctx, filepath.Join(t.TempDir(), "v2.sqlite"), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err = db.Exec(`CREATE TABLE mobile_phone_schema(version INTEGER PRIMARY KEY CHECK(version=2)); INSERT INTO mobile_phone_schema VALUES(2)`); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if err = (&Store{}).migratePhone(ctx, tx); err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	var version int
+	if err = db.QueryRow(`SELECT MAX(version) FROM mobile_phone_schema`).Scan(&version); err != nil || version != 3 {
+		t.Fatal(version, err)
+	}
+	// A V2 binary's version check rejects this database rather than silently
+	// running cleanup that does not know the new foreign-key relationships.
+	if _, err = db.Exec(`INSERT INTO mobile_phone_schema VALUES(2)`); err == nil {
+		t.Fatal("old schema marker accepted")
 	}
 }

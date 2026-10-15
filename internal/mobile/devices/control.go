@@ -63,18 +63,21 @@ func (s *Store) Capabilities(ctx context.Context, identity Identity, epoch uint6
 		return ErrInvalid
 	}
 	seen := map[v1.ActionKind]bool{}
+	requiresUI := capabilities.UiSafetyControlAvailable
 	for _, kind := range capabilities.SupportedActions {
-		if !isSystem(kind) || seen[kind] {
+		if (!isSystem(kind) && (!isUI(kind) || !s.SupportsUI())) || seen[kind] {
 			return ErrInvalid
 		}
 		seen[kind] = true
+		requiresUI = requiresUI || isUI(kind)
 	}
 	categories := map[string]bool{}
 	for _, category := range capabilities.GrantedCategories {
-		if categories[category] || (category != "status" && category != "location" && category != "notifications") {
+		if categories[category] || (category != "status" && category != "location" && category != "notifications" && category != "ui_tree") {
 			return ErrInvalid
 		}
 		categories[category] = true
+		requiresUI = requiresUI || category == "ui_tree"
 	}
 	// No native UI evidence can be inferred from a capabilities report. The
 	// server's UI feature remains closed independently of this client boolean.
@@ -83,6 +86,9 @@ func (s *Store) Capabilities(ctx context.Context, identity Identity, epoch uint6
 		return ErrInvalid
 	}
 	return s.with(ctx, identity, func(tx *sql.Tx, c *oauthstore.Claims) error {
+		if requiresUI && !oauthstore.HasScope(c, "phone:ui") {
+			return ErrUnavailable
+		}
 		if err := streamLive(ctx, tx, c, epoch); err != nil {
 			return err
 		}
@@ -135,7 +141,7 @@ func (s *Store) Session(ctx context.Context, identity Identity, epoch uint64, se
 	if session != nil && validID(session.SessionId) && session.SessionGeneration > 0 && (session.State == v1.SessionState_SESSION_STATE_REVOKED || session.State == v1.SessionState_SESSION_STATE_EXPIRED) {
 		return s.endSession(ctx, identity, epoch, session)
 	}
-	if session == nil || !validID(session.SessionId) || session.SessionGeneration == 0 || session.PolicyRevision != PolicyRevision || session.ExpiresAt == nil || session.ExpiresAt.CheckValid() != nil || session.ScreenContentAllowed || session.ScreenshotAllowed || len(session.AllowedPackages) > 16 || len(session.AllowedActions) > 8 {
+	if session == nil || !validID(session.SessionId) || session.SessionGeneration == 0 || session.PolicyRevision != PolicyRevision || session.ExpiresAt == nil || session.ExpiresAt.CheckValid() != nil || (session.ScreenContentAllowed && (!s.SupportsUI() || len(session.ApprovedEnvelopeSha256) != 32)) || (session.ScreenshotAllowed && (!session.ScreenContentAllowed || !s.options.Vision)) || len(session.AllowedPackages) > 16 || len(session.AllowedActions) > 8 {
 		return ErrInvalid
 	}
 	for _, p := range session.AllowedPackages {
@@ -150,7 +156,7 @@ func (s *Store) Session(ctx context.Context, identity Identity, epoch uint64, se
 		return ErrInvalid
 	}
 	for _, kind := range session.AllowedActions {
-		if !isSystem(kind) {
+		if !isSystem(kind) && (!isUI(kind) || !session.ScreenContentAllowed || !s.SupportsUI()) {
 			return ErrUnavailable
 		}
 	}
@@ -159,6 +165,9 @@ func (s *Store) Session(ctx context.Context, identity Identity, epoch uint64, se
 		return ErrInvalid
 	}
 	return s.with(ctx, identity, func(tx *sql.Tx, c *oauthstore.Claims) error {
+		if (session.ScreenContentAllowed || session.ScreenshotAllowed) && !oauthstore.HasScope(c, "phone:ui") {
+			return ErrUnavailable
+		}
 		if err := streamLive(ctx, tx, c, epoch); err != nil {
 			return err
 		}
@@ -274,6 +283,12 @@ func (s *Store) Receipt(ctx context.Context, identity Identity, epoch uint64, re
 		if receiptCount >= 32 {
 			return ErrBusy
 		}
+		uiTask := false
+		var action v1.ActionKind
+		if stepErr6 := tx.QueryRowContext(ctx, `SELECT action FROM mobile_phone_tasks WHERE id=?`, receipt.TaskId).Scan(&action); stepErr6 != nil {
+			return stepErr6
+		}
+		uiTask = isUI(action)
 		terminal := state == "succeeded" || state == "failed" || state == "cancelled" || state == "expired"
 		commandState := state
 		taskState := "running"
@@ -283,6 +298,9 @@ func (s *Store) Receipt(ctx context.Context, identity Identity, epoch uint64, re
 		case v1.ReceiptState_RECEIPT_STATE_SUCCEEDED:
 			commandState = "succeeded"
 			taskState = "succeeded"
+			if uiTask {
+				taskState = "running"
+			}
 		case v1.ReceiptState_RECEIPT_STATE_FAILED:
 			commandState = "failed"
 			taskState = "failed"
@@ -320,7 +338,9 @@ func (s *Store) Receipt(ctx context.Context, identity Identity, epoch uint64, re
 			if _, err = tx.ExecContext(ctx, `UPDATE mobile_phone_commands SET state=? WHERE id=? AND owner_id=? AND device_id=?`, commandState, receipt.CommandId, c.Subject, c.DeviceID); err != nil {
 				return err
 			}
-			_, err = tx.ExecContext(ctx, `UPDATE mobile_phone_tasks SET state=?,reason=?,finished_at=CASE WHEN ?='succeeded' AND finished_at=0 THEN ? ELSE finished_at END WHERE id=? AND owner_id=? AND device_id=?`, taskState, receipt.Reason, taskState, time.Now().UnixMilli(), receipt.TaskId, c.Subject, c.DeviceID)
+			// UI uncertainty and cancellation are terminal for orchestration. A late
+			// receipt can reconcile command evidence, but cannot unlock another step.
+			_, err = tx.ExecContext(ctx, `UPDATE mobile_phone_tasks SET state=?,reason=?,finished_at=CASE WHEN ?='succeeded' AND finished_at=0 THEN ? ELSE finished_at END WHERE id=? AND owner_id=? AND device_id=? AND (?=0 OR (cancellation_requested=0 AND state IN ('queued','running','awaiting_confirmation','needs_user_action')))`, taskState, receipt.Reason, taskState, time.Now().UnixMilli(), receipt.TaskId, c.Subject, c.DeviceID, uiTask)
 			if err == nil {
 				err = taskEvent(ctx, tx, receipt.TaskId)
 			}

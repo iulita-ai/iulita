@@ -1,0 +1,44 @@
+syntax = "proto3";
+package iulita.mobile.v1;
+import "google/protobuf/timestamp.proto";
+import "iulita/mobile/v1/common.proto";
+import "iulita/mobile/v1/device.proto";
+import "iulita/mobile/v1/artifact.proto";
+option go_package = "github.com/iulita-ai/iulita/api/gen/go/iulita/mobile/v1;mobilev1";
+option java_package = "ai.iulita.mobile.v1";
+option java_multiple_files = true;
+
+// Sensitive content never enters ordinary chat events or transcript responses.
+service PhoneService {
+  rpc CreateUITask(CreateUITaskRequest) returns (Task) { option (rpc_policy) = { feature: FEATURE_UI stage: TOKEN_STAGE_ACTIVE scopes: "devices:manage" scopes: "phone:ui" binding: RESOURCE_BINDING_OWNER fresh_authentication: true idempotent: true }; }
+  rpc PrepareProcessing(PrepareProcessingRequest) returns (ProcessingOffer) { option (rpc_policy) = { feature: FEATURE_DEVICE stage: TOKEN_STAGE_ACTIVE scopes: "devices:read" scopes: "phone:data" binding: RESOURCE_BINDING_TOKEN_DEVICE idempotent: true }; }
+  rpc ProcessResult(ProcessResultRequest) returns (EphemeralResult) { option (rpc_policy) = { feature: FEATURE_DEVICE stage: TOKEN_STAGE_ACTIVE scopes: "devices:read" scopes: "phone:data" binding: RESOURCE_BINDING_TOKEN_DEVICE idempotent: true }; }
+  rpc BindExternalOrigin(BindExternalOriginRequest) returns (ExternalOriginBinding) { option (rpc_policy) = { feature: FEATURE_DEVICE stage: TOKEN_STAGE_ACTIVE scopes: "devices:manage" binding: RESOURCE_BINDING_OWNER fresh_authentication: true idempotent: true }; }
+  rpc RevokeExternalOrigin(RevokeExternalOriginRequest) returns (ExternalOriginBinding) { option (rpc_policy) = { feature: FEATURE_DEVICE stage: TOKEN_STAGE_ACTIVE scopes: "devices:manage" binding: RESOURCE_BINDING_OWNER idempotent: true }; }
+}
+message CreateUITaskRequest {
+  ClientContext client = 1; Operation operation = 2; string device_id = 3;
+  string conversation_id = 4; string turn_id = 5; uint64 history_generation = 6;
+  TaskEnvelope envelope = 7; bytes approved_envelope_sha256 = 8;
+}
+enum ProcessingPurpose { PROCESSING_PURPOSE_UNSPECIFIED = 0; PROCESSING_PURPOSE_SUMMARY = 1; PROCESSING_PURPOSE_UI_PLAN = 2; }
+message PrepareProcessingRequest { ClientContext client = 1; Operation operation = 2; string task_id = 3; string profile_id = 4; string question = 5; ProcessingPurpose purpose = 6; string artifact_id = 7; }
+message ProcessingOffer {
+  string offer_id = 1; string task_id = 2; string profile_id = 3; string model = 4;
+  string provider = 5; string endpoint = 6; bytes consent_sha256 = 7;
+  google.protobuf.Timestamp expires_at = 8; ProcessingPurpose purpose = 9;
+  // Sensitive, immutable preview of the exact JSON input sent to the provider.
+  // Consent UI MUST display this prepared preview, question and recipient; a
+  // separate earlier GetTaskResult may have changed and is not this approval.
+  // The preview never enters ordinary transcript/events/durable response caches.
+  bytes input_preview_json = 10; bytes input_sha256 = 11; string question = 12;
+  ProcessingArtifactPreview artifact = 13;
+}
+message ProcessingArtifactPreview {
+  string artifact_id = 1; bytes content_sha256 = 2; uint64 total_bytes = 3;
+  ArtifactMediaType media_type = 4; ArtifactBinding binding = 5;
+}
+message ProcessResultRequest { ClientContext client = 1; Operation operation = 2; string offer_id = 3; bytes approved_consent_sha256 = 4; }
+message BindExternalOriginRequest { ClientContext client = 1; Operation operation = 2; string channel_instance_id = 3; string chat_id = 4; string device_id = 5; string conversation_id = 6; string profile_id = 7; }
+message ExternalOriginBinding { string binding_id = 1; string channel_type = 2; string channel_instance_id = 3; string chat_id = 4; string device_id = 5; google.protobuf.Timestamp expires_at = 6; bool revoked = 7; }
+message RevokeExternalOriginRequest { ClientContext client = 1; Operation operation = 2; string binding_id = 3; }

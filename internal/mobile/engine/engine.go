@@ -68,6 +68,7 @@ type policy struct {
 	Tools           map[string]string
 	MemoryMode      string
 	SavedMemory     string
+	ExternalBinding string
 	Authority       Authority
 }
 
@@ -125,7 +126,10 @@ func (e *Engine) Accept(ctx context.Context, owner, conversation string, in conv
 		if err != nil || p.Provider == nil || p.Digest == "" || p.Revision == 0 {
 			return nil, errors.New("requested mobile model profile unavailable")
 		}
-		frozen := policy{Version: 1, ProfileRevision: p.Revision, ProfileDigest: p.Digest, Tools: map[string]string{}, MemoryMode: t.AcceptedSettings.MemoryMode, Authority: AuthorityFrom(ctx)}
+		if AuthorityFrom(ctx).PrincipalType == "service" && t.AcceptedSettings.MemoryMode != "isolated" {
+			return nil, conversations.ErrInvalid
+		}
+		frozen := policy{ExternalBinding: ExternalBinding(ctx), Version: 1, ProfileRevision: p.Revision, ProfileDigest: p.Digest, Tools: map[string]string{}, MemoryMode: t.AcceptedSettings.MemoryMode, Authority: AuthorityFrom(ctx)}
 		if frozen.Authority.OwnerID != "" && frozen.Authority.OwnerID != owner {
 			return nil, conversations.ErrInvalid
 		}
@@ -280,7 +284,7 @@ func (e *Engine) process(root context.Context, t conversations.Turn, f conversat
 	if json.Unmarshal(body, &p) != nil || p.Version != 1 || p.MemoryMode != t.AcceptedSettings.MemoryMode {
 		return
 	}
-	if p.Authority.FamilyID != "" {
+	if p.Authority.FamilyID != "" || p.Authority.PrincipalType == "service" {
 		if e.VerifyAuthority == nil {
 			return
 		}
@@ -299,6 +303,7 @@ func (e *Engine) process(root context.Context, t conversations.Turn, f conversat
 		ctx = skill.WithDeadlineExtender(ctx, acceptedBudget(familyRoot, absoluteBudget))
 	}
 	ctx = WithAuthority(ctx, p.Authority)
+	ctx = WithExternalBinding(ctx, p.ExternalBinding)
 	profile, err := e.Resolve(ctx, t.OwnerID, t.AcceptedSettings.ProfileID)
 	if err != nil || profile.Revision != p.ProfileRevision || profile.Digest != p.ProfileDigest || profile.Provider == nil {
 		return

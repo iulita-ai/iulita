@@ -23,6 +23,11 @@ func (s *Store) Sweep(ctx context.Context) error {
 				return err
 			}
 		}
+		for _, q := range []string{`DELETE FROM oauth_device_requests WHERE id IN (SELECT id FROM oauth_device_requests WHERE expires_at<? LIMIT 1000)`, `DELETE FROM oauth_service_access WHERE grant_id IN (SELECT grant_id FROM oauth_service_access WHERE expires_at<? LIMIT 1000)`} {
+			if _, cleanupErr := tx.ExecContext(ctx, q, now-7*86400); cleanupErr != nil {
+				return cleanupErr
+			}
+		}
 		condition := `(expires_at<? OR (stage<>'active' AND deadline<?))`
 		if exists(ctx, tx, "mobile_phone_tasks") {
 			condition += ` AND id NOT IN (SELECT caller_family_id FROM mobile_phone_tasks)`

@@ -200,3 +200,6 @@ func (s *Store) TokenRequest(ctx context.Context, grantType, raw, clientID, redi
 		return err
 	})
 }
+
+// Transaction returns the transaction owned by the current guarded request.
+func (s *Store) Transaction(ctx context.Context) (*sql.Tx, error) { return s.transaction(ctx) }

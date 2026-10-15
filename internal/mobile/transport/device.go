@@ -119,7 +119,16 @@ func (s *Server) Control(stream grpc.BidiStreamingServer[v1.ClientControlFrame, 
 				return err
 			}
 			if command != nil {
-				err = send(&v1.ServerControlFrame{Body: &v1.ServerControlFrame_Command{Command: command}})
+				if command.GetUi() != nil {
+					lease, leaseErr := s.config.Devices.UILease(ctx, identity(ctx), epoch, &v1.LeaseRenewal{TaskId: command.TaskId, SessionId: command.SessionId, SessionGeneration: command.SessionGeneration})
+					err = leaseErr
+					if err == nil {
+						err = send(&v1.ServerControlFrame{Body: &v1.ServerControlFrame_Lease{Lease: lease}})
+					}
+				}
+				if err == nil {
+					err = send(&v1.ServerControlFrame{Body: &v1.ServerControlFrame_Command{Command: command}})
+				}
 				if err != nil {
 					cleanup, c := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
 					if dispatchErr := s.config.Devices.DispatchLost(cleanup, p.Claims.Subject, p.Claims.DeviceID, command.CommandId); dispatchErr != nil {
@@ -152,6 +161,15 @@ func (s *Server) Control(stream grpc.BidiStreamingServer[v1.ClientControlFrame, 
 				err = s.config.Devices.Capabilities(ctx, identity(ctx), epoch, body.Capabilities)
 			case *v1.ClientControlFrame_Session:
 				err = s.config.Devices.Session(ctx, identity(ctx), epoch, body.Session)
+			case *v1.ClientControlFrame_Renew:
+				if !s.config.Features.UIEnabled {
+					return devices.ErrUnavailable
+				}
+				lease, renewErr := s.config.Devices.RenewUI(ctx, identity(ctx), epoch, body.Renew)
+				err = renewErr
+				if err == nil {
+					err = send(&v1.ServerControlFrame{Body: &v1.ServerControlFrame_Lease{Lease: lease}})
+				}
 			case *v1.ClientControlFrame_Receipt:
 				err = s.config.Devices.Receipt(ctx, identity(ctx), epoch, body.Receipt)
 				if err == nil {
@@ -168,7 +186,7 @@ func (s *Server) Control(stream grpc.BidiStreamingServer[v1.ClientControlFrame, 
 }
 func wireTask(t devices.Task) *v1.Task {
 	state := v1.TaskState(v1.TaskState_value["TASK_STATE_"+strings.ToUpper(t.State)])
-	return &v1.Task{TaskId: t.ID, DeviceId: t.Device, Origin: &v1.TaskOrigin{ChannelType: "mobile", ChannelInstance: "mobile", BindingRevision: devices.PolicyRevision, ConversationId: t.Conversation, TurnId: t.Turn}, State: state, CancellationRequested: t.Cancelled, OutcomeReason: t.Reason, ExpiresAt: timestamppb.New(t.ExpiresAt), CurrentStep: 1, ResultDestinationDeviceId: t.ViewerDevice}
+	return &v1.Task{TaskId: t.ID, DeviceId: t.Device, Origin: &v1.TaskOrigin{ChannelType: "mobile", ChannelInstance: "mobile", BindingRevision: devices.PolicyRevision, ConversationId: t.Conversation, TurnId: t.Turn}, State: state, CancellationRequested: t.Cancelled, OutcomeReason: t.Reason, ExpiresAt: timestamppb.New(t.ExpiresAt), CurrentStep: max(1, t.CurrentStep), ResultDestinationDeviceId: t.ViewerDevice}
 }
 
 // GetTask implements the authenticated GetTask mobile RPC.

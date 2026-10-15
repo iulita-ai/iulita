@@ -17,6 +17,8 @@ type Choice struct{ ID, Label string }
 // ApprovalAuthority is a server-derived business snapshot, never a bearer token.
 // Its representation deliberately matches the independent OAuth authority.
 type ApprovalAuthority struct {
+	PrincipalType, ServiceID, ServiceGrantID      string
+	ClientEpoch                                   uint64
 	Issuer, OwnerID, DeviceID, FamilyID, ClientID string
 	OwnerEpoch, DeviceEpoch, SigningEpoch         uint64
 	AuthTime                                      int64

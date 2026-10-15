@@ -50,7 +50,7 @@ const harnessIssuer = "https://mobile.example.test"
 const harnessRedirect = harnessIssuer + "/mobile/callback"
 const harnessVerifier = "random-test-only-PKCE-verifier-12345678901234567890"
 
-var harnessScopes = []string{"chats:read", "chats:write", "devices:read", "devices:manage", "devices:receive", "devices:sync"}
+var harnessScopes = []string{"chats:read", "chats:write", "devices:read", "devices:manage", "devices:receive", "devices:sync", "phone:data", "phone:ui"}
 var browserFields = regexp.MustCompile(`name="(flow_id|csrf)" value="([A-Za-z0-9_-]+)"`)
 
 type echoProvider struct{}
@@ -61,8 +61,13 @@ func (echoProvider) Complete(ctx context.Context, r llm.Request) (llm.Response, 
 		return llm.Response{ToolCalls: []llm.ToolCall{{ID: "torch-call", Name: "phone_action", Input: input}}}, nil
 	}
 
-	if strings.HasPrefix(r.Message, "phone-status:") && len(r.ToolExchanges) == 0 {
-		input, _ := json.Marshal(map[string]string{"device_id": strings.TrimPrefix(r.Message, "phone-status:")})
+	if (strings.HasPrefix(r.Message, "phone-status:") || strings.HasPrefix(r.Message, "Request phone_status for device_id ")) && len(r.ToolExchanges) == 0 {
+		selected := strings.TrimPrefix(r.Message, "phone-status:")
+		if strings.HasPrefix(r.Message, "Request phone_status for device_id ") {
+			selected = strings.Fields(strings.TrimPrefix(r.Message, "Request phone_status for device_id "))[0]
+			selected = strings.TrimSuffix(selected, ".")
+		}
+		input, _ := json.Marshal(map[string]string{"device_id": selected})
 		return llm.Response{ToolCalls: []llm.ToolCall{{ID: "phone-call", Name: "phone_status", Input: input}}}, nil
 	}
 	return llm.Response{Content: "answer: " + r.Message}, nil
@@ -95,7 +100,8 @@ func certificate(t *testing.T) (tls.Certificate, *x509.CertPool) {
 	pool.AddCert(cert)
 	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}, pool
 }
-func setupHarness(t *testing.T) *harness {
+func setupHarness(t *testing.T) *harness { return setupHarnessWithOptions(t, devices.Options{}) }
+func setupHarnessWithOptions(t *testing.T, options devices.Options) *harness {
 	t.Helper()
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "main.sqlite")
@@ -140,7 +146,7 @@ func setupHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	deviceStore, err := devices.Open(ctx, filepath.Join(dir, "oauth.sqlite"), oauth, accounts, chats, content)
+	deviceStore, err := devices.Open(ctx, filepath.Join(dir, "oauth.sqlite"), oauth, accounts, chats, content, options)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +162,7 @@ func setupHarness(t *testing.T) *harness {
 		t.Fatal(err)
 	}
 	cert, pool := certificate(t)
-	server, err := New(Config{TLS: &tls.Config{Certificates: []tls.Certificate{cert}}, OAuth: oauth, Accounts: accounts, Chats: chats, Engine: processor, Devices: deviceStore, Features: config.MobileConfig{ChatEnabled: true, DeviceEnabled: true}, Version: "test"})
+	server, err := New(Config{TLS: &tls.Config{Certificates: []tls.Certificate{cert}}, OAuth: oauth, Accounts: accounts, Chats: chats, Engine: processor, Devices: deviceStore, Features: config.MobileConfig{ChatEnabled: true, DeviceEnabled: true, UIEnabled: options.UI, VisionEnabled: options.Vision}, Version: "test"})
 	if err != nil {
 		t.Fatal(err)
 	}

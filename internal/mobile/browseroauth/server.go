@@ -120,6 +120,10 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.consent(w, r)
+	case "/oauth2/device_authorization":
+		s.deviceAuthorization(w, r)
+	case "/oauth2/device":
+		s.deviceVerification(w, r)
 	case "/oauth2/token":
 		s.token(w, r)
 	case "/oauth2/revoke":
@@ -130,7 +134,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) metadata(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
-	if writeErr := json.NewEncoder(w).Encode(map[string]any{"issuer": s.origin, "authorization_endpoint": s.origin + "/oauth2/authorize", "token_endpoint": s.origin + "/oauth2/token", "revocation_endpoint": s.origin + "/oauth2/revoke", "jwks_uri": s.origin + "/oauth2/jwks", "response_types_supported": []string{"code"}, "grant_types_supported": []string{"authorization_code", "refresh_token"}, "token_endpoint_auth_methods_supported": []string{"none"}, "code_challenge_methods_supported": []string{"S256"}, "scopes_supported": s.config.Scopes, "iulita_mobile_protocol_version": 1, "authorization_response_iss_parameter_supported": true}); writeErr != nil {
+	if writeErr := json.NewEncoder(w).Encode(map[string]any{"issuer": s.origin, "authorization_endpoint": s.origin + "/oauth2/authorize", "token_endpoint": s.origin + "/oauth2/token", "revocation_endpoint": s.origin + "/oauth2/revoke", "jwks_uri": s.origin + "/oauth2/jwks", "response_types_supported": []string{"code"}, "grant_types_supported": []string{"authorization_code", "refresh_token", oauthstore.DeviceGrant, "client_credentials"}, "device_authorization_endpoint": s.origin + "/oauth2/device_authorization", "token_endpoint_auth_methods_supported": []string{"none", "client_secret_basic"}, "code_challenge_methods_supported": []string{"S256"}, "scopes_supported": s.config.Scopes, "iulita_mobile_protocol_version": 1, "authorization_response_iss_parameter_supported": true}); writeErr != nil {
 		return
 	}
 }
@@ -319,10 +323,14 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setCookie(w, rotated)
-	s.page(w, pageData{Flow: flow.ID, CSRF: csrf, App: s.config.AppName, DisplayName: a.DisplayName, Scopes: scopeLabels(flow.Request.Scope), ReturnHost: s.host})
+	appName := s.config.AppName
+	if registration, policyErr := s.config.Store.ClientPolicy(r.Context(), flow.Request.ClientID); policyErr == nil {
+		appName = registration.Name
+	}
+	s.page(w, pageData{Flow: flow.ID, CSRF: csrf, App: appName, Device: flow.Request.DeviceFlowID != "", DisplayName: a.DisplayName, Scopes: scopeLabels(flow.Request.Scope), ReturnHost: s.host})
 }
 func (s *Server) consent(w http.ResponseWriter, r *http.Request) {
-	form, ok := s.form(w, r, []string{"flow_id", "csrf", "decision"})
+	form, ok := s.form(w, r, []string{"flow_id", "csrf", "decision", "user_code"})
 	if !ok {
 		return
 	}
@@ -355,6 +363,12 @@ func (s *Server) consent(w http.ResponseWriter, r *http.Request) {
 			return stepErr1
 		}
 		return s.config.Store.AuthorizeBrowserFlow(r.Context(), cookie, flow.ID, form.Get("csrf"), s.config.Store.CredentialStamp(a.ID+"\x00"+a.CredentialVersion), func(ctx context.Context, f oauthstore.BrowserFlow) error {
+			if f.Request.DeviceFlowID != "" {
+				return s.config.Store.DecideDeviceAuthorization(ctx, f, form.Get("user_code"), decision == "approve")
+			}
+			if form.Has("user_code") {
+				return oauthstore.ErrInvalid
+			}
 			if decision == "deny" {
 				u, parseErr := url.Parse(f.Request.RedirectURI)
 				if parseErr != nil {
@@ -409,6 +423,10 @@ func (s *Server) consent(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, 400, "Не удалось завершить вход. Начните снова из приложения.")
 		return
 	}
+	if flow.Request.DeviceFlowID != "" {
+		s.fail(w, 200, "Решение сохранено. Вернитесь в консоль. Не передавайте код другим людям.")
+		return
+	}
 	// A 303 after form POST never forwards credentials to the app callback.
 	w.Header().Set("Location", location)
 	w.WriteHeader(http.StatusSeeOther)
@@ -416,11 +434,12 @@ func (s *Server) consent(w http.ResponseWriter, r *http.Request) {
 
 type pageData struct {
 	Flow, CSRF, App, DisplayName, ReturnHost, Error string
+	Device                                          bool
 	Login                                           bool
 	Scopes                                          []string
 }
 
-var page = template.Must(template.New("oauth").Parse(`<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Вход в Iulita</title><main><h1>Вход в {{.App}}</h1>{{if .Error}}<p role="alert">{{.Error}}</p>{{end}}{{if .Login}}<form method="post" action="/oauth2/login"><input type="hidden" name="flow_id" value="{{.Flow}}"><input type="hidden" name="csrf" value="{{.CSRF}}"><p><label>Имя пользователя <input name="username" autocomplete="username" required maxlength="128"></label></p><p><label>Пароль <input type="password" name="password" autocomplete="current-password" required maxlength="72"></label></p><button type="submit">Войти</button></form>{{else if .Flow}}<p>Аккаунт: {{.DisplayName}}</p><p>Приложение запрашивает:</p><ul>{{range .Scopes}}<li>{{.}}</li>{{end}}</ul><p>Разрешения Android и управление телефоном включаются отдельно на самом устройстве.</p><form method="post" action="/oauth2/consent"><input type="hidden" name="flow_id" value="{{.Flow}}"><input type="hidden" name="csrf" value="{{.CSRF}}"><button type="submit" name="decision" value="approve">Разрешить вход</button><button type="submit" name="decision" value="deny">Отказаться</button></form>{{end}}</main></html>`))
+var page = template.Must(template.New("oauth").Parse(`<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Вход в Iulita</title><main><h1>Вход в {{.App}}</h1>{{if .Error}}<p role="alert">{{.Error}}</p>{{end}}{{if .Login}}<form method="post" action="/oauth2/login"><input type="hidden" name="flow_id" value="{{.Flow}}"><input type="hidden" name="csrf" value="{{.CSRF}}"><p><label>Имя пользователя <input name="username" autocomplete="username" required maxlength="128"></label></p><p><label>Пароль <input type="password" name="password" autocomplete="current-password" required maxlength="72"></label></p><button type="submit">Войти</button></form>{{else if .Flow}}<p>Аккаунт: {{.DisplayName}}</p><p>Приложение запрашивает:</p><ul>{{range .Scopes}}<li>{{.}}</li>{{end}}</ul><p>Разрешения Android и управление телефоном включаются отдельно на самом устройстве.</p><form method="post" action="/oauth2/consent"><input type="hidden" name="flow_id" value="{{.Flow}}"><input type="hidden" name="csrf" value="{{.CSRF}}">{{if .Device}}<p>Подтверждайте вход только если вы сами начали его в своей консоли. Сверьте имя приложения и введите код, показанный консолью.</p><label>Код из консоли <input name="user_code" required maxlength="9" autocomplete="off"></label>{{end}}<button type="submit" name="decision" value="approve">Разрешить вход</button><button type="submit" name="decision" value="deny">Отказаться</button></form>{{end}}</main></html>`))
 
 func (s *Server) page(w http.ResponseWriter, data pageData) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

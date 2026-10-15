@@ -45,6 +45,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/metrics"
 	"github.com/iulita-ai/iulita/internal/mobile"
 	"github.com/iulita-ai/iulita/internal/mobile/browseroauth"
+	mobileexternal "github.com/iulita-ai/iulita/internal/mobile/external"
 	mobileruntime "github.com/iulita-ai/iulita/internal/mobile/runtime"
 	"github.com/iulita-ai/iulita/internal/modelruntime"
 	"github.com/iulita-ai/iulita/internal/notify"
@@ -97,6 +98,12 @@ func (c registrySkillChecker) IsEnabled(name string) bool {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "mobile-client" {
+		if err := runMobileClientCommand(os.Args[2:]); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	if len(os.Args) > 1 && (os.Args[1] == "mobile-init" || os.Args[1] == "mobile-rotate") {
 		if err := runMobileCommand(os.Args[1], os.Args[2:]); err != nil {
 			log.Fatal(err)
@@ -1854,6 +1861,7 @@ func main() {
 	// Background services tracked by WaitGroup for graceful shutdown.
 	var wg sync.WaitGroup
 
+	var mobileService *mobileruntime.Runtime
 	if cfg.Mobile.ChatEnabled || cfg.Mobile.DeviceEnabled {
 		settings, err := mobileruntime.ReadSettings(cfg.Mobile.RuntimeFile)
 		if err != nil {
@@ -1863,10 +1871,11 @@ func main() {
 		if err != nil || accountPath != settings.AccountDB {
 			logger.Fatal("mobile account database mismatch")
 		}
-		service, err := mobileruntime.New(ctx, settings, cfg.Mobile, browseroauth.PasswordAccounts{Users: store}, routingProvider, cfg.App.SystemPrompt, version.String())
+		service, err := mobileruntime.New(ctx, settings, cfg.Mobile, browseroauth.PasswordAccounts{Users: store}, routingProvider, cfg.App.SystemPrompt, version.String(), mobileexternal.Adapter{Store: store, Sender: mgr})
 		if err != nil {
 			logger.Fatal("mobile runtime initialization failed")
 		}
+		mobileService = service
 		defer service.Close()
 		wg.Add(1)
 		go func() {
@@ -2090,7 +2099,15 @@ func main() {
 	}
 
 	logger.Info("starting iulita", zap.String("version", version.String()))
-	if err := mgr.StartAll(ctx, asst.HandleMessage); err != nil {
+	if err := mgr.StartAll(ctx, func(ctx context.Context, msg channel.IncomingMessage) (string, error) {
+		if mobileService != nil {
+			response, handled, err := mobileService.HandleExternal(ctx, msg)
+			if handled {
+				return response, err
+			}
+		}
+		return asst.HandleMessage(ctx, msg)
+	}); err != nil {
 		logger.Fatal("failed to start channel manager", zap.Error(err))
 	}
 	<-ctx.Done()

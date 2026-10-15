@@ -15,6 +15,9 @@ func (s *Store) ValidateIn(ctx context.Context, tx *sql.Tx, token string) (*Clai
 	if err != nil {
 		return nil, err
 	}
+	if c.PrincipalType == "service" {
+		return nil, ErrInvalid
+	}
 	sig := token[strings.LastIndexByte(token, '.')+1:]
 	var data []byte
 	var generation uint64

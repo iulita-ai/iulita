@@ -9,7 +9,7 @@ func TestBrowserMigrationPreservesExistingRealmAndEpochs(t *testing.T) {
 	if err := f.BumpOwnerEpoch(ctx, f.owner, 1); err != nil {
 		t.Fatal(err)
 	}
-	for _, q := range []string{`DROP INDEX oauth_family_device`, `DROP TABLE oauth_device_revocations`, `DROP TABLE oauth_completions`, `ALTER TABLE oauth_devices DROP COLUMN public_jwk`, `ALTER TABLE oauth_devices DROP COLUMN label`, `ALTER TABLE oauth_devices DROP COLUMN pending_expires_at`, `ALTER TABLE oauth_owners DROP COLUMN account_stamp`, `DROP TABLE oauth_browser_flows`, `DROP TABLE oauth_browser_limits`, `ALTER TABLE oauth_devices DROP COLUMN activated`, `DROP TABLE oauth_schema`, `CREATE TABLE oauth_schema(version INTEGER PRIMARY KEY CHECK(version=1))`, `INSERT INTO oauth_schema VALUES(1)`} {
+	for _, q := range []string{`DROP TABLE oauth_service_access`, `DROP TABLE oauth_device_requests`, `DROP TABLE oauth_client_policy`, `DROP INDEX oauth_family_device`, `DROP TABLE oauth_device_revocations`, `DROP TABLE oauth_completions`, `ALTER TABLE oauth_devices DROP COLUMN public_jwk`, `ALTER TABLE oauth_devices DROP COLUMN label`, `ALTER TABLE oauth_devices DROP COLUMN pending_expires_at`, `ALTER TABLE oauth_owners DROP COLUMN account_stamp`, `DROP TABLE oauth_browser_flows`, `DROP TABLE oauth_browser_limits`, `ALTER TABLE oauth_devices DROP COLUMN activated`, `DROP TABLE oauth_schema`, `CREATE TABLE oauth_schema(version INTEGER PRIMARY KEY CHECK(version=1))`, `INSERT INTO oauth_schema VALUES(1)`} {
 		if _, err := f.db.Exec(q); err != nil {
 			t.Fatal(err)
 		}

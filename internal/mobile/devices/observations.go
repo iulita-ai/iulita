@@ -20,6 +20,10 @@ import (
 
 func observationCategory(o *v1.Observation) string {
 	switch o.Category {
+	case v1.ObservationCategory_OBSERVATION_CATEGORY_UI_TREE:
+		if o.GetUiTree() != nil {
+			return "ui_tree"
+		}
 	case v1.ObservationCategory_OBSERVATION_CATEGORY_STATUS:
 		if o.GetStatus() != nil {
 			return "status"
@@ -63,6 +67,11 @@ func validateObservation(o *v1.Observation) error {
 			if n == nil || !packageName.MatchString(n.PackageName) || len(n.PackageName) > 200 || len(n.Title) > 512 || len(n.Text) > 8192 || n.PostedAt == nil || n.PostedAt.CheckValid() != nil || n.PostedAt.AsTime().After(o.CollectedAt.AsTime().Add(30*time.Second)) {
 				return ErrInvalid
 			}
+		}
+	}
+	if tree := o.GetUiTree(); tree != nil {
+		if validateTree(tree) != nil || time.Since(o.CollectedAt.AsTime()) > 3*time.Second {
+			return ErrInvalid
 		}
 	}
 	if proto.Size(o) > 1<<20 {
@@ -130,13 +139,13 @@ func (s *Store) Sync(ctx context.Context, identity Identity, operation string, o
 			if stepErr3 != nil {
 				return stepErr3
 			}
-			if task.Cancelled || !nativeSessionLive(ctx, tx, task) || !s.originFamilyLive(ctx, tx, task) || task.Session != o.SessionId || task.SessionGeneration != o.SessionGeneration || o.CollectedAt.AsTime().After(task.ExpiresAt) || task.CreatedAt.After(o.CollectedAt.AsTime().Add(30*time.Second)) || (task.State != "running" && task.State != "succeeded") {
+			if task.Cancelled || !nativeSessionLive(ctx, tx, task) || !s.uiLeaseLive(ctx, tx, task) || !s.originFamilyLive(ctx, tx, task) || s.externalLive(ctx, tx, task) != nil || task.Session != o.SessionId || task.SessionGeneration != o.SessionGeneration || o.CollectedAt.AsTime().After(task.ExpiresAt) || task.CreatedAt.After(o.CollectedAt.AsTime().Add(30*time.Second)) || (task.State != "running" && task.State != "succeeded") {
 				return ErrUnavailable
 			}
 			if checkErr9 := s.chats.OriginAllowed(ctx, task.Owner, task.Conversation, task.Turn, task.Generation); checkErr9 != nil {
 				return checkErr9
 			}
-			if (task.Action == v1.ActionKind_ACTION_KIND_READ_STATUS && o.Category != v1.ObservationCategory_OBSERVATION_CATEGORY_STATUS) || (task.Action == v1.ActionKind_ACTION_KIND_READ_LOCATION && o.Category != v1.ObservationCategory_OBSERVATION_CATEGORY_LOCATION) || (task.Action == v1.ActionKind_ACTION_KIND_READ_NOTIFICATIONS && o.Category != v1.ObservationCategory_OBSERVATION_CATEGORY_NOTIFICATIONS) || task.Action > v1.ActionKind_ACTION_KIND_READ_NOTIFICATIONS {
+			if (task.Action == v1.ActionKind_ACTION_KIND_READ_STATUS && o.Category != v1.ObservationCategory_OBSERVATION_CATEGORY_STATUS) || (task.Action == v1.ActionKind_ACTION_KIND_READ_LOCATION && o.Category != v1.ObservationCategory_OBSERVATION_CATEGORY_LOCATION) || (task.Action == v1.ActionKind_ACTION_KIND_READ_NOTIFICATIONS && o.Category != v1.ObservationCategory_OBSERVATION_CATEGORY_NOTIFICATIONS) || (task.Action > v1.ActionKind_ACTION_KIND_READ_NOTIFICATIONS && (!isUI(task.Action) || o.Category != v1.ObservationCategory_OBSERVATION_CATEGORY_UI_TREE)) {
 				return ErrInvalid
 			}
 			var sessionBytes []byte
@@ -146,6 +155,35 @@ func (s *Store) Sync(ctx context.Context, identity Identity, operation string, o
 			var session v1.SessionMirror
 			if proto.Unmarshal(sessionBytes, &session) != nil {
 				return ErrInvalid
+			}
+			if tree := o.GetUiTree(); tree != nil {
+				if !s.SupportsUI() || !oauthstore.HasScope(c, "phone:ui") || !s.uiLeaseLive(ctx, tx, task) || !session.ScreenContentAllowed {
+					return ErrUnavailable
+				}
+				envelope, stepErr10 := s.envelope(task)
+				if stepErr10 != nil || !proto.Equal(envelope.Scenario, tree.Scenario) || tree.PackageName != envelope.Scenario.PackageName {
+					return ErrUnavailable
+				}
+				snapshotDigest, digestErr := semantic(&v1.Observation{CollectedAt: o.CollectedAt, Value: &v1.Observation_UiTree{UiTree: tree}})
+				if digestErr != nil {
+					return digestErr
+				}
+				var priorSnapshot []byte
+				lookup := tx.QueryRowContext(ctx, `SELECT digest FROM mobile_ui_snapshots WHERE task_id=? AND snapshot_id=?`, task.ID, tree.SnapshotId).Scan(&priorSnapshot)
+				if lookup == nil && !bytes.Equal(priorSnapshot, snapshotDigest) {
+					return ErrInvalid
+				}
+				if lookup != nil && !errors.Is(lookup, sql.ErrNoRows) {
+					return lookup
+				}
+				if errors.Is(lookup, sql.ErrNoRows) {
+					if _, stepErr11 := tx.ExecContext(ctx, `INSERT INTO mobile_ui_snapshots VALUES(?,?,?)`, task.ID, tree.SnapshotId, snapshotDigest); stepErr11 != nil {
+						return stepErr11
+					}
+				}
+				if _, stepErr12 := tx.ExecContext(ctx, `UPDATE mobile_ui_tasks SET snapshot_id=?,snapshot_ref=? WHERE task_id=?`, tree.SnapshotId, o.ObservationId, task.ID); stepErr12 != nil {
+					return stepErr12
+				}
 			}
 			if batch := o.GetNotifications(); batch != nil {
 				for _, n := range batch.Notifications {
@@ -246,10 +284,10 @@ func (s *Store) Result(ctx context.Context, identity Identity, taskID string) (*
 			}
 			return err
 		}
-		if task.Cancelled || !nativeSessionLive(ctx, tx, task) || !s.originFamilyLive(ctx, tx, task) || s.chats.OriginAllowed(ctx, task.Owner, task.Conversation, task.Turn, task.Generation) != nil {
+		if task.Cancelled || !nativeSessionLive(ctx, tx, task) || !s.uiLeaseLive(ctx, tx, task) || !s.originFamilyLive(ctx, tx, task) || s.chats.OriginAllowed(ctx, task.Owner, task.Conversation, task.Turn, task.Generation) != nil || s.externalLive(ctx, tx, task) != nil {
 			return ephemeral.ErrExpired
 		}
-		rows, err := tx.QueryContext(ctx, `SELECT id,category,expires_at FROM mobile_phone_observations WHERE task_id=? AND owner_id=? AND device_id=? ORDER BY id LIMIT 16`, taskID, c.Subject, task.Device)
+		rows, err := tx.QueryContext(ctx, `SELECT id,category,expires_at FROM mobile_phone_observations WHERE task_id=? AND owner_id=? AND device_id=? AND (category<>4 OR id=(SELECT snapshot_ref FROM mobile_ui_tasks WHERE task_id=mobile_phone_observations.task_id)) ORDER BY id LIMIT 16`, taskID, c.Subject, task.Device)
 		if err != nil {
 			return err
 		}
@@ -268,6 +306,8 @@ func (s *Store) Result(ctx context.Context, identity Identity, taskID string) (*
 			switch category {
 			case v1.ObservationCategory_OBSERVATION_CATEGORY_LOCATION:
 				name = "location"
+			case v1.ObservationCategory_OBSERVATION_CATEGORY_UI_TREE:
+				name = "ui_tree"
 			case v1.ObservationCategory_OBSERVATION_CATEGORY_NOTIFICATIONS:
 				name = "notifications"
 			}

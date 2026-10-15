@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 // Authority is a server-derived business snapshot, never a bearer credential.
@@ -13,6 +15,8 @@ import (
 // revocation still fences every new phone task and dispatch.
 // Authority captures verified caller authority without retaining bearer credentials.
 type Authority struct {
+	PrincipalType, ServiceID, ServiceGrantID      string
+	ClientEpoch                                   uint64
 	Issuer, OwnerID, DeviceID, FamilyID, ClientID string
 	OwnerEpoch, DeviceEpoch, SigningEpoch         uint64
 	AuthTime                                      int64
@@ -24,11 +28,21 @@ func (s *Store) Authority(c *Claims) Authority {
 	if c == nil {
 		return Authority{}
 	}
-	return Authority{Issuer: s.Issuer(), OwnerID: c.Subject, DeviceID: c.DeviceID, FamilyID: c.FamilyID, ClientID: c.ClientID, OwnerEpoch: c.OwnerEpoch, DeviceEpoch: c.DeviceEpoch, SigningEpoch: c.SigningEpoch, AuthTime: c.AuthTime, Scopes: strings.Fields(c.Scope)}
+	grantID := ""
+	if c.PrincipalType == "service" {
+		grantID = c.ID
+	}
+	return Authority{PrincipalType: c.PrincipalType, ServiceID: c.ServiceID, ServiceGrantID: grantID, ClientEpoch: c.ClientEpoch, Issuer: s.Issuer(), OwnerID: c.Subject, DeviceID: c.DeviceID, FamilyID: c.FamilyID, ClientID: c.ClientID, OwnerEpoch: c.OwnerEpoch, DeviceEpoch: c.DeviceEpoch, SigningEpoch: c.SigningEpoch, AuthTime: c.AuthTime, Scopes: strings.Fields(c.Scope)}
 }
 
 // ValidateAuthorityIn validates authority inside the caller-owned OAuth transaction.
 func (s *Store) ValidateAuthorityIn(ctx context.Context, tx *sql.Tx, a Authority, owner string) error {
+	if a.PrincipalType == "service" {
+		if a.Issuer != s.Issuer() || a.OwnerID != owner || a.DeviceID != "" || a.FamilyID != "" || a.AuthTime != 0 {
+			return ErrInvalid
+		}
+		return s.validateServiceIn(ctx, tx, &Claims{RegisteredClaims: jwt.RegisteredClaims{Subject: owner, ID: a.ServiceGrantID}, ClientID: a.ClientID, ServiceID: a.ServiceID, ClientEpoch: a.ClientEpoch, OwnerEpoch: a.OwnerEpoch, SigningEpoch: a.SigningEpoch, Scope: strings.Join(a.Scopes, " ")})
+	}
 	if a.Issuer != s.Issuer() || a.OwnerID != owner || !canonicalID(a.FamilyID) || !canonicalID(a.DeviceID) {
 		return ErrInvalid
 	}

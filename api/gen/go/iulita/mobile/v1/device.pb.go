@@ -891,18 +891,19 @@ func (x *RevokeDeviceRequest) GetDeviceId() string {
 }
 
 type SessionMirror struct {
-	state                protoimpl.MessageState `protogen:"open.v1"`
-	SessionId            string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	SessionGeneration    uint64                 `protobuf:"varint,2,opt,name=session_generation,json=sessionGeneration,proto3" json:"session_generation,omitempty"`
-	State                SessionState           `protobuf:"varint,3,opt,name=state,proto3,enum=iulita.mobile.v1.SessionState" json:"state,omitempty"`
-	AllowedPackages      []string               `protobuf:"bytes,4,rep,name=allowed_packages,json=allowedPackages,proto3" json:"allowed_packages,omitempty"`
-	AllowedActions       []ActionKind           `protobuf:"varint,5,rep,packed,name=allowed_actions,json=allowedActions,proto3,enum=iulita.mobile.v1.ActionKind" json:"allowed_actions,omitempty"`
-	ExpiresAt            *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	ScreenContentAllowed bool                   `protobuf:"varint,7,opt,name=screen_content_allowed,json=screenContentAllowed,proto3" json:"screen_content_allowed,omitempty"`
-	ScreenshotAllowed    bool                   `protobuf:"varint,8,opt,name=screenshot_allowed,json=screenshotAllowed,proto3" json:"screenshot_allowed,omitempty"`
-	PolicyRevision       string                 `protobuf:"bytes,9,opt,name=policy_revision,json=policyRevision,proto3" json:"policy_revision,omitempty"` // Report of a NATIVE-created session, never a server-created grant.
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	SessionId              string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	SessionGeneration      uint64                 `protobuf:"varint,2,opt,name=session_generation,json=sessionGeneration,proto3" json:"session_generation,omitempty"`
+	State                  SessionState           `protobuf:"varint,3,opt,name=state,proto3,enum=iulita.mobile.v1.SessionState" json:"state,omitempty"`
+	AllowedPackages        []string               `protobuf:"bytes,4,rep,name=allowed_packages,json=allowedPackages,proto3" json:"allowed_packages,omitempty"`
+	AllowedActions         []ActionKind           `protobuf:"varint,5,rep,packed,name=allowed_actions,json=allowedActions,proto3,enum=iulita.mobile.v1.ActionKind" json:"allowed_actions,omitempty"`
+	ExpiresAt              *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	ScreenContentAllowed   bool                   `protobuf:"varint,7,opt,name=screen_content_allowed,json=screenContentAllowed,proto3" json:"screen_content_allowed,omitempty"`
+	ScreenshotAllowed      bool                   `protobuf:"varint,8,opt,name=screenshot_allowed,json=screenshotAllowed,proto3" json:"screenshot_allowed,omitempty"`
+	PolicyRevision         string                 `protobuf:"bytes,9,opt,name=policy_revision,json=policyRevision,proto3" json:"policy_revision,omitempty"`
+	ApprovedEnvelopeSha256 []byte                 `protobuf:"bytes,10,opt,name=approved_envelope_sha256,json=approvedEnvelopeSha256,proto3" json:"approved_envelope_sha256,omitempty"` // Report of a NATIVE-created session, never a server-created grant.
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *SessionMirror) Reset() {
@@ -996,6 +997,13 @@ func (x *SessionMirror) GetPolicyRevision() string {
 		return x.PolicyRevision
 	}
 	return ""
+}
+
+func (x *SessionMirror) GetApprovedEnvelopeSha256() []byte {
+	if x != nil {
+		return x.ApprovedEnvelopeSha256
+	}
+	return nil
 }
 
 type DeviceCapabilities struct {
@@ -3126,6 +3134,9 @@ type UINode struct {
 	Description   string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
 	Bounds        *Bounds                `protobuf:"bytes,5,opt,name=bounds,proto3" json:"bounds,omitempty"`
 	Actions       []ActionKind           `protobuf:"varint,6,rep,packed,name=actions,proto3,enum=iulita.mobile.v1.ActionKind" json:"actions,omitempty"`
+	ResourceId    string                 `protobuf:"bytes,7,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
+	Sensitive     bool                   `protobuf:"varint,8,opt,name=sensitive,proto3" json:"sensitive,omitempty"`
+	Password      bool                   `protobuf:"varint,9,opt,name=password,proto3" json:"password,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3202,15 +3213,42 @@ func (x *UINode) GetActions() []ActionKind {
 	return nil
 }
 
+func (x *UINode) GetResourceId() string {
+	if x != nil {
+		return x.ResourceId
+	}
+	return ""
+}
+
+func (x *UINode) GetSensitive() bool {
+	if x != nil {
+		return x.Sensitive
+	}
+	return false
+}
+
+func (x *UINode) GetPassword() bool {
+	if x != nil {
+		return x.Password
+	}
+	return false
+}
+
 type UITree struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SnapshotId    string                 `protobuf:"bytes,1,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
-	PackageName   string                 `protobuf:"bytes,2,opt,name=package_name,json=packageName,proto3" json:"package_name,omitempty"`
-	WindowId      uint64                 `protobuf:"varint,3,opt,name=window_id,json=windowId,proto3" json:"window_id,omitempty"`
-	Nodes         []*UINode              `protobuf:"bytes,4,rep,name=nodes,proto3" json:"nodes,omitempty"`
-	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	SnapshotId           string                 `protobuf:"bytes,1,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
+	PackageName          string                 `protobuf:"bytes,2,opt,name=package_name,json=packageName,proto3" json:"package_name,omitempty"`
+	WindowId             uint64                 `protobuf:"varint,3,opt,name=window_id,json=windowId,proto3" json:"window_id,omitempty"`
+	Nodes                []*UINode              `protobuf:"bytes,4,rep,name=nodes,proto3" json:"nodes,omitempty"`
+	ExpiresAt            *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	Scenario             *ScenarioBinding       `protobuf:"bytes,6,opt,name=scenario,proto3" json:"scenario,omitempty"`
+	ApplicationWindow    bool                   `protobuf:"varint,7,opt,name=application_window,json=applicationWindow,proto3" json:"application_window,omitempty"`
+	Unlocked             bool                   `protobuf:"varint,8,opt,name=unlocked,proto3" json:"unlocked,omitempty"`
+	Foreground           bool                   `protobuf:"varint,9,opt,name=foreground,proto3" json:"foreground,omitempty"`
+	SafetyControlVisible bool                   `protobuf:"varint,10,opt,name=safety_control_visible,json=safetyControlVisible,proto3" json:"safety_control_visible,omitempty"`
+	SingleWindowCapture  bool                   `protobuf:"varint,11,opt,name=single_window_capture,json=singleWindowCapture,proto3" json:"single_window_capture,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *UITree) Reset() {
@@ -3276,6 +3314,48 @@ func (x *UITree) GetExpiresAt() *timestamppb.Timestamp {
 		return x.ExpiresAt
 	}
 	return nil
+}
+
+func (x *UITree) GetScenario() *ScenarioBinding {
+	if x != nil {
+		return x.Scenario
+	}
+	return nil
+}
+
+func (x *UITree) GetApplicationWindow() bool {
+	if x != nil {
+		return x.ApplicationWindow
+	}
+	return false
+}
+
+func (x *UITree) GetUnlocked() bool {
+	if x != nil {
+		return x.Unlocked
+	}
+	return false
+}
+
+func (x *UITree) GetForeground() bool {
+	if x != nil {
+		return x.Foreground
+	}
+	return false
+}
+
+func (x *UITree) GetSafetyControlVisible() bool {
+	if x != nil {
+		return x.SafetyControlVisible
+	}
+	return false
+}
+
+func (x *UITree) GetSingleWindowCapture() bool {
+	if x != nil {
+		return x.SingleWindowCapture
+	}
+	return false
 }
 
 type Observation struct {
@@ -3659,7 +3739,7 @@ const file_iulita_mobile_v1_device_proto_rawDesc = "" +
 	"\x13RevokeDeviceRequest\x127\n" +
 	"\x06client\x18\x01 \x01(\v2\x1f.iulita.mobile.v1.ClientContextR\x06client\x129\n" +
 	"\toperation\x18\x02 \x01(\v2\x1b.iulita.mobile.v1.OperationR\toperation\x12\x1b\n" +
-	"\tdevice_id\x18\x03 \x01(\tR\bdeviceId\"\xce\x03\n" +
+	"\tdevice_id\x18\x03 \x01(\tR\bdeviceId\"\x88\x04\n" +
 	"\rSessionMirror\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12-\n" +
@@ -3671,7 +3751,9 @@ const file_iulita_mobile_v1_device_proto_rawDesc = "" +
 	"expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x124\n" +
 	"\x16screen_content_allowed\x18\a \x01(\bR\x14screenContentAllowed\x12-\n" +
 	"\x12screenshot_allowed\x18\b \x01(\bR\x11screenshotAllowed\x12'\n" +
-	"\x0fpolicy_revision\x18\t \x01(\tR\x0epolicyRevision\"\xde\x02\n" +
+	"\x0fpolicy_revision\x18\t \x01(\tR\x0epolicyRevision\x128\n" +
+	"\x18approved_envelope_sha256\x18\n" +
+	" \x01(\fR\x16approvedEnvelopeSha256\"\xde\x02\n" +
 	"\x12DeviceCapabilities\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12I\n" +
 	"\x11supported_actions\x18\x02 \x03(\x0e2\x1c.iulita.mobile.v1.ActionKindR\x10supportedActions\x12-\n" +
@@ -3858,7 +3940,7 @@ const file_iulita_mobile_v1_device_proto_rawDesc = "" +
 	"\x04left\x18\x01 \x01(\x05R\x04left\x12\x10\n" +
 	"\x03top\x18\x02 \x01(\x05R\x03top\x12\x14\n" +
 	"\x05right\x18\x03 \x01(\x05R\x05right\x12\x16\n" +
-	"\x06bottom\x18\x04 \x01(\x05R\x06bottom\"\xdf\x01\n" +
+	"\x06bottom\x18\x04 \x01(\x05R\x06bottom\"\xba\x02\n" +
 	"\x06UINode\x12\x16\n" +
 	"\x06handle\x18\x01 \x01(\tR\x06handle\x12\x1d\n" +
 	"\n" +
@@ -3866,7 +3948,11 @@ const file_iulita_mobile_v1_device_proto_rawDesc = "" +
 	"\x04text\x18\x03 \x01(\tR\x04text\x12 \n" +
 	"\vdescription\x18\x04 \x01(\tR\vdescription\x120\n" +
 	"\x06bounds\x18\x05 \x01(\v2\x18.iulita.mobile.v1.BoundsR\x06bounds\x126\n" +
-	"\aactions\x18\x06 \x03(\x0e2\x1c.iulita.mobile.v1.ActionKindR\aactions\"\xd4\x01\n" +
+	"\aactions\x18\x06 \x03(\x0e2\x1c.iulita.mobile.v1.ActionKindR\aactions\x12\x1f\n" +
+	"\vresource_id\x18\a \x01(\tR\n" +
+	"resourceId\x12\x1c\n" +
+	"\tsensitive\x18\b \x01(\bR\tsensitive\x12\x1a\n" +
+	"\bpassword\x18\t \x01(\bR\bpassword\"\xe8\x03\n" +
 	"\x06UITree\x12\x1f\n" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
 	"snapshotId\x12!\n" +
@@ -3874,7 +3960,16 @@ const file_iulita_mobile_v1_device_proto_rawDesc = "" +
 	"\twindow_id\x18\x03 \x01(\x04R\bwindowId\x12.\n" +
 	"\x05nodes\x18\x04 \x03(\v2\x18.iulita.mobile.v1.UINodeR\x05nodes\x129\n" +
 	"\n" +
-	"expires_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xde\x04\n" +
+	"expires_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12=\n" +
+	"\bscenario\x18\x06 \x01(\v2!.iulita.mobile.v1.ScenarioBindingR\bscenario\x12-\n" +
+	"\x12application_window\x18\a \x01(\bR\x11applicationWindow\x12\x1a\n" +
+	"\bunlocked\x18\b \x01(\bR\bunlocked\x12\x1e\n" +
+	"\n" +
+	"foreground\x18\t \x01(\bR\n" +
+	"foreground\x124\n" +
+	"\x16safety_control_visible\x18\n" +
+	" \x01(\bR\x14safetyControlVisible\x122\n" +
+	"\x15single_window_capture\x18\v \x01(\bR\x13singleWindowCapture\"\xde\x04\n" +
 	"\vObservation\x12%\n" +
 	"\x0eobservation_id\x18\x01 \x01(\tR\robservationId\x12A\n" +
 	"\bcategory\x18\x02 \x01(\x0e2%.iulita.mobile.v1.ObservationCategoryR\bcategory\x12=\n" +
@@ -4101,39 +4196,40 @@ var file_iulita_mobile_v1_device_proto_depIdxs = []int32{
 	1,  // 58: iulita.mobile.v1.UINode.actions:type_name -> iulita.mobile.v1.ActionKind
 	41, // 59: iulita.mobile.v1.UITree.nodes:type_name -> iulita.mobile.v1.UINode
 	47, // 60: iulita.mobile.v1.UITree.expires_at:type_name -> google.protobuf.Timestamp
-	5,  // 61: iulita.mobile.v1.Observation.category:type_name -> iulita.mobile.v1.ObservationCategory
-	47, // 62: iulita.mobile.v1.Observation.collected_at:type_name -> google.protobuf.Timestamp
-	47, // 63: iulita.mobile.v1.Observation.expires_at:type_name -> google.protobuf.Timestamp
-	36, // 64: iulita.mobile.v1.Observation.status:type_name -> iulita.mobile.v1.DeviceStatus
-	37, // 65: iulita.mobile.v1.Observation.location:type_name -> iulita.mobile.v1.LocationReading
-	39, // 66: iulita.mobile.v1.Observation.notifications:type_name -> iulita.mobile.v1.NotificationBatch
-	42, // 67: iulita.mobile.v1.Observation.ui_tree:type_name -> iulita.mobile.v1.UITree
-	48, // 68: iulita.mobile.v1.SyncObservationsRequest.client:type_name -> iulita.mobile.v1.ClientContext
-	49, // 69: iulita.mobile.v1.SyncObservationsRequest.operation:type_name -> iulita.mobile.v1.Operation
-	43, // 70: iulita.mobile.v1.SyncObservationsRequest.observations:type_name -> iulita.mobile.v1.Observation
-	47, // 71: iulita.mobile.v1.EphemeralResult.expires_at:type_name -> google.protobuf.Timestamp
-	43, // 72: iulita.mobile.v1.EphemeralResult.observations:type_name -> iulita.mobile.v1.Observation
-	9,  // 73: iulita.mobile.v1.DeviceService.ActivateDevice:input_type -> iulita.mobile.v1.ActivateDeviceRequest
-	10, // 74: iulita.mobile.v1.DeviceService.CompleteRecovery:input_type -> iulita.mobile.v1.CompleteRecoveryRequest
-	11, // 75: iulita.mobile.v1.DeviceService.ListDevices:input_type -> iulita.mobile.v1.ListDevicesRequest
-	13, // 76: iulita.mobile.v1.DeviceService.RevokeDevice:input_type -> iulita.mobile.v1.RevokeDeviceRequest
-	20, // 77: iulita.mobile.v1.DeviceService.Control:input_type -> iulita.mobile.v1.ClientControlFrame
-	44, // 78: iulita.mobile.v1.DeviceService.SyncObservations:input_type -> iulita.mobile.v1.SyncObservationsRequest
-	27, // 79: iulita.mobile.v1.DeviceService.GetTask:input_type -> iulita.mobile.v1.GetTaskRequest
-	28, // 80: iulita.mobile.v1.DeviceService.GetTaskResult:input_type -> iulita.mobile.v1.GetTaskResultRequest
-	6,  // 81: iulita.mobile.v1.DeviceService.ActivateDevice:output_type -> iulita.mobile.v1.Device
-	6,  // 82: iulita.mobile.v1.DeviceService.CompleteRecovery:output_type -> iulita.mobile.v1.Device
-	12, // 83: iulita.mobile.v1.DeviceService.ListDevices:output_type -> iulita.mobile.v1.ListDevicesResponse
-	6,  // 84: iulita.mobile.v1.DeviceService.RevokeDevice:output_type -> iulita.mobile.v1.Device
-	24, // 85: iulita.mobile.v1.DeviceService.Control:output_type -> iulita.mobile.v1.ServerControlFrame
-	45, // 86: iulita.mobile.v1.DeviceService.SyncObservations:output_type -> iulita.mobile.v1.SyncObservationsResponse
-	26, // 87: iulita.mobile.v1.DeviceService.GetTask:output_type -> iulita.mobile.v1.Task
-	46, // 88: iulita.mobile.v1.DeviceService.GetTaskResult:output_type -> iulita.mobile.v1.EphemeralResult
-	81, // [81:89] is the sub-list for method output_type
-	73, // [73:81] is the sub-list for method input_type
-	73, // [73:73] is the sub-list for extension type_name
-	73, // [73:73] is the sub-list for extension extendee
-	0,  // [0:73] is the sub-list for field type_name
+	29, // 61: iulita.mobile.v1.UITree.scenario:type_name -> iulita.mobile.v1.ScenarioBinding
+	5,  // 62: iulita.mobile.v1.Observation.category:type_name -> iulita.mobile.v1.ObservationCategory
+	47, // 63: iulita.mobile.v1.Observation.collected_at:type_name -> google.protobuf.Timestamp
+	47, // 64: iulita.mobile.v1.Observation.expires_at:type_name -> google.protobuf.Timestamp
+	36, // 65: iulita.mobile.v1.Observation.status:type_name -> iulita.mobile.v1.DeviceStatus
+	37, // 66: iulita.mobile.v1.Observation.location:type_name -> iulita.mobile.v1.LocationReading
+	39, // 67: iulita.mobile.v1.Observation.notifications:type_name -> iulita.mobile.v1.NotificationBatch
+	42, // 68: iulita.mobile.v1.Observation.ui_tree:type_name -> iulita.mobile.v1.UITree
+	48, // 69: iulita.mobile.v1.SyncObservationsRequest.client:type_name -> iulita.mobile.v1.ClientContext
+	49, // 70: iulita.mobile.v1.SyncObservationsRequest.operation:type_name -> iulita.mobile.v1.Operation
+	43, // 71: iulita.mobile.v1.SyncObservationsRequest.observations:type_name -> iulita.mobile.v1.Observation
+	47, // 72: iulita.mobile.v1.EphemeralResult.expires_at:type_name -> google.protobuf.Timestamp
+	43, // 73: iulita.mobile.v1.EphemeralResult.observations:type_name -> iulita.mobile.v1.Observation
+	9,  // 74: iulita.mobile.v1.DeviceService.ActivateDevice:input_type -> iulita.mobile.v1.ActivateDeviceRequest
+	10, // 75: iulita.mobile.v1.DeviceService.CompleteRecovery:input_type -> iulita.mobile.v1.CompleteRecoveryRequest
+	11, // 76: iulita.mobile.v1.DeviceService.ListDevices:input_type -> iulita.mobile.v1.ListDevicesRequest
+	13, // 77: iulita.mobile.v1.DeviceService.RevokeDevice:input_type -> iulita.mobile.v1.RevokeDeviceRequest
+	20, // 78: iulita.mobile.v1.DeviceService.Control:input_type -> iulita.mobile.v1.ClientControlFrame
+	44, // 79: iulita.mobile.v1.DeviceService.SyncObservations:input_type -> iulita.mobile.v1.SyncObservationsRequest
+	27, // 80: iulita.mobile.v1.DeviceService.GetTask:input_type -> iulita.mobile.v1.GetTaskRequest
+	28, // 81: iulita.mobile.v1.DeviceService.GetTaskResult:input_type -> iulita.mobile.v1.GetTaskResultRequest
+	6,  // 82: iulita.mobile.v1.DeviceService.ActivateDevice:output_type -> iulita.mobile.v1.Device
+	6,  // 83: iulita.mobile.v1.DeviceService.CompleteRecovery:output_type -> iulita.mobile.v1.Device
+	12, // 84: iulita.mobile.v1.DeviceService.ListDevices:output_type -> iulita.mobile.v1.ListDevicesResponse
+	6,  // 85: iulita.mobile.v1.DeviceService.RevokeDevice:output_type -> iulita.mobile.v1.Device
+	24, // 86: iulita.mobile.v1.DeviceService.Control:output_type -> iulita.mobile.v1.ServerControlFrame
+	45, // 87: iulita.mobile.v1.DeviceService.SyncObservations:output_type -> iulita.mobile.v1.SyncObservationsResponse
+	26, // 88: iulita.mobile.v1.DeviceService.GetTask:output_type -> iulita.mobile.v1.Task
+	46, // 89: iulita.mobile.v1.DeviceService.GetTaskResult:output_type -> iulita.mobile.v1.EphemeralResult
+	82, // [82:90] is the sub-list for method output_type
+	74, // [74:82] is the sub-list for method input_type
+	74, // [74:74] is the sub-list for extension type_name
+	74, // [74:74] is the sub-list for extension extendee
+	0,  // [0:74] is the sub-list for field type_name
 }
 
 func init() { file_iulita_mobile_v1_device_proto_init() }

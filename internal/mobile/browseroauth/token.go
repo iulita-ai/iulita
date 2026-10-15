@@ -20,7 +20,11 @@ func (s *Server) oauthError(w http.ResponseWriter, status int, code string) {
 	}
 }
 func (s *Server) tokenLimit(w http.ResponseWriter, r *http.Request, category string) bool {
-	ok, err := s.config.Store.AllowBrowserAttempt(r.Context(), category, ip(r), 60, 10*time.Minute)
+	limit := 60
+	if category == "device.poll.ip" {
+		limit = 240
+	}
+	ok, err := s.config.Store.AllowBrowserAttempt(r.Context(), category, ip(r), limit, 10*time.Minute)
 	if err != nil {
 		s.oauthError(w, 503, "temporarily_unavailable")
 		return false
@@ -34,7 +38,7 @@ func (s *Server) tokenLimit(w http.ResponseWriter, r *http.Request, category str
 }
 func (s *Server) tokenForm(w http.ResponseWriter, r *http.Request, allowed []string) (url.Values, bool) {
 	media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if err != nil || media != "application/x-www-form-urlencoded" || r.Method != "POST" || r.URL.RawQuery != "" || r.Header.Get("Authorization") != "" {
+	if err != nil || media != "application/x-www-form-urlencoded" || r.Method != "POST" || r.URL.RawQuery != "" {
 		s.oauthError(w, 400, "invalid_request")
 		return nil, false
 	}
@@ -46,14 +50,30 @@ func (s *Server) tokenForm(w http.ResponseWriter, r *http.Request, allowed []str
 	return r.PostForm, true
 }
 func (s *Server) token(w http.ResponseWriter, r *http.Request) {
-	f, ok := s.tokenForm(w, r, []string{"grant_type", "client_id", "code", "redirect_uri", "code_verifier", "refresh_token", "iulita_installation_jwk"})
+	f, ok := s.tokenForm(w, r, []string{"grant_type", "client_id", "code", "redirect_uri", "code_verifier", "refresh_token", "iulita_installation_jwk", "device_code", "scope"})
 	if !ok {
 		return
 	}
-	if !s.tokenLimit(w, r, "token.ip") {
+	category := "token.ip"
+	if f.Get("grant_type") == oauthstore.DeviceGrant {
+		category = "device.poll.ip"
+	}
+	if !s.tokenLimit(w, r, category) {
 		return
 	}
 	grant := f.Get("grant_type")
+	if grant == oauthstore.DeviceGrant {
+		s.deviceToken(w, r, f)
+		return
+	}
+	if grant == "client_credentials" {
+		s.serviceToken(w, r, f)
+		return
+	}
+	if r.Header.Get("Authorization") != "" || f.Has("device_code") || f.Has("scope") {
+		s.oauthError(w, 400, "invalid_request")
+		return
+	}
 	raw := f.Get("code")
 	switch grant {
 	case "refresh_token":
@@ -146,8 +166,16 @@ func (s *Server) revoke(w http.ResponseWriter, r *http.Request) {
 	if !s.tokenLimit(w, r, "revoke.ip") {
 		return
 	}
+	if r.Header.Get("Authorization") != "" {
+		s.serviceRevoke(w, r, f)
+		return
+	}
 	if f.Get("token") == "" || f.Get("client_id") == "" {
 		s.oauthError(w, 400, "invalid_request")
+		return
+	}
+	if registration, policyErr := s.config.Store.ClientPolicy(r.Context(), f.Get("client_id")); policyErr == nil && registration.Kind == "service" {
+		s.invalidClient(w)
 		return
 	}
 	owner, lookupErr := s.config.Store.TokenOwner(r.Context(), "refresh_token", f.Get("token"), f.Get("client_id"), "")

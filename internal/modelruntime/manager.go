@@ -789,7 +789,11 @@ func (m *Manager) buildBindingsLocked(settings models.Settings, connections map[
 			out[p.ID] = llm.ProfileBinding{Profile: p, Eligibility: "experimental"}
 			continue
 		}
-		b := llm.ProfileBinding{Profile: p, Provider: &guardedProvider{manager: m, inner: provider, provider: p.Connection, generation: c.Connection.Generation, stageID: stageID}, Eligibility: m.eligibilityLocked(p, c, evidence[p.ID])}
+		endpoint, endpointErr := llm.PinnedModelEndpoint(p.Connection, c.Connection.Endpoint)
+		if endpointErr != nil {
+			return nil, failure("untrusted_endpoint", "Could not bind the model recipient", 422)
+		}
+		b := llm.ProfileBinding{Endpoint: endpoint, ConnectionGeneration: c.Connection.Generation, Profile: p, Provider: &guardedProvider{manager: m, inner: provider, provider: p.Connection, generation: c.Connection.Generation, stageID: stageID}, Eligibility: m.eligibilityLocked(p, c, evidence[p.ID])}
 		evaluation := evidence[p.ID]["classifier"]
 		b.ClassifierVerified = b.Eligibility == "production_eligible" && evaluation.Passed && evaluation.Fingerprint == profileFingerprint(p, c.Connection) && evaluation.FixtureVersion == ClassifierFixtureVersion && evaluation.CompatibilityVersion == models.CompatibilityVersion(p.Connection, p.Model) && evaluation.ClassifierTimeoutMS == settings.Policy.Classifier.Timeout() && evaluation.Cases == 12 && evaluation.Correct >= 11 && evaluation.ComplexCases == 8 && evaluation.ComplexCorrect == 8
 		if d, known := models.Lookup(p.Connection, p.Model); known {

@@ -67,7 +67,7 @@ check("SigningJWKS", {"keys": [dict(signing, alg="HS256")]}, False)
 metadata = {"issuer": "https://iulita.example", "authorization_endpoint": "https://iulita.example/oauth2/authorize",
             "token_endpoint": "https://iulita.example/oauth2/token", "revocation_endpoint": "https://iulita.example/oauth2/revoke",
             "jwks_uri": "https://iulita.example/oauth2/jwks", "response_types_supported": ["code"],
-            "grant_types_supported": ["authorization_code", "refresh_token"], "token_endpoint_auth_methods_supported": ["none"],
+            "grant_types_supported": ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code", "client_credentials"], "token_endpoint_auth_methods_supported": ["none", "client_secret_basic"], "device_authorization_endpoint": "https://iulita.example/oauth2/device_authorization",
             "code_challenge_methods_supported": ["S256"], "scopes_supported": ["chats:read"],
             "iulita_mobile_protocol_version": 1, "authorization_response_iss_parameter_supported": True}
 check("Metadata", metadata, True)
@@ -92,4 +92,28 @@ assert not query_validator.is_valid({k: v for k, v in query.items() if k != "sta
 assert not query_validator.is_valid(dict(query, state="short"))
 assert not query_validator.is_valid(dict(query, state="bad-state-with-newline\n"))
 assert spec["x-iulita-access-jwt-header"] == {"alg": "RS256", "typ": "at+jwt"}
+device = {"grant_type": "urn:ietf:params:oauth:grant-type:device_code", "client_id": "cli", "device_code": "a" * 43, "iulita_installation_jwk": json.dumps(jwk)}
+check("TokenForm", device, True)
+check("TokenForm", dict(device, code_verifier="x" * 43), False)
+service = {"access_token": "synthetic-service", "token_type": "Bearer", "expires_in": 300, "scope": "chats:read", "iulita_principal_type": "service"}
+check("TokenResponse", service, True)
+check("TokenResponse", dict(service, refresh_token="synthetic"), False)  # gitleaks:allow -- negative-test fixture
+check("TokenResponse", dict(service, scope="phone:ui"), False)
+check("TokenResponse", dict(service, expires_in=301), False)
+check("TokenForm", {"grant_type": "client_credentials"}, True)
+check("TokenForm", {"grant_type": "client_credentials", "client_id": "service"}, False)
+for error in ("authorization_pending", "slow_down", "expired_token", "access_denied"):
+    check("OAuthError", {"error": error}, True)
+check("OAuthError", {"error": "invented_error"}, False)
+check("RevocationForm", {"client_id": "cli", "token": "synthetic"}, True)
+check("RevocationForm", {"token": "synthetic", "token_type_hint": "access_token"}, True)
+check("ServiceRevocationForm", {"client_id": "service", "token": "synthetic"}, False)
+check("RevocationForm", {"token": "synthetic", "client_secret": "synthetic"}, False)  # gitleaks:allow -- negative-test fixture
+consent = {"flow_id": uid, "csrf": "a" * 43, "decision": "approve"}
+check("UserConsentForm", consent, True)
+check("UserConsentForm", dict(consent, user_code="ABCD-EFGH"), False)
+check("DeviceConsentForm", dict(consent, user_code="ABCD-EFGH"), True)
+check("DeviceConsentForm", consent, False)
+assert spec["paths"]["/oauth2/revoke"]["post"]["security"] == [{}, {"serviceBasic": []}]
+assert "200" in spec["paths"]["/oauth2/consent"]["post"]["responses"]
 print(str(len(schemas)) + " schemas and " + str(checked + 7) + " positive/negative contract cases passed")

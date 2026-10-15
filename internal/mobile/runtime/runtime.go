@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/iulita-ai/iulita/internal/channel"
 	"github.com/iulita-ai/iulita/internal/config"
 	"github.com/iulita-ai/iulita/internal/llm"
 	"github.com/iulita-ai/iulita/internal/mobile/browseroauth"
@@ -33,7 +34,7 @@ import (
 	"github.com/ory/fosite"
 )
 
-var scopes = []string{"chats:read", "chats:write", "devices:read", "devices:manage", "devices:receive", "devices:sync"}
+var scopes = []string{"chats:read", "chats:write", "devices:read", "devices:manage", "devices:receive", "devices:sync", "phone:data", "phone:ui"}
 
 // Runtime owns the mobile execution lifecycle and its fencing state.
 type Runtime struct {
@@ -106,7 +107,7 @@ func Initialize(ctx context.Context, s Settings) error {
 }
 
 // New constructs the subsystem with explicit dependencies and limits.
-func New(ctx context.Context, s Settings, features config.MobileConfig, accounts browseroauth.Accounts, models llm.ProfileInvoker, system, version string) (result *Runtime, err error) {
+func New(ctx context.Context, s Settings, features config.MobileConfig, accounts browseroauth.Accounts, models llm.ProfileInvoker, system, version string, origins ...devices.OriginResolver) (result *Runtime, err error) {
 	if checkErr1 := s.Validate(); checkErr1 != nil {
 		return nil, checkErr1
 	}
@@ -176,8 +177,15 @@ func New(ctx context.Context, s Settings, features config.MobileConfig, accounts
 		return nil, err
 	}
 	var tools []engine.Tool
+	var originResolver devices.OriginResolver
+	if len(origins) > 1 {
+		return nil, errors.New("one canonical origin resolver required")
+	}
+	if len(origins) == 1 {
+		originResolver = origins[0]
+	}
 	if features.DeviceEnabled {
-		r.devices, err = devices.Open(ctx, s.OAuthDB, r.oauth, accounts, r.chats, r.content)
+		r.devices, err = devices.Open(ctx, s.OAuthDB, r.oauth, accounts, r.chats, r.content, devices.Options{Models: models, Origins: originResolver, Scenarios: s.Scenarios, UI: features.UIEnabled, Vision: features.VisionEnabled})
 		if err != nil {
 			return nil, err
 		}
@@ -187,7 +195,9 @@ func New(ctx context.Context, s Settings, features config.MobileConfig, accounts
 	if err != nil {
 		return nil, err
 	}
-	r.engine.VerifyAuthority = r.oauth.ValidateAuthority
+	r.engine.VerifyAuthority = func(ctx context.Context, authority engine.Authority) error {
+		return verifyExecutionAuthority(ctx, accounts, r.oauth, authority)
+	}
 	if memory, ok := accounts.(engine.MemorySource); ok {
 		r.engine.AccountMemory = memory
 	}
@@ -322,4 +332,12 @@ func (r *Runtime) Close() {
 			_ = r.lock.Close() //nolint:errcheck // Shutdown cleanup; closing the descriptor releases the file lock.
 		}
 	})
+}
+
+// HandleExternal intercepts explicit linked phone commands before legacy processing.
+func (r *Runtime) HandleExternal(ctx context.Context, msg channel.IncomingMessage) (response string, handled bool, err error) {
+	if r.devices == nil {
+		return "", false, nil
+	}
+	return r.devices.HandleExternal(ctx, r.engine, msg)
 }

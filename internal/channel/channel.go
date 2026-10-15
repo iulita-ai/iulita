@@ -48,6 +48,7 @@ type IncomingMessage struct {
 	Documents         []DocumentAttachment // nil for messages without files
 	Audio             []AudioAttachment    // nil for messages without voice/audio
 	Locations         []LocationAttachment // nil for messages without a shared location
+	ClientMessageID   string               // Optional stable request ID for private web commands.
 	MessageID         int                  // platform-specific message ID for reply threading
 	Caps              ChannelCaps          // capabilities of the originating channel
 }

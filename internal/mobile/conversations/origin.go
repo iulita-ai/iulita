@@ -7,22 +7,24 @@ import (
 
 // OriginAllowed is a read-only predicate for an already accepted asynchronous
 // phone task. Its caller holds the account write reservation while committing
-// the task DB transition; do not begin a second account write transaction here.
+// the task DB transition. Use the dedicated read-only pool: waiting writers on
+// r.db must not exhaust the connections needed by the account lock holder. The
+// account reservation and all origin/generation/credential checks remain required.
 func (r *Repository) OriginAllowed(ctx context.Context, owner, conversation, turn string, generation uint64) error {
 	var count int
-	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM mobile_turns t JOIN mobile_conversations c ON c.owner_id=t.owner_id AND c.id=t.conversation_id JOIN users u ON u.id=t.owner_id WHERE t.owner_id=? AND t.conversation_id=? AND t.id=? AND t.generation=? AND c.generation=t.generation AND t.cancellation_requested=0 AND t.state NOT IN ('failed','cancelled','unknown_outcome') AND u.disabled=0 AND u.must_change_pass=0`, owner, conversation, turn, generation).Scan(&count)
+	err := r.authorityReads.QueryRowContext(ctx, `SELECT COUNT(*) FROM mobile_turns t JOIN mobile_conversations c ON c.owner_id=t.owner_id AND c.id=t.conversation_id JOIN users u ON u.id=t.owner_id WHERE t.owner_id=? AND t.conversation_id=? AND t.id=? AND t.generation=? AND c.generation=t.generation AND t.cancellation_requested=0 AND t.state NOT IN ('failed','cancelled','unknown_outcome') AND u.disabled=0 AND u.must_change_pass=0`, owner, conversation, turn, generation).Scan(&count)
 	if err != nil {
 		return err
 	}
 	if count != 1 {
 		return ErrFenced
 	}
-	current, err := accountStamp(ctx, r.db, owner)
+	current, err := accountStamp(ctx, r.authorityReads, owner)
 	if err != nil {
 		return ErrFenced
 	}
 	var accepted string
-	if r.db.QueryRowContext(ctx, `SELECT account_stamp FROM mobile_turns WHERE owner_id=? AND id=?`, owner, turn).Scan(&accepted) != nil || accepted != current {
+	if r.authorityReads.QueryRowContext(ctx, `SELECT account_stamp FROM mobile_turns WHERE owner_id=? AND id=?`, owner, turn).Scan(&accepted) != nil || accepted != current {
 		return ErrFenced
 	}
 	return nil
@@ -34,11 +36,11 @@ func (r *Repository) DispatchAllowed(ctx context.Context, f Fence) error {
 		return err
 	}
 	var accepted string
-	err := r.db.QueryRowContext(ctx, `SELECT t.account_stamp FROM mobile_turns t JOIN mobile_runtime rt ON rt.id=1 WHERE t.owner_id=? AND t.id=? AND t.processing_epoch=? AND rt.instance=? AND rt.epoch=? AND rt.expires_at>?`, f.OwnerID, f.TurnID, f.ProcessingEpoch, f.Runtime.Instance, f.Runtime.Epoch, time.Now().UnixMilli()).Scan(&accepted)
+	err := r.authorityReads.QueryRowContext(ctx, `SELECT t.account_stamp FROM mobile_turns t JOIN mobile_runtime rt ON rt.id=1 WHERE t.owner_id=? AND t.id=? AND t.processing_epoch=? AND rt.instance=? AND rt.epoch=? AND rt.expires_at>?`, f.OwnerID, f.TurnID, f.ProcessingEpoch, f.Runtime.Instance, f.Runtime.Epoch, time.Now().UnixMilli()).Scan(&accepted)
 	if err != nil {
 		return ErrFenced
 	}
-	current, err := accountStamp(ctx, r.db, f.OwnerID)
+	current, err := accountStamp(ctx, r.authorityReads, f.OwnerID)
 	if err != nil || current != accepted {
 		return ErrFenced
 	}

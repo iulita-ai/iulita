@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"net/url"
 	"strings"
 	"time"
 
@@ -56,18 +55,10 @@ func (s *Store) RegisterClient(ctx context.Context, c fosite.DefaultClient) erro
 	if c.ID == "" || len(c.ID) > 128 || !c.Public || len(c.Secret) != 0 || len(c.RotatedSecrets) != 0 || (len(c.GrantTypes) != 2 || !fosite.Arguments(c.GrantTypes).Has("authorization_code") || !fosite.Arguments(c.GrantTypes).Has("refresh_token")) || !fosite.Arguments(c.ResponseTypes).ExactOne("code") || len(c.RedirectURIs) == 0 || !validScopes(c.Scopes) {
 		return ErrInvalid
 	}
-	for _, redirect := range c.RedirectURIs {
-		u, err := url.Parse(redirect)
-		if err != nil || u.Scheme != "https" || u.Host == "" || u.Fragment != "" || u.User != nil || u.RawQuery != "" {
-			return ErrInvalid
-		}
-	}
-	data, err := json.Marshal(c) //nolint:gosec // The public client is required to have empty secrets before encoding.
-	if err != nil {
+	if !fosite.Arguments(c.Audience).ExactOne(s.Audience()) {
 		return ErrInvalid
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO oauth_clients(id,data) VALUES(?,?)`, c.ID, data)
-	return err
+	return s.RegisterOAuthClient(ctx, ClientRegistration{ClientID: c.ID, Name: c.ID, Kind: "native", Scopes: c.Scopes, RedirectURIs: c.RedirectURIs}, "")
 }
 
 // GetClient implements the Fosite GetClient storage contract inside the request transaction.
@@ -88,6 +79,9 @@ func (s *Store) GetClient(ctx context.Context, id string) (fosite.Client, error)
 	}
 	if err != nil {
 		return nil, err
+	}
+	if _, _, policyErr := s.clientPolicy(ctx, id, false); policyErr != nil {
+		return nil, fosite.ErrNotFound
 	}
 	c := new(fosite.DefaultClient)
 	err = json.Unmarshal(data, c)

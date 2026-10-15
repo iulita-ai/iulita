@@ -25,6 +25,7 @@ import (
 type Task struct {
 	ID, Owner, Device, Conversation, Turn, Session, State, Consent, Destination, CallerFamily, ViewerDevice string
 	Generation, SessionGeneration                                                                           uint64
+	CurrentStep                                                                                             uint32
 	Action                                                                                                  v1.ActionKind
 	Cancelled                                                                                               bool
 	Reason                                                                                                  v1.ErrorReason
@@ -155,6 +156,11 @@ func (s *Store) Create(ctx context.Context, f conversations.Fence, d Draft) (Tas
 		defer tx.Rollback() //nolint:errcheck // Cleanup only; preserve the operation result.
 		if err = s.auth.ValidateAuthorityIn(ctx, tx, authority, f.OwnerID); err != nil {
 			return ErrUnavailable
+		}
+		if bindingID := engine.ExternalBinding(ctx); bindingID != "" {
+			if stepErr11 := s.bindTurnIn(ctx, tx, f.OwnerID, f.TurnID, bindingID, d.Device); stepErr11 != nil {
+				return stepErr11
+			}
 		}
 		var approval []byte
 		if d.Kind != v1.ActionKind_ACTION_KIND_READ_STATUS {
@@ -320,6 +326,9 @@ func (s *Store) GetTask(ctx context.Context, identity Identity, id string) (Task
 		if errors.Is(err, ErrUnavailable) {
 			return conversations.ErrNotFound
 		}
+		if err == nil && isUI(task.Action) {
+			err = tx.QueryRowContext(ctx, `SELECT step+1 FROM mobile_ui_tasks WHERE task_id=?`, id).Scan(&task.CurrentStep)
+		}
 		return err
 	})
 	return task, err
@@ -338,6 +347,30 @@ func (s *Store) Next(ctx context.Context, identity Identity, epoch uint64) (*v1.
 		var commandID, taskID, ref string
 		err := tx.QueryRowContext(ctx, `SELECT id,task_id,payload_ref FROM mobile_phone_commands WHERE owner_id=? AND device_id=? AND stream_epoch=? AND state='queued' ORDER BY server_seq LIMIT 1`, c.Subject, c.DeviceID, epoch).Scan(&commandID, &taskID, &ref)
 		if errors.Is(err, sql.ErrNoRows) {
+			var stepErr12 string
+			if tx.QueryRowContext(ctx, `SELECT id FROM mobile_phone_tasks WHERE owner_id=? AND device_id=? AND action>=6 AND state='running' AND cancellation_requested=0 LIMIT 1`, c.Subject, c.DeviceID).Scan(&stepErr12) == nil {
+				if !oauthstore.HasScope(c, "phone:ui") {
+					return ErrUnavailable
+				}
+				t, lookupErr := taskIn(ctx, tx, c.Subject, stepErr12)
+				if lookupErr != nil {
+					return lookupErr
+				}
+				envelope, envelopeErr := s.envelope(t)
+				if envelopeErr == nil {
+					manifest, manifestErr := s.scenario(envelope.Scenario)
+					var completedSteps int
+					if manifestErr == nil && tx.QueryRowContext(ctx, `SELECT step FROM mobile_ui_tasks WHERE task_id=?`, t.ID).Scan(&completedSteps) != nil {
+						return ErrUnavailable
+					}
+					// Outcome verification is deterministic even after model-guided steps.
+					if manifestErr == nil && (!manifest.Reasoning || completedSteps == len(manifest.Steps)) {
+						if advanceErr := s.advanceUI(ctx, tx, t); advanceErr != nil && !errors.Is(advanceErr, ErrUnavailable) {
+							return advanceErr
+						}
+					}
+				}
+			}
 			return nil
 		}
 		if err != nil {
@@ -346,6 +379,9 @@ func (s *Store) Next(ctx context.Context, identity Identity, epoch uint64) (*v1.
 		task, err := scanTask(tx.QueryRowContext(ctx, `SELECT `+taskColumns+` FROM mobile_phone_tasks WHERE id=? AND owner_id=? AND device_id=?`, taskID, c.Subject, c.DeviceID))
 		if err != nil {
 			return err
+		}
+		if isUI(task.Action) && !oauthstore.HasScope(c, "phone:ui") {
+			return ErrUnavailable
 		}
 		var live int
 		err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM mobile_native_sessions WHERE owner_id=? AND device_id=? AND id=? AND generation=? AND stream_epoch=? AND state='active' AND expires_at>?`, c.Subject, c.DeviceID, task.Session, task.SessionGeneration, epoch, time.Now().UnixMilli()).Scan(&live)
@@ -373,7 +409,7 @@ func (s *Store) Next(ctx context.Context, identity Identity, epoch uint64) (*v1.
 			}
 			allowed = allowed && granted
 		}
-		invalid := !allowed || task.Cancelled || !task.ExpiresAt.After(time.Now()) || live != 1 || !nativeSessionLive(ctx, tx, task) || !s.originFamilyLive(ctx, tx, task) || s.chats.OriginAllowed(ctx, task.Owner, task.Conversation, task.Turn, task.Generation) != nil
+		invalid := !allowed || task.Cancelled || !task.ExpiresAt.After(time.Now()) || live != 1 || !nativeSessionLive(ctx, tx, task) || !s.originFamilyLive(ctx, tx, task) || s.chats.OriginAllowed(ctx, task.Owner, task.Conversation, task.Turn, task.Generation) != nil || s.externalLive(ctx, tx, task) != nil
 		payload, _, bodyErr := s.content.Get(ref, s.binding(task.Owner, task.Device, task.ID, task.Destination, task.Consent, "command"))
 		if invalid || bodyErr != nil {
 			if _, err = tx.ExecContext(ctx, `UPDATE mobile_phone_commands SET state='expired' WHERE id=?`, commandID); err != nil {
@@ -388,6 +424,9 @@ func (s *Store) Next(ctx context.Context, identity Identity, epoch uint64) (*v1.
 		candidate := new(v1.Command)
 		if proto.Unmarshal(payload, candidate) != nil {
 			return ErrInvalid
+		}
+		if isUI(task.Action) && !s.uiDispatch(ctx, tx, task, candidate) {
+			return ErrUnavailable
 		}
 		// Publication is a durable dispatch boundary. A lost Send/ACK cannot
 		// return this row to queued; native receipts reconcile it by command ID.

@@ -14,6 +14,16 @@ import (
 
 // Open opens the store with its required schema and safety settings.
 func Open(ctx context.Context, path string, create bool) (*sql.DB, error) {
+	return open(ctx, path, create, false)
+}
+
+// OpenReadOnly reserves a bounded WAL reader pool that cannot be consumed by
+// waiting BEGIN IMMEDIATE writers or perform writes through another connection.
+func OpenReadOnly(ctx context.Context, path string) (*sql.DB, error) {
+	return open(ctx, path, false, true)
+}
+
+func open(ctx context.Context, path string, create, readOnly bool) (*sql.DB, error) {
 	if path == "" || path == ":memory:" {
 		return nil, errors.New("mobile storage requires a persistent path")
 	}
@@ -27,7 +37,12 @@ func Open(ctx context.Context, path string, create bool) (*sql.DB, error) {
 	if create {
 		q.Set("mode", "rwc")
 	}
-	q.Set("_txlock", "immediate")
+	if readOnly {
+		q.Set("mode", "ro")
+		q.Add("_pragma", "query_only(1)")
+	} else {
+		q.Set("_txlock", "immediate")
+	}
 	q.Add("_pragma", "busy_timeout(5000)")
 	q.Add("_pragma", "foreign_keys(1)")
 	q.Add("_pragma", "synchronous(FULL)")
@@ -37,6 +52,13 @@ func Open(ctx context.Context, path string, create bool) (*sql.DB, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(4)
+	if readOnly {
+		if err = db.PingContext(ctx); err != nil {
+			db.Close() //nolint:errcheck,gosec // Preserve the reader initialization error.
+			return nil, err
+		}
+		return db, nil
+	}
 	if _, err = db.ExecContext(ctx, `PRAGMA journal_mode=WAL`); err != nil {
 		db.Close() //nolint:errcheck,gosec // Cleanup only; preserve the operation result.
 		return nil, err

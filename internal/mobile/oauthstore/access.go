@@ -15,6 +15,13 @@ func (s *Store) ValidateAccess(ctx context.Context, token string) (*Claims, erro
 	}
 	sig := token[strings.LastIndexByte(token, '.')+1:]
 	err = s.WithRequest(ctx, func(ctx context.Context) error {
+		if c.PrincipalType == "service" {
+			tx, txErr := s.transaction(ctx)
+			if txErr != nil {
+				return txErr
+			}
+			return s.validateServiceIn(ctx, tx, c)
+		}
 		r, stepErr1 := s.get(ctx, "access", sig)
 		if stepErr1 != nil {
 			return fositeInvalid()

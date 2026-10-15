@@ -1,11 +1,83 @@
 package main
 
 import (
+	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/iulita-ai/iulita/internal/config"
 	"github.com/iulita-ai/iulita/internal/llm"
+	"github.com/iulita-ai/iulita/internal/modelruntime"
+	"github.com/iulita-ai/iulita/internal/models"
+	"go.uber.org/zap"
 )
+
+func TestModelProfileFactoryNeverRedirectsPrivateContent(t *testing.T) {
+	for _, providerName := range []string{"claude", "openai", "ollama"} {
+		for _, statusCode := range []int{http.StatusTemporaryRedirect, http.StatusPermanentRedirect} {
+			t.Run(providerName+"/"+http.StatusText(statusCode), func(t *testing.T) {
+				var selectedCalls, otherCalls atomic.Int32
+				other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					otherCalls.Add(1)
+					w.WriteHeader(http.StatusInternalServerError)
+				}))
+				defer other.Close()
+				selected := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					selectedCalls.Add(1)
+					body, err := io.ReadAll(r.Body)
+					if err != nil || !strings.Contains(string(body), "PRIVATE_PHONE_CANARY") {
+						t.Error("private request did not reach selected recipient")
+					}
+					w.Header().Set("Location", other.URL+"/capture")
+					w.WriteHeader(statusCode)
+				}))
+				defer selected.Close()
+				factory := modelClientFactory(&http.Client{}, zap.NewNop(), nil)
+				provider, err := factory(models.Profile{ID: "fixture", Connection: providerName, Model: "fixture-model", MaxOutputTokens: 128, Thinking: "disabled"}, modelruntime.Connection{Endpoint: selected.URL, APIKey: "synthetic"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				defer cancel()
+				if _, callErr := provider.Complete(ctx, llm.Request{Message: "PRIVATE_PHONE_CANARY"}); callErr == nil {
+					t.Fatal("redirect unexpectedly produced a completion")
+				}
+				if selectedCalls.Load() != 1 || otherCalls.Load() != 0 {
+					t.Fatalf("selected=%d unapproved=%d", selectedCalls.Load(), otherCalls.Load())
+				}
+			})
+		}
+	}
+}
+
+func TestModelProfileClaudeDoesNotRetryTransientFailure(t *testing.T) {
+	var calls atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"type":"error","error":{"type":"overloaded_error","message":"synthetic"}}`))
+	}))
+	defer upstream.Close()
+	factory := modelClientFactory(&http.Client{}, zap.NewNop(), nil)
+	provider, err := factory(models.Profile{ID: "fixture", Connection: "claude", Model: "fixture-model", MaxOutputTokens: 128, Thinking: "disabled"}, modelruntime.Connection{Endpoint: upstream.URL, APIKey: "synthetic"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if _, callErr := provider.Complete(ctx, llm.Request{Message: "PRIVATE_PHONE_CANARY"}); callErr == nil {
+		t.Fatal("transient failure unexpectedly succeeded")
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("single admission sent %d upstream requests", calls.Load())
+	}
+}
 
 func TestLegacyMigrationPreservesDistinctCustomTargets(t *testing.T) {
 	cfg := &config.Config{}

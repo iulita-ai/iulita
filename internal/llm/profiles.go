@@ -15,12 +15,14 @@ import (
 // Eligibility must come from local compatibility rules and server-owned probe
 // evidence, never a settings request. Experimental profiles are probe-only.
 type ProfileBinding struct {
-	Profile            models.Profile
-	Provider           Provider
-	Eligibility        string
-	Images             bool
-	ContextTokens      int
-	ClassifierVerified bool
+	// Endpoint and ConnectionGeneration bind private-content consent to the actual client.
+	Endpoint, ConnectionGeneration string
+	Profile                        models.Profile
+	Provider                       Provider
+	Eligibility                    string
+	Images                         bool
+	ContextTokens                  int
+	ClassifierVerified             bool
 }
 
 // ProfileSnapshot holds one immutable policy revision. Clients shared by

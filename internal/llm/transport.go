@@ -7,6 +7,66 @@ import (
 	"strings"
 )
 
+// PinnedModelEndpoint resolves adapter defaults before recipient disclosure and
+// transport construction. A custom endpoint must identify one explicit origin.
+func PinnedModelEndpoint(provider, endpoint string) (string, error) {
+	if provider == "deepseek" || provider == "zai" {
+		return OfficialModelEndpoint(provider, endpoint)
+	}
+	if endpoint == "" {
+		switch provider {
+		case "claude":
+			endpoint = "https://api.anthropic.com"
+		case "openai":
+			endpoint = "https://api.openai.com/v1"
+		}
+	}
+	u, err := url.Parse(endpoint)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.Opaque != "" || u.RawPath != "" {
+		return "", fmt.Errorf("untrusted model endpoint")
+	}
+	return u.String(), nil
+}
+
+// NewPinnedModelClient preserves the configured proxy-aware transport while
+// preventing a model request or redirect from changing its approved origin.
+func NewPinnedModelClient(provider, endpoint string, base *http.Client) (*http.Client, string, error) {
+	canonical, err := PinnedModelEndpoint(provider, endpoint)
+	if err != nil {
+		return nil, "", err
+	}
+	origin, err := url.Parse(canonical)
+	if err != nil {
+		return nil, "", fmt.Errorf("untrusted model endpoint")
+	}
+	client := http.Client{}
+	if base != nil {
+		client = *base
+	}
+	transport := client.Transport
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+	client.Transport = &originModelTransport{inner: transport, origin: origin}
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	client.Jar = nil
+	return &client, canonical, nil
+}
+
+type originModelTransport struct {
+	inner  http.RoundTripper
+	origin *url.URL
+}
+
+// RoundTrip refuses credentials and content outside the selected model origin.
+func (t *originModelTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	u := req.URL
+	if u == nil || u.Scheme != t.origin.Scheme || u.Host != t.origin.Host || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.Opaque != "" || u.RawPath != "" || req.Host != "" && req.Host != t.origin.Host {
+		return nil, fmt.Errorf("model request outside approved endpoint")
+	}
+	return t.inner.RoundTrip(req)
+}
+
 // OfficialModelEndpoint validates a provider-bound HTTPS endpoint without
 // contacting the provider. Credentials must never be forwarded to a user URL.
 func OfficialModelEndpoint(provider, endpoint string) (string, error) {

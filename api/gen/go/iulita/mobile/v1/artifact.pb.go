@@ -166,6 +166,9 @@ func (x *ArtifactBinding) GetConsentRevision() string {
 	return ""
 }
 
+// At most 64 nonempty contiguous chunks per object, each at most 64 KiB.
+// The last available chunk slot must finish total_bytes; rejected chunks do not
+// advance the offset. Retries preserve the original operation and payload.
 type UploadArtifactRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Client        *ClientContext         `protobuf:"bytes,1,opt,name=client,proto3" json:"client,omitempty"`

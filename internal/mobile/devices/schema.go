@@ -21,8 +21,13 @@ func (s *Store) migratePhone(ctx context.Context, tx *sql.Tx) error {
 	if err := tx.QueryRowContext(ctx, `SELECT MAX(version) FROM mobile_phone_schema`).Scan(&version); err != nil {
 		return err
 	}
-	if version == 2 {
+	if version == 3 {
 		return nil
+	}
+	if version == 2 {
+		// V3 adds isolated UI/processing/artifact metadata. Existing native
+		// permissions remain unchanged; no UI permission is inferred.
+		return upgradePhoneMarker(ctx, tx)
 	}
 	if version != 1 {
 		return ErrInvalid
@@ -43,9 +48,19 @@ func (s *Store) migratePhone(ctx context.Context, tx *sql.Tx) error {
 	}
 	for _, q := range []string{
 		`UPDATE mobile_phone_commands SET state=CASE WHEN state IN ('dispatched','started') THEN 'unknown_outcome' ELSE 'cancelled' END WHERE state IN ('queued','dispatched','started')`,
+	} {
+		if _, err := tx.ExecContext(ctx, q); err != nil {
+			return err
+		}
+	}
+	return upgradePhoneMarker(ctx, tx)
+}
+
+func upgradePhoneMarker(ctx context.Context, tx *sql.Tx) error {
+	for _, q := range []string{
 		`DROP TABLE mobile_phone_schema`,
-		`CREATE TABLE mobile_phone_schema(version INTEGER PRIMARY KEY CHECK(version=2))`,
-		`INSERT INTO mobile_phone_schema VALUES(2)`,
+		`CREATE TABLE mobile_phone_schema(version INTEGER PRIMARY KEY CHECK(version=3))`,
+		`INSERT INTO mobile_phone_schema VALUES(3)`,
 	} {
 		if _, err := tx.ExecContext(ctx, q); err != nil {
 			return err

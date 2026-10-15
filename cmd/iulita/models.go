@@ -43,25 +43,29 @@ func modelAttemptObserver(bus *eventbus.Bus, estimator *cost.Tracker) llm.Attemp
 func modelClientFactory(client *http.Client, logger *zap.Logger, observe llm.AttemptObserver) modelruntime.Factory {
 	return func(profile models.Profile, connection modelruntime.Connection) (llm.Provider, error) {
 		var provider llm.Provider
+		pinnedClient, endpoint, err := llm.NewPinnedModelClient(profile.Connection, connection.Endpoint, client)
+		if err != nil {
+			return nil, err
+		}
 		switch profile.Connection {
 		case "deepseek", "zai":
-			trusted, endpoint, err := llm.NewOfficialModelClient(profile.Connection, connection.Endpoint, client)
-			if err != nil {
-				return nil, err
+			officialClient, officialEndpoint, officialErr := llm.NewOfficialModelClient(profile.Connection, connection.Endpoint, client)
+			if officialErr != nil {
+				return nil, officialErr
 			}
 			d, known := models.Lookup(profile.Connection, profile.Model)
 			options := deepseek.Options{Vision: known && d.Images, Thinking: profile.Thinking, ReasoningEffort: profile.ReasoningEffort}
 			if profile.Connection == "deepseek" {
-				provider = deepseek.NewWithOptions(connection.APIKey, profile.Model, profile.MaxOutputTokens, endpoint, trusted, logger, options)
+				provider = deepseek.NewWithOptions(connection.APIKey, profile.Model, profile.MaxOutputTokens, officialEndpoint, officialClient, logger, options)
 			} else {
-				provider = zai.NewWithOptions(connection.APIKey, profile.Model, profile.MaxOutputTokens, endpoint, trusted, logger, options)
+				provider = zai.NewWithOptions(connection.APIKey, profile.Model, profile.MaxOutputTokens, officialEndpoint, officialClient, logger, options)
 			}
 		case "claude":
-			provider = claude.New(connection.APIKey, profile.Model, profile.MaxOutputTokens, connection.Endpoint, client)
+			provider = claude.New(connection.APIKey, profile.Model, profile.MaxOutputTokens, endpoint, pinnedClient)
 		case "openai":
-			provider = openaillm.New(connection.APIKey, profile.Model, profile.MaxOutputTokens, connection.Endpoint, client)
+			provider = openaillm.New(connection.APIKey, profile.Model, profile.MaxOutputTokens, endpoint, pinnedClient)
 		case "ollama":
-			provider = llm.NewXMLToolProvider(ollama.New(connection.Endpoint, profile.Model, client))
+			provider = llm.NewXMLToolProvider(ollama.New(endpoint, profile.Model, pinnedClient))
 		default:
 			return nil, &modelruntime.Error{Code: "invalid_connection", Message: "Unsupported model connection", HTTPStatus: 422}
 		}

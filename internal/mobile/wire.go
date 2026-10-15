@@ -23,7 +23,7 @@ func CheckProtocolVersion(version uint32) error {
 
 var mobileScopes = map[string]bool{
 	"chats:read": true, "chats:write": true, "devices:read": true,
-	"devices:receive": true, "devices:sync": true, "devices:manage": true,
+	"phone:data": true, "phone:ui": true, "devices:receive": true, "devices:sync": true, "devices:manage": true,
 }
 
 // MethodPolicy returns a copy of the schema policy. Unknown/unannotated methods
@@ -80,6 +80,9 @@ func ClientFrameScopes(frame *mobilev1.ClientControlFrame) ([]string, error) {
 		}
 	case *mobilev1.ClientControlFrame_Session:
 		if body != nil && body.Session != nil {
+			if body.Session.ScreenContentAllowed {
+				return []string{"devices:sync", "phone:ui"}, nil
+			}
 			return []string{"devices:sync"}, nil
 		}
 	case *mobilev1.ClientControlFrame_Receipt:
@@ -88,7 +91,7 @@ func ClientFrameScopes(frame *mobilev1.ClientControlFrame) ([]string, error) {
 		}
 	case *mobilev1.ClientControlFrame_Renew:
 		if body != nil && body.Renew != nil {
-			return []string{"devices:sync"}, nil
+			return []string{"devices:sync", "phone:ui"}, nil
 		}
 	}
 	return nil, fmt.Errorf("unknown or empty client control frame")
@@ -110,11 +113,14 @@ func ServerFrameScopes(frame *mobilev1.ServerControlFrame) ([]string, error) {
 		}
 	case *mobilev1.ServerControlFrame_Command:
 		if body != nil && body.Command != nil {
+			if body.Command.GetUi() != nil {
+				return []string{"devices:receive", "phone:ui"}, nil
+			}
 			return []string{"devices:receive"}, nil
 		}
 	case *mobilev1.ServerControlFrame_Lease:
 		if body != nil && body.Lease != nil {
-			return []string{"devices:receive"}, nil
+			return []string{"devices:receive", "phone:ui"}, nil
 		}
 	case *mobilev1.ServerControlFrame_Revoked:
 		if body != nil && body.Revoked != nil {
