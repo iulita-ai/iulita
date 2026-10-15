@@ -54,6 +54,7 @@ message Turn {
   bool cancellation_requested = 7; google.protobuf.Timestamp cancellation_requested_at = 8;
   string input_message_id = 9; string output_message_id = 10;
   ConversationSettings accepted_settings = 11; ErrorReason outcome_reason = 12;
+  string target_device_id = 13; // Immutable explicit phone target; empty legacy input is caller-device only.
 }
 
 message CreateConversationRequest { ClientContext client = 1; Operation operation = 2; string title = 3; ConversationSettings settings = 4; }
@@ -72,6 +73,9 @@ message ListMessagesResponse {
 message SendMessageRequest {
   ClientContext client = 1; Operation operation = 2; string conversation_id = 3;
   string client_message_id = 4; uint64 expected_history_generation = 5; string text = 6;
+  // Optional for plain chats. A supplied target is owner-checked at admission,
+  // persisted with the turn and enforced independently of model tool arguments.
+  string target_device_id = 7;
 }
 message GetTurnRequest {
   ClientContext client = 1; string conversation_id = 2;

@@ -96,4 +96,5 @@ message ServerInfo {
   uint32 max_text_bytes = 4;
   uint32 max_page_size = 5;
   uint32 max_chunk_bytes = 6;
+  string clock_id = 7; // Match the nonce-bound HTTPS time sample for this runtime.
 }

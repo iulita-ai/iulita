@@ -139,6 +139,13 @@ func TestActualOlderDatabaseRestoreRequiresOfflineInvalidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Exercise a real pre-target v3 backup as well as the current v4 database
+	// used by TestOfflineRotationRevokesAndDoesNotReplayRestoredQueue.
+	for _, query := range []string{`ALTER TABLE mobile_turns DROP COLUMN target_device_id`, `DROP TABLE mobile_chat_schema`, `CREATE TABLE mobile_chat_schema(version INTEGER PRIMARY KEY CHECK(version=3))`, `INSERT INTO mobile_chat_schema VALUES(3)`} {
+		if _, err = accountDB.ExecContext(ctx, query); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if _, err = accountDB.ExecContext(ctx, `VACUUM INTO ?`, mainBackup); err != nil {
 		t.Fatal(err)
 	}

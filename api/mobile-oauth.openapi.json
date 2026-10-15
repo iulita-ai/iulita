@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Iulita Mobile OAuth2 Wire Contract",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "description": "HTTPS OAuth realm shared by independently registered native, CLI and service principals. Native uses S256 PKCE, CLI uses RFC8628 and P-256 installation proof, services use client_secret_basic and short-lived owner-bound chat scopes. All tokens require live persistent revocation and account checks."
   },
   "paths": {
@@ -650,6 +650,45 @@
           }
         }
       }
+    },
+    "/oauth2/time": {
+      "get": {
+        "operationId": "mobileClockSample",
+        "description": "TLS-authenticated nonce-bound runtime clock sample; no credentials required and no grant is issued. No-store; match clock_id to ServerInfo and SessionMirror; include resolution/error/RTT/drift/age in conservative expiry.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "nonce",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Fresh runtime sample",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimeSample"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid nonce, method or issuer/TLS"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "503": {
+            "description": "Clock discontinuity or slow sample; reject and resample"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -860,6 +899,11 @@
             "const": true
           },
           "device_authorization_endpoint": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://"
+          },
+          "iulita_time_endpoint": {
             "type": "string",
             "format": "uri",
             "pattern": "^https://"
@@ -1599,6 +1643,52 @@
           "csrf",
           "decision",
           "user_code"
+        ],
+        "additionalProperties": false
+      },
+      "TimeSample": {
+        "type": "object",
+        "properties": {
+          "issuer": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://"
+          },
+          "nonce": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          },
+          "clock_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "received_at_unix_ms": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "sent_at_unix_ms": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "resolution_ms": {
+            "const": 1
+          },
+          "clock_error_ms": {
+            "const": 50
+          },
+          "max_sample_age_ms": {
+            "const": 30000
+          }
+        },
+        "required": [
+          "issuer",
+          "nonce",
+          "clock_id",
+          "received_at_unix_ms",
+          "sent_at_unix_ms",
+          "resolution_ms",
+          "clock_error_ms",
+          "max_sample_age_ms"
         ],
         "additionalProperties": false
       }

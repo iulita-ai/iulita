@@ -1,8 +1,26 @@
 # Release guide
 
-This guide summarizes the public releases from v0.38.0 through v0.48.1. Follow the linked release for its
+This guide summarizes the public releases from v0.38.0 through v0.49.0. Follow the linked release for its
 exact changelog. A source feature is not automatically available in an older
 container or binary.
+
+## v0.49.0: explicit phone targets and runtime time samples
+
+[v0.49.0](https://github.com/iulita-ai/iulita/releases/tag/v0.49.0) adds
+`SendMessage.target_device_id`: the selected owned phone is frozen with the
+accepted turn and enforced independently of model tool arguments. Reusing a
+message ID with a different target is a conflict. Omitted targets bind to the
+original caller device; they cannot select another owned phone implicitly.
+
+The independent OAuth listener provides nonce-bound `/oauth2/time` samples.
+Clock IDs are shared with gRPC server information, device commands, leases and
+native session mirrors. Runtime restart or a detected wall-clock step changes
+the clock ID and fences sessions tied to the old clock. Clients must still
+account for round-trip delay, resolution, clock error, drift and sample age.
+
+All mobile defaults remain off. UI/Vision remain behind the joint native
+acceptance gate; this backend release does not ship an Android application or
+automatically enable phone access. See [the integration guide](mobile-api.md).
 
 ## v0.48.1: HTTP approval management
 

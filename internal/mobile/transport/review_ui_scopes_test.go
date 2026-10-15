@@ -130,7 +130,7 @@ func TestStoreNextRequiresUIScopeBeforeDispatchOrAdvancement(t *testing.T) {
 	if _, err = db.Exec(`INSERT INTO mobile_native_sessions(owner_id,device_id,id,generation,stream_epoch,family_id,state,metadata,expires_at) VALUES(?,?,?,?,?,?,'active',?,?)`, claims.Subject, claims.DeviceID, mirror.SessionId, 1, epoch, claims.FamilyID, mirrorBody, mirror.ExpiresAt.AsTime().UnixMilli()); err != nil {
 		t.Fatal(err)
 	}
-	conversation, turn := origin(t, h, viewer, "bounded UI scenario")
+	conversation, turn := origin(t, h, viewer, "bounded UI scenario", claims.DeviceID)
 	task, err := v1.NewPhoneServiceClient(h.conn).CreateUITask(tokenContext(viewer), &v1.CreateUITaskRequest{Client: clientContext(), Operation: operation(), DeviceId: claims.DeviceID, ConversationId: conversation, TurnId: turn, HistoryGeneration: 1, Envelope: envelope, ApprovedEnvelopeSha256: digest[:]})
 	if err != nil {
 		t.Fatal(err)

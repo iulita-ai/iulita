@@ -29,6 +29,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/mobile/engine"
 	"github.com/iulita-ai/iulita/internal/mobile/ephemeral"
 	"github.com/iulita-ai/iulita/internal/mobile/oauthstore"
+	"github.com/iulita-ai/iulita/internal/mobile/serverclock"
 	"github.com/iulita-ai/iulita/internal/mobile/sqlitedb"
 	"github.com/iulita-ai/iulita/internal/mobile/transport"
 	"github.com/ory/fosite"
@@ -117,6 +118,7 @@ func New(ctx context.Context, s Settings, features config.MobileConfig, accounts
 	if !features.ChatEnabled && !features.DeviceEnabled {
 		return nil, errors.New("no mobile backend requested")
 	}
+	clock := serverclock.New()
 	r := &Runtime{settings: s}
 	defer func() {
 		if err != nil {
@@ -185,7 +187,7 @@ func New(ctx context.Context, s Settings, features config.MobileConfig, accounts
 		originResolver = origins[0]
 	}
 	if features.DeviceEnabled {
-		r.devices, err = devices.Open(ctx, s.OAuthDB, r.oauth, accounts, r.chats, r.content, devices.Options{Models: models, Origins: originResolver, Scenarios: s.Scenarios, UI: features.UIEnabled, Vision: features.VisionEnabled})
+		r.devices, err = devices.Open(ctx, s.OAuthDB, r.oauth, accounts, r.chats, r.content, devices.Options{Clock: clock, Models: models, Origins: originResolver, Scenarios: s.Scenarios, UI: features.UIEnabled, Vision: features.VisionEnabled})
 		if err != nil {
 			return nil, err
 		}
@@ -201,11 +203,11 @@ func New(ctx context.Context, s Settings, features config.MobileConfig, accounts
 	if memory, ok := accounts.(engine.MemorySource); ok {
 		r.engine.AccountMemory = memory
 	}
-	r.grpc, err = transport.New(transport.Config{TLS: tlsConfig, OAuth: r.oauth, Accounts: accounts, Chats: r.chats, Engine: r.engine, Devices: r.devices, Features: features, Version: version, Ready: r.ready.Load})
+	r.grpc, err = transport.New(transport.Config{Clock: clock, TLS: tlsConfig, OAuth: r.oauth, Accounts: accounts, Chats: r.chats, Engine: r.engine, Devices: r.devices, Features: features, Version: version, Ready: r.ready.Load})
 	if err != nil {
 		return nil, err
 	}
-	browser, err := browseroauth.New(browseroauth.Config{Store: r.oauth, Accounts: accounts, Scopes: scopes})
+	browser, err := browseroauth.New(browseroauth.Config{Clock: clock, Store: r.oauth, Accounts: accounts, Scopes: scopes})
 	if err != nil {
 		return nil, err
 	}

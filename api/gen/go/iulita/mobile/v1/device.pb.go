@@ -901,7 +901,8 @@ type SessionMirror struct {
 	ScreenContentAllowed   bool                   `protobuf:"varint,7,opt,name=screen_content_allowed,json=screenContentAllowed,proto3" json:"screen_content_allowed,omitempty"`
 	ScreenshotAllowed      bool                   `protobuf:"varint,8,opt,name=screenshot_allowed,json=screenshotAllowed,proto3" json:"screenshot_allowed,omitempty"`
 	PolicyRevision         string                 `protobuf:"bytes,9,opt,name=policy_revision,json=policyRevision,proto3" json:"policy_revision,omitempty"`
-	ApprovedEnvelopeSha256 []byte                 `protobuf:"bytes,10,opt,name=approved_envelope_sha256,json=approvedEnvelopeSha256,proto3" json:"approved_envelope_sha256,omitempty"` // Report of a NATIVE-created session, never a server-created grant.
+	ApprovedEnvelopeSha256 []byte                 `protobuf:"bytes,10,opt,name=approved_envelope_sha256,json=approvedEnvelopeSha256,proto3" json:"approved_envelope_sha256,omitempty"`
+	ClockId                string                 `protobuf:"bytes,11,opt,name=clock_id,json=clockId,proto3" json:"clock_id,omitempty"` // Runtime epoch from a fresh time sample; never a grant.
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
@@ -1004,6 +1005,13 @@ func (x *SessionMirror) GetApprovedEnvelopeSha256() []byte {
 		return x.ApprovedEnvelopeSha256
 	}
 	return nil
+}
+
+func (x *SessionMirror) GetClockId() string {
+	if x != nil {
+		return x.ClockId
+	}
+	return ""
 }
 
 type DeviceCapabilities struct {
@@ -1208,6 +1216,7 @@ type Lease struct {
 	SessionId         string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	SessionGeneration uint64                 `protobuf:"varint,3,opt,name=session_generation,json=sessionGeneration,proto3" json:"session_generation,omitempty"`
 	ExpiresAt         *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	ClockId           string                 `protobuf:"bytes,5,opt,name=clock_id,json=clockId,proto3" json:"clock_id,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -1268,6 +1277,13 @@ func (x *Lease) GetExpiresAt() *timestamppb.Timestamp {
 		return x.ExpiresAt
 	}
 	return nil
+}
+
+func (x *Lease) GetClockId() string {
+	if x != nil {
+		return x.ClockId
+	}
+	return ""
 }
 
 type CommandReceipt struct {
@@ -2599,6 +2615,7 @@ type Command struct {
 	//	*Command_System
 	//	*Command_Ui
 	Action        isCommand_Action `protobuf_oneof:"action"`
+	ClockId       string           `protobuf:"bytes,19,opt,name=clock_id,json=clockId,proto3" json:"clock_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2770,6 +2787,13 @@ func (x *Command) GetUi() *UIAction {
 		}
 	}
 	return nil
+}
+
+func (x *Command) GetClockId() string {
+	if x != nil {
+		return x.ClockId
+	}
+	return ""
 }
 
 type isCommand_Action interface {
@@ -3739,7 +3763,7 @@ const file_iulita_mobile_v1_device_proto_rawDesc = "" +
 	"\x13RevokeDeviceRequest\x127\n" +
 	"\x06client\x18\x01 \x01(\v2\x1f.iulita.mobile.v1.ClientContextR\x06client\x129\n" +
 	"\toperation\x18\x02 \x01(\v2\x1b.iulita.mobile.v1.OperationR\toperation\x12\x1b\n" +
-	"\tdevice_id\x18\x03 \x01(\tR\bdeviceId\"\x88\x04\n" +
+	"\tdevice_id\x18\x03 \x01(\tR\bdeviceId\"\xa3\x04\n" +
 	"\rSessionMirror\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12-\n" +
@@ -3753,7 +3777,8 @@ const file_iulita_mobile_v1_device_proto_rawDesc = "" +
 	"\x12screenshot_allowed\x18\b \x01(\bR\x11screenshotAllowed\x12'\n" +
 	"\x0fpolicy_revision\x18\t \x01(\tR\x0epolicyRevision\x128\n" +
 	"\x18approved_envelope_sha256\x18\n" +
-	" \x01(\fR\x16approvedEnvelopeSha256\"\xde\x02\n" +
+	" \x01(\fR\x16approvedEnvelopeSha256\x12\x19\n" +
+	"\bclock_id\x18\v \x01(\tR\aclockId\"\xde\x02\n" +
 	"\x12DeviceCapabilities\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12I\n" +
 	"\x11supported_actions\x18\x02 \x03(\x0e2\x1c.iulita.mobile.v1.ActionKindR\x10supportedActions\x12-\n" +
@@ -3769,14 +3794,15 @@ const file_iulita_mobile_v1_device_proto_rawDesc = "" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x02 \x01(\tR\tsessionId\x12-\n" +
-	"\x12session_generation\x18\x03 \x01(\x04R\x11sessionGeneration\"\xa9\x01\n" +
+	"\x12session_generation\x18\x03 \x01(\x04R\x11sessionGeneration\"\xc4\x01\n" +
 	"\x05Lease\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x02 \x01(\tR\tsessionId\x12-\n" +
 	"\x12session_generation\x18\x03 \x01(\x04R\x11sessionGeneration\x129\n" +
 	"\n" +
-	"expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xbe\x03\n" +
+	"expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x19\n" +
+	"\bclock_id\x18\x05 \x01(\tR\aclockId\"\xbe\x03\n" +
 	"\x0eCommandReceipt\x12\x1d\n" +
 	"\n" +
 	"receipt_id\x18\x01 \x01(\tR\treceiptId\x12\x1d\n" +
@@ -3886,7 +3912,7 @@ const file_iulita_mobile_v1_device_proto_rawDesc = "" +
 	"\vnode_handle\x18\x02 \x01(\tR\n" +
 	"nodeHandle\x12\x12\n" +
 	"\x04text\x18\x03 \x01(\tR\x04text\x12)\n" +
-	"\x10scroll_direction\x18\x04 \x01(\x05R\x0fscrollDirection\"\xa1\x06\n" +
+	"\x10scroll_direction\x18\x04 \x01(\x05R\x0fscrollDirection\"\xbc\x06\n" +
 	"\aCommand\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12\x1d\n" +
 	"\n" +
@@ -3911,7 +3937,8 @@ const file_iulita_mobile_v1_device_proto_rawDesc = "" +
 	"\benvelope\x18\x0f \x01(\v2\x1e.iulita.mobile.v1.TaskEnvelopeR\benvelope\x122\n" +
 	"\x04read\x18\x10 \x01(\v2\x1c.iulita.mobile.v1.ReadActionH\x00R\x04read\x128\n" +
 	"\x06system\x18\x11 \x01(\v2\x1e.iulita.mobile.v1.SystemActionH\x00R\x06system\x12,\n" +
-	"\x02ui\x18\x12 \x01(\v2\x1a.iulita.mobile.v1.UIActionH\x00R\x02uiB\b\n" +
+	"\x02ui\x18\x12 \x01(\v2\x1a.iulita.mobile.v1.UIActionH\x00R\x02ui\x12\x19\n" +
+	"\bclock_id\x18\x13 \x01(\tR\aclockIdB\b\n" +
 	"\x06action\"\xa0\x02\n" +
 	"\fDeviceStatus\x12,\n" +
 	"\x0fbattery_percent\x18\x01 \x01(\rH\x00R\x0ebatteryPercent\x88\x01\x01\x12\x1f\n" +

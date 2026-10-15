@@ -124,6 +124,32 @@ the verifier and `iulita_installation_jwk` (a P-256 public JWK). Android App Lin
 can publish `/.well-known/assetlinks.json` when the package and release certificate
 fingerprints are configured. Without them, that endpoint returns 404.
 
+For AppAuth, use a basic OAuth configuration from the RFC8414 metadata above
+or pinned endpoints, rather than OIDC discovery. Explicitly disable its default
+nonce (`setNonce(null)`); do not send OIDC `prompt`, `max_age`, `openid` or
+`offline_access` parameters. Fresh credential verification uses
+`iulita_fresh_auth=true`, with the known `iulita_device_id` for recovery.
+Retain the exact installation proof request, including DER signature bytes and
+label, before dispatch. Re-signing the same challenge can produce different
+ECDSA bytes and is not an idempotent retry after a lost completion ACK.
+
+### Runtime time samples (v0.49.0+)
+
+GET `/oauth2/time?nonce=…` on the exact TLS issuer, with a fresh 32-byte random
+base64url nonce (43 characters). No token is required; the endpoint issues no
+grant and uses `Cache-Control: no-store`. Validate the echoed nonce and issuer,
+then match `clock_id` to `ServerInfo.clock_id`. The response includes
+`received_at_unix_ms`, `sent_at_unix_ms`, `resolution_ms` (1), `clock_error_ms`
+(50) and `max_sample_age_ms` (30000).
+
+Map the server-time interval to local monotonic time using measured request and
+response times; subtract uncertainty, drift and sample age from every deadline.
+Receiving a lease never starts a new ten-second validity period. Reject stale,
+replayed or uncertain samples. Native `SessionMirror.clock_id` must match the
+runtime; commands and leases carry the same ID. Restart and detected wall-clock
+steps rotate this process-local epoch and invalidate old native sessions. The
+sample does not prove universal UTC accuracy or make remote revocation instant.
+
 ### CLI Device Flow
 
 1. Create a P-256 installation key and retain its private half locally.
@@ -161,7 +187,14 @@ Basic credentials and a `token` form field.
 The [Protobuf definitions](https://github.com/iulita-ai/iulita/tree/main/api/proto/iulita/mobile/v1)
 are the RPC reference. Send `ClientContext.protocol_version = 1`. Mutations use
 an `Operation` UUID and timestamp: retry an uncertain response with the same ID
-and unchanged semantic payload. Changed payload under the same ID is a conflict.
+and unchanged semantic payload. Changed payload under the same ID is a conflict. Starting with v0.49.0, use
+`SendMessage.target_device_id` for a selected phone: the server owner-checks and
+persists the target in the accepted turn and returns it in `Turn`. Phone tools
+and UI task admission cannot replace it with a different owned device. An
+omitted target freezes the original caller device; legacy unbound turns may
+only use their frozen caller identity, never the current retrying client.
+Service principals cannot set a phone target. Explicit selection requires
+`devices:read`; permissions, consent and live device authority still apply.
 
 Chats are separate owner-scoped conversations with settings, history generations,
 turns and resumable events. Clear/cancel/revocation fence pending work; a stale

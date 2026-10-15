@@ -45,6 +45,7 @@ message SessionMirror {
   repeated string allowed_packages = 4; repeated ActionKind allowed_actions = 5;
   google.protobuf.Timestamp expires_at = 6; bool screen_content_allowed = 7;
   bool screenshot_allowed = 8; string policy_revision = 9; bytes approved_envelope_sha256 = 10;
+  string clock_id = 11; // Runtime epoch from a fresh time sample; never a grant.
   // Report of a NATIVE-created session, never a server-created grant.
 }
 message DeviceCapabilities {
@@ -57,6 +58,7 @@ message LeaseRenewal { string task_id = 1; string session_id = 2; uint64 session
 message Lease {
   string task_id = 1; string session_id = 2; uint64 session_generation = 3;
   google.protobuf.Timestamp expires_at = 4;
+  string clock_id = 5;
 }
 enum ReceiptState {
   RECEIPT_STATE_UNSPECIFIED = 0; RECEIPT_STATE_DELIVERED = 1; RECEIPT_STATE_ACCEPTED = 2;
@@ -125,6 +127,7 @@ message Command {
   string session_id = 9; uint64 session_generation = 10; uint64 coordinator_epoch = 11;
   uint32 task_step = 12; string snapshot_id = 13; TaskOrigin origin = 14; TaskEnvelope envelope = 15;
   oneof action { ReadAction read = 16; SystemAction system = 17; UIAction ui = 18; }
+  string clock_id = 19;
   // Fixed typed templates, no shell, arbitrary callback URL or code. Validation
   // of this shape is not approval; native policy/lease/freshness still apply.
 }

@@ -121,6 +121,7 @@ func toolDigest(t Tool) string {
 
 // Accept admits a message with pinned policy and model configuration.
 func (e *Engine) Accept(ctx context.Context, owner, conversation string, in conversations.Input) (conversations.Turn, bool, error) {
+	in.ActorDeviceID = AuthorityFrom(ctx).DeviceID
 	return e.Repo.Admit(ctx, owner, conversation, in, func(t conversations.Turn) ([]byte, error) {
 		p, err := e.Resolve(ctx, owner, t.AcceptedSettings.ProfileID)
 		if err != nil || p.Provider == nil || p.Digest == "" || p.Revision == 0 {
@@ -313,6 +314,9 @@ func (e *Engine) process(root context.Context, t conversations.Turn, f conversat
 		return
 	}
 	req := llm.Request{SystemPrompt: e.System, Message: input, ProfileID: t.AcceptedSettings.ProfileID, PinnedProfile: true, Operation: "mobile.chat", UserID: t.OwnerID, ChatID: "mobile:" + t.ConversationID, PolicyRevision: p.ProfileRevision}
+	if t.TargetDeviceID != "" {
+		req.SystemPrompt += "\nSelected phone target (server-enforced): " + t.TargetDeviceID + ". Phone tool arguments must use this exact device_id."
+	}
 	if p.MemoryMode == "account" && p.SavedMemory != "" {
 		req.SystemPrompt += "\n\nAccount saved knowledge (explicit account memory mode):\n" + p.SavedMemory
 	}

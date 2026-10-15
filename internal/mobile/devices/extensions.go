@@ -9,12 +9,14 @@ import (
 
 	"github.com/iulita-ai/iulita/internal/llm"
 	"github.com/iulita-ai/iulita/internal/mobile/oauthstore"
+	"github.com/iulita-ai/iulita/internal/mobile/serverclock"
 	"google.golang.org/protobuf/proto"
 )
 
 // Options supplies immutable server-owned policies; it never creates native grants.
 type Options struct {
 	// Now is an optional server clock for deterministic fault simulation.
+	Clock      *serverclock.Clock
 	Now        func() time.Time
 	Models     llm.ProfileInvoker
 	Scenarios  []Scenario
@@ -83,7 +85,7 @@ func (s *Store) resultAuthority(ctx context.Context, tx *sql.Tx, c *oauthstore.C
 	if err != nil {
 		return t, ErrUnavailable
 	}
-	if t.ViewerDevice != c.DeviceID || t.Cancelled || !nativeSessionLive(ctx, tx, t) || !s.uiLeaseLive(ctx, tx, t) || !s.originFamilyLive(ctx, tx, t) || s.chats.OriginAllowed(ctx, t.Owner, t.Conversation, t.Turn, t.Generation) != nil || s.externalLive(ctx, tx, t) != nil {
+	if t.ViewerDevice != c.DeviceID || t.Cancelled || !s.nativeSessionLive(ctx, tx, t) || !s.uiLeaseLive(ctx, tx, t) || !s.originFamilyLive(ctx, tx, t) || s.chats.OriginAllowed(ctx, t.Owner, t.Conversation, t.Turn, t.Generation) != nil || s.externalLive(ctx, tx, t) != nil {
 		return t, ErrUnavailable
 	}
 	return t, nil
@@ -120,4 +122,11 @@ func (s *Store) clock() time.Time {
 		return s.options.Now()
 	}
 	return time.Now()
+}
+
+func (s *Store) clockID() string {
+	if s.options.Clock == nil {
+		return ""
+	}
+	return s.options.Clock.ID()
 }

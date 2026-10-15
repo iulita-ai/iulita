@@ -27,7 +27,7 @@ func (s *Store) artifactAuthority(ctx context.Context, tx *sql.Tx, c *oauthstore
 	if err != nil {
 		return t, ErrUnavailable
 	}
-	if source && t.Device != c.DeviceID || !source && t.ViewerDevice != c.DeviceID || !isUI(t.Action) || t.Cancelled || !nativeSessionLive(ctx, tx, t) || !s.uiLeaseLive(ctx, tx, t) || !s.originFamilyLive(ctx, tx, t) || s.chats.OriginAllowed(ctx, t.Owner, t.Conversation, t.Turn, t.Generation) != nil || s.externalLive(ctx, tx, t) != nil {
+	if source && t.Device != c.DeviceID || !source && t.ViewerDevice != c.DeviceID || !isUI(t.Action) || t.Cancelled || !s.nativeSessionLive(ctx, tx, t) || !s.uiLeaseLive(ctx, tx, t) || !s.originFamilyLive(ctx, tx, t) || s.chats.OriginAllowed(ctx, t.Owner, t.Conversation, t.Turn, t.Generation) != nil || s.externalLive(ctx, tx, t) != nil {
 		return t, ErrUnavailable
 	}
 	var body []byte

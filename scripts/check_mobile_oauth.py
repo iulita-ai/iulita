@@ -116,4 +116,11 @@ check("DeviceConsentForm", dict(consent, user_code="ABCD-EFGH"), True)
 check("DeviceConsentForm", consent, False)
 assert spec["paths"]["/oauth2/revoke"]["post"]["security"] == [{}, {"serviceBasic": []}]
 assert "200" in spec["paths"]["/oauth2/consent"]["post"]["responses"]
+
+clock_sample = {"issuer":"https://iulita.example","nonce":"a"*43,"clock_id":uid,"received_at_unix_ms":1792015600000,"sent_at_unix_ms":1792015600001,"resolution_ms":1,"clock_error_ms":50,"max_sample_age_ms":30000}
+check("TimeSample",clock_sample,True)
+check("TimeSample",dict(clock_sample,clock_error_ms=0),False)
+check("TimeSample",dict(clock_sample,nonce="short"),False)
+check("TimeSample",dict(clock_sample,clock_id="bad"),False)
+
 print(str(len(schemas)) + " schemas and " + str(checked + 7) + " positive/negative contract cases passed")

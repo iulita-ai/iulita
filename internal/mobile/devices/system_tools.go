@@ -22,6 +22,9 @@ func (s *Store) submit(ctx context.Context, f conversations.Fence, draft Draft) 
 	if err := draft.validate(); err != nil {
 		return "", engine.Rejection{}
 	}
+	if s.chats.PhoneTargetAllowed(ctx, f.OwnerID, f.ConversationID, f.TurnID, f.Generation, draft.Device) != nil {
+		return "", engine.Rejection{}
+	}
 	selected, lookupErr := s.auth.Device(ctx, f.OwnerID, draft.Device)
 	if lookupErr != nil || selected.Revoked || !selected.Activated {
 		return "", engine.Rejection{}

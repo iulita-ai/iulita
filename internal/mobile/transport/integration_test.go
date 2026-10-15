@@ -157,12 +157,12 @@ func setupHarnessWithOptions(t *testing.T, options devices.Options) *harness {
 		t.Fatal(err)
 	}
 	processor.VerifyAuthority = oauth.ValidateAuthority
-	browser, err := browseroauth.New(browseroauth.Config{Store: oauth, Accounts: accounts, Scopes: harnessScopes, Limits: browseroauth.Limits{AuthorizePerIP: 100, LoginPerIP: 100, LoginPerAccount: 100, ConsentPerIP: 100}})
+	browser, err := browseroauth.New(browseroauth.Config{Clock: options.Clock, Store: oauth, Accounts: accounts, Scopes: harnessScopes, Limits: browseroauth.Limits{AuthorizePerIP: 100, LoginPerIP: 100, LoginPerAccount: 100, ConsentPerIP: 100}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	cert, pool := certificate(t)
-	server, err := New(Config{TLS: &tls.Config{Certificates: []tls.Certificate{cert}}, OAuth: oauth, Accounts: accounts, Chats: chats, Engine: processor, Devices: deviceStore, Features: config.MobileConfig{ChatEnabled: true, DeviceEnabled: true, UIEnabled: options.UI, VisionEnabled: options.Vision}, Version: "test"})
+	server, err := New(Config{Clock: options.Clock, TLS: &tls.Config{Certificates: []tls.Certificate{cert}}, OAuth: oauth, Accounts: accounts, Chats: chats, Engine: processor, Devices: deviceStore, Features: config.MobileConfig{ChatEnabled: true, DeviceEnabled: true, UIEnabled: options.UI, VisionEnabled: options.Vision}, Version: "test"})
 	if err != nil {
 		t.Fatal(err)
 	}

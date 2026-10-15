@@ -541,6 +541,7 @@ type ServerInfo struct {
 	MaxTextBytes      uint32                 `protobuf:"varint,4,opt,name=max_text_bytes,json=maxTextBytes,proto3" json:"max_text_bytes,omitempty"`
 	MaxPageSize       uint32                 `protobuf:"varint,5,opt,name=max_page_size,json=maxPageSize,proto3" json:"max_page_size,omitempty"`
 	MaxChunkBytes     uint32                 `protobuf:"varint,6,opt,name=max_chunk_bytes,json=maxChunkBytes,proto3" json:"max_chunk_bytes,omitempty"`
+	ClockId           string                 `protobuf:"bytes,7,opt,name=clock_id,json=clockId,proto3" json:"clock_id,omitempty"` // Match the nonce-bound HTTPS time sample for this runtime.
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -617,6 +618,13 @@ func (x *ServerInfo) GetMaxChunkBytes() uint32 {
 	return 0
 }
 
+func (x *ServerInfo) GetClockId() string {
+	if x != nil {
+		return x.ClockId
+	}
+	return ""
+}
+
 var file_iulita_mobile_v1_common_proto_extTypes = []protoimpl.ExtensionInfo{
 	{
 		ExtendedType:  (*descriptorpb.MethodOptions)(nil),
@@ -660,7 +668,7 @@ const file_iulita_mobile_v1_common_proto_rawDesc = "" +
 	"\x06reason\x18\x01 \x01(\x0e2\x1d.iulita.mobile.v1.ErrorReasonR\x06reason\x12:\n" +
 	"\vretry_after\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\n" +
 	"retryAfter\x12!\n" +
-	"\foperation_id\x18\x03 \x01(\tR\voperationId\"\x9a\x02\n" +
+	"\foperation_id\x18\x03 \x01(\tR\voperationId\"\xb5\x02\n" +
 	"\n" +
 	"ServerInfo\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12%\n" +
@@ -668,7 +676,8 @@ const file_iulita_mobile_v1_common_proto_rawDesc = "" +
 	"\x12available_features\x18\x03 \x03(\x0e2\x19.iulita.mobile.v1.FeatureR\x11availableFeatures\x12$\n" +
 	"\x0emax_text_bytes\x18\x04 \x01(\rR\fmaxTextBytes\x12\"\n" +
 	"\rmax_page_size\x18\x05 \x01(\rR\vmaxPageSize\x12&\n" +
-	"\x0fmax_chunk_bytes\x18\x06 \x01(\rR\rmaxChunkBytes*\x82\x01\n" +
+	"\x0fmax_chunk_bytes\x18\x06 \x01(\rR\rmaxChunkBytes\x12\x19\n" +
+	"\bclock_id\x18\a \x01(\tR\aclockId*\x82\x01\n" +
 	"\aFeature\x12\x17\n" +
 	"\x13FEATURE_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10FEATURE_IDENTITY\x10\x01\x12\x10\n" +

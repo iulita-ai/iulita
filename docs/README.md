@@ -18,7 +18,7 @@ The documentation site is available at [iulita.ai](https://iulita.ai).
 | Document | Description |
 |----------|-------------|
 | [Getting Started](en/getting-started.md) | Installation, first run, CLI reference |
-| [Release guide](en/release-notes.md) | Changes through v0.48.1 and current capability gates |
+| [Release guide](en/release-notes.md) | Changes through v0.49.0 and current capability gates |
 | [Remote API](en/mobile-api.md) | Mobile, CLI and service OAuth/gRPC, scopes, rotation and operations |
 | [Model profiles](model-routing.md) | Verified profiles, task roles, classifier and backup policy |
 | [Architecture](en/architecture.md) | System overview, component map, message flow, key interfaces |

@@ -77,7 +77,7 @@ func startSimulatedTask(t *testing.T, h *harness, source, deviceID, viewer strin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = chat.SendMessage(tokenContext(viewer), &v1.SendMessageRequest{Client: clientContext(), Operation: operation(), ConversationId: c.ConversationId, ClientMessageId: uuid.NewString(), ExpectedHistoryGeneration: 1, Text: "phone-status:" + deviceID}); err != nil {
+	if _, err = chat.SendMessage(tokenContext(viewer), &v1.SendMessageRequest{Client: clientContext(), Operation: operation(), ConversationId: c.ConversationId, ClientMessageId: uuid.NewString(), ExpectedHistoryGeneration: 1, Text: "phone-status:" + deviceID, TargetDeviceId: deviceID}); err != nil {
 		t.Fatal(err)
 	}
 	frame, err := stream.Recv()

@@ -139,7 +139,7 @@ func (s *Store) Sync(ctx context.Context, identity Identity, operation string, o
 			if stepErr3 != nil {
 				return stepErr3
 			}
-			if task.Cancelled || !nativeSessionLive(ctx, tx, task) || !s.uiLeaseLive(ctx, tx, task) || !s.originFamilyLive(ctx, tx, task) || s.externalLive(ctx, tx, task) != nil || task.Session != o.SessionId || task.SessionGeneration != o.SessionGeneration || o.CollectedAt.AsTime().After(task.ExpiresAt) || task.CreatedAt.After(o.CollectedAt.AsTime().Add(30*time.Second)) || (task.State != "running" && task.State != "succeeded") {
+			if task.Cancelled || !s.nativeSessionLive(ctx, tx, task) || !s.uiLeaseLive(ctx, tx, task) || !s.originFamilyLive(ctx, tx, task) || s.externalLive(ctx, tx, task) != nil || task.Session != o.SessionId || task.SessionGeneration != o.SessionGeneration || o.CollectedAt.AsTime().After(task.ExpiresAt) || task.CreatedAt.After(o.CollectedAt.AsTime().Add(30*time.Second)) || (task.State != "running" && task.State != "succeeded") {
 				return ErrUnavailable
 			}
 			if checkErr9 := s.chats.OriginAllowed(ctx, task.Owner, task.Conversation, task.Turn, task.Generation); checkErr9 != nil {
@@ -284,7 +284,7 @@ func (s *Store) Result(ctx context.Context, identity Identity, taskID string) (*
 			}
 			return err
 		}
-		if task.Cancelled || !nativeSessionLive(ctx, tx, task) || !s.uiLeaseLive(ctx, tx, task) || !s.originFamilyLive(ctx, tx, task) || s.chats.OriginAllowed(ctx, task.Owner, task.Conversation, task.Turn, task.Generation) != nil || s.externalLive(ctx, tx, task) != nil {
+		if task.Cancelled || !s.nativeSessionLive(ctx, tx, task) || !s.uiLeaseLive(ctx, tx, task) || !s.originFamilyLive(ctx, tx, task) || s.chats.OriginAllowed(ctx, task.Owner, task.Conversation, task.Turn, task.Generation) != nil || s.externalLive(ctx, tx, task) != nil {
 			return ephemeral.ErrExpired
 		}
 		rows, err := tx.QueryContext(ctx, `SELECT id,category,expires_at FROM mobile_phone_observations WHERE task_id=? AND owner_id=? AND device_id=? AND (category<>4 OR id=(SELECT snapshot_ref FROM mobile_ui_tasks WHERE task_id=mobile_phone_observations.task_id)) ORDER BY id LIMIT 16`, taskID, c.Subject, task.Device)

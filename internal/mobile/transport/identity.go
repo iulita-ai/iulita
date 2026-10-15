@@ -15,7 +15,7 @@ import (
 )
 
 func (s *Server) serverInfo() *v1.ServerInfo {
-	out := &v1.ServerInfo{ProtocolVersion: 1, ServerVersion: s.config.Version, MaxTextBytes: 1 << 20, MaxPageSize: 100, MaxChunkBytes: 64 << 10, AvailableFeatures: []v1.Feature{v1.Feature_FEATURE_IDENTITY}}
+	out := &v1.ServerInfo{ClockId: s.config.Clock.ID(), ProtocolVersion: 1, ServerVersion: s.config.Version, MaxTextBytes: 1 << 20, MaxPageSize: 100, MaxChunkBytes: 64 << 10, AvailableFeatures: []v1.Feature{v1.Feature_FEATURE_IDENTITY}}
 	if s.config.Features.ChatEnabled {
 		out.AvailableFeatures = append(out.AvailableFeatures, v1.Feature_FEATURE_CHAT)
 	}

@@ -40,7 +40,7 @@ func (s *Store) ReconcileParents(ctx context.Context, identity Identity, epoch u
 			t := &tasks[i]
 			t.Owner = c.Subject
 			t.Device = c.DeviceID
-			if nativeSessionLive(ctx, tx, *t) && s.originFamilyLive(ctx, tx, *t) && s.chats.OriginAllowed(ctx, c.Subject, t.Conversation, t.Turn, t.Generation) == nil && s.externalLive(ctx, tx, *t) == nil && s.uiLeaseLive(ctx, tx, *t) {
+			if s.nativeSessionLive(ctx, tx, *t) && s.originFamilyLive(ctx, tx, *t) && s.chats.OriginAllowed(ctx, c.Subject, t.Conversation, t.Turn, t.Generation) == nil && s.externalLive(ctx, tx, *t) == nil && s.uiLeaseLive(ctx, tx, *t) {
 				continue
 			}
 			var uncertain int

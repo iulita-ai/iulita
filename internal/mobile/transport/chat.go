@@ -8,8 +8,11 @@ import (
 	v1 "github.com/iulita-ai/iulita/api/gen/go/iulita/mobile/v1"
 	"github.com/iulita-ai/iulita/internal/mobile/conversations"
 	"github.com/iulita-ai/iulita/internal/mobile/engine"
+	"github.com/iulita-ai/iulita/internal/mobile/oauthstore"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -41,7 +44,7 @@ func wireConversation(c conversations.Conversation) *v1.Conversation {
 }
 func wireTurn(t conversations.Turn) *v1.Turn {
 	state := v1.TurnState(v1.TurnState_value["TURN_STATE_"+strings.ToUpper(t.State)])
-	out := &v1.Turn{TurnId: t.ID, ConversationId: t.ConversationID, ClientMessageId: t.ClientMessageID, TurnSeq: t.TurnSeq, HistoryGeneration: t.Generation, State: state, CancellationRequested: t.CancellationRequested, InputMessageId: t.InputMessageID, OutputMessageId: t.OutputMessageID, AcceptedSettings: wireSettings(t.AcceptedSettings)}
+	out := &v1.Turn{TurnId: t.ID, ConversationId: t.ConversationID, ClientMessageId: t.ClientMessageID, TurnSeq: t.TurnSeq, HistoryGeneration: t.Generation, State: state, CancellationRequested: t.CancellationRequested, InputMessageId: t.InputMessageID, OutputMessageId: t.OutputMessageID, AcceptedSettings: wireSettings(t.AcceptedSettings), TargetDeviceId: t.TargetDeviceID}
 	if !t.CancellationRequestedAt.IsZero() {
 		out.CancellationRequestedAt = timestamppb.New(t.CancellationRequestedAt)
 	}
@@ -189,7 +192,17 @@ func (s *Server) ListMessages(ctx context.Context, in *v1.ListMessagesRequest) (
 // SendMessage implements the authenticated SendMessage mobile RPC.
 func (s *Server) SendMessage(ctx context.Context, in *v1.SendMessageRequest) (*v1.Turn, error) {
 	out, err := s.mutate(ctx, "SendMessage", in.Operation, in, new(v1.Turn), func(ctx context.Context) (proto.Message, error) {
-		t, _, err := s.config.Engine.Accept(engine.WithAuthority(ctx, s.config.OAuth.Authority(auth(ctx).Claims)), auth(ctx).Claims.Subject, in.ConversationId, conversations.Input{ClientMessageID: in.ClientMessageId, Generation: in.ExpectedHistoryGeneration, Text: in.Text})
+		p := auth(ctx)
+		if in.TargetDeviceId != "" {
+			if p.Claims.PrincipalType == "service" || !oauthstore.HasScope(p.Claims, "devices:read") {
+				return nil, status.Error(codes.PermissionDenied, "phone target scope required")
+			}
+			d, err := s.config.OAuth.Device(ctx, p.Claims.Subject, in.TargetDeviceId)
+			if err != nil || d.Revoked || !d.Activated {
+				return nil, conversations.ErrNotFound
+			}
+		}
+		t, _, err := s.config.Engine.Accept(engine.WithAuthority(ctx, s.config.OAuth.Authority(auth(ctx).Claims)), auth(ctx).Claims.Subject, in.ConversationId, conversations.Input{ClientMessageID: in.ClientMessageId, Generation: in.ExpectedHistoryGeneration, Text: in.Text, TargetDeviceID: in.TargetDeviceId})
 		return wireTurn(t), err
 	})
 	if err != nil {

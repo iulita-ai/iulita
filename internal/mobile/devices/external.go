@@ -239,7 +239,7 @@ func (s *Store) HandleExternal(ctx context.Context, processor *engine.Engine, ms
 		messageID = strconv.Itoa(msg.MessageID)
 	}
 	id := uuid.NewSHA1(uuid.NameSpaceOID, []byte(b.ID+":"+messageID)).String()
-	_, _, err = processor.Accept(guarded, b.Owner, b.Conversation, conversations.Input{ClientMessageID: id, Text: input, Generation: conversation.Generation})
+	_, _, err = processor.Accept(guarded, b.Owner, b.Conversation, conversations.Input{ClientMessageID: id, Text: input, Generation: conversation.Generation, TargetDeviceID: b.Device})
 	if err != nil {
 		return externalUnavailable()
 	}

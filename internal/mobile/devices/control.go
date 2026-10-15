@@ -141,7 +141,7 @@ func (s *Store) Session(ctx context.Context, identity Identity, epoch uint64, se
 	if session != nil && validID(session.SessionId) && session.SessionGeneration > 0 && (session.State == v1.SessionState_SESSION_STATE_REVOKED || session.State == v1.SessionState_SESSION_STATE_EXPIRED) {
 		return s.endSession(ctx, identity, epoch, session)
 	}
-	if session == nil || !validID(session.SessionId) || session.SessionGeneration == 0 || session.PolicyRevision != PolicyRevision || session.ExpiresAt == nil || session.ExpiresAt.CheckValid() != nil || (session.ScreenContentAllowed && (!s.SupportsUI() || len(session.ApprovedEnvelopeSha256) != 32)) || (session.ScreenshotAllowed && (!session.ScreenContentAllowed || !s.options.Vision)) || len(session.AllowedPackages) > 16 || len(session.AllowedActions) > 8 {
+	if session == nil || (s.options.Clock != nil && session.ClockId != s.clockID()) || !validID(session.SessionId) || session.SessionGeneration == 0 || session.PolicyRevision != PolicyRevision || session.ExpiresAt == nil || session.ExpiresAt.CheckValid() != nil || (session.ScreenContentAllowed && (!s.SupportsUI() || len(session.ApprovedEnvelopeSha256) != 32)) || (session.ScreenshotAllowed && (!session.ScreenContentAllowed || !s.options.Vision)) || len(session.AllowedPackages) > 16 || len(session.AllowedActions) > 8 {
 		return ErrInvalid
 	}
 	for _, p := range session.AllowedPackages {

@@ -21,6 +21,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/mobile/ephemeral"
 	"github.com/iulita-ai/iulita/internal/mobile/oauthstore"
 	"github.com/iulita-ai/iulita/internal/mobile/securetoken"
+	"github.com/iulita-ai/iulita/internal/mobile/serverclock"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -32,6 +33,7 @@ import (
 
 // Config collects dependencies and limits for the mobile server.
 type Config struct {
+	Clock    *serverclock.Clock
 	TLS      *tls.Config
 	OAuth    *oauthstore.Store
 	Accounts browseroauth.Accounts
@@ -81,6 +83,9 @@ func New(c Config) (*Server, error) {
 	// server configuration value alone must never open experimental authority.
 	if c.Features.UIEnabled && !c.Devices.SupportsUI() || c.Features.VisionEnabled && !c.Devices.SupportsVision() {
 		return nil, errors.New("mobile UI and Vision require joint native readiness")
+	}
+	if c.Clock == nil {
+		c.Clock = serverclock.New()
 	}
 	s := &Server{config: c, slots: make(chan struct{}, 64), owners: map[string]int{}, streams: map[string]int{}}
 	tlsConfig := c.TLS.Clone()

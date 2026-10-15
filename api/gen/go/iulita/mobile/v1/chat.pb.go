@@ -585,6 +585,7 @@ type Turn struct {
 	OutputMessageId         string                 `protobuf:"bytes,10,opt,name=output_message_id,json=outputMessageId,proto3" json:"output_message_id,omitempty"`
 	AcceptedSettings        *ConversationSettings  `protobuf:"bytes,11,opt,name=accepted_settings,json=acceptedSettings,proto3" json:"accepted_settings,omitempty"`
 	OutcomeReason           ErrorReason            `protobuf:"varint,12,opt,name=outcome_reason,json=outcomeReason,proto3,enum=iulita.mobile.v1.ErrorReason" json:"outcome_reason,omitempty"`
+	TargetDeviceId          string                 `protobuf:"bytes,13,opt,name=target_device_id,json=targetDeviceId,proto3" json:"target_device_id,omitempty"` // Immutable explicit phone target; empty legacy input is caller-device only.
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache
 }
@@ -701,6 +702,13 @@ func (x *Turn) GetOutcomeReason() ErrorReason {
 		return x.OutcomeReason
 	}
 	return ErrorReason_ERROR_REASON_UNSPECIFIED
+}
+
+func (x *Turn) GetTargetDeviceId() string {
+	if x != nil {
+		return x.TargetDeviceId
+	}
+	return ""
 }
 
 type CreateConversationRequest struct {
@@ -1315,8 +1323,11 @@ type SendMessageRequest struct {
 	ClientMessageId           string                 `protobuf:"bytes,4,opt,name=client_message_id,json=clientMessageId,proto3" json:"client_message_id,omitempty"`
 	ExpectedHistoryGeneration uint64                 `protobuf:"varint,5,opt,name=expected_history_generation,json=expectedHistoryGeneration,proto3" json:"expected_history_generation,omitempty"`
 	Text                      string                 `protobuf:"bytes,6,opt,name=text,proto3" json:"text,omitempty"`
-	unknownFields             protoimpl.UnknownFields
-	sizeCache                 protoimpl.SizeCache
+	// Optional for plain chats. A supplied target is owner-checked at admission,
+	// persisted with the turn and enforced independently of model tool arguments.
+	TargetDeviceId string `protobuf:"bytes,7,opt,name=target_device_id,json=targetDeviceId,proto3" json:"target_device_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *SendMessageRequest) Reset() {
@@ -1387,6 +1398,13 @@ func (x *SendMessageRequest) GetExpectedHistoryGeneration() uint64 {
 func (x *SendMessageRequest) GetText() string {
 	if x != nil {
 		return x.Text
+	}
+	return ""
+}
+
+func (x *SendMessageRequest) GetTargetDeviceId() string {
+	if x != nil {
+		return x.TargetDeviceId
 	}
 	return ""
 }
@@ -3091,7 +3109,7 @@ const file_iulita_mobile_v1_chat_proto_rawDesc = "" +
 	"\x04role\x18\a \x01(\x0e2\x1d.iulita.mobile.v1.MessageRoleR\x04role\x12\x12\n" +
 	"\x04text\x18\b \x01(\tR\x04text\x129\n" +
 	"\n" +
-	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xf1\x04\n" +
+	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\x9b\x05\n" +
 	"\x04Turn\x12\x17\n" +
 	"\aturn_id\x18\x01 \x01(\tR\x06turnId\x12'\n" +
 	"\x0fconversation_id\x18\x02 \x01(\tR\x0econversationId\x12*\n" +
@@ -3105,7 +3123,8 @@ const file_iulita_mobile_v1_chat_proto_rawDesc = "" +
 	"\x11output_message_id\x18\n" +
 	" \x01(\tR\x0foutputMessageId\x12S\n" +
 	"\x11accepted_settings\x18\v \x01(\v2&.iulita.mobile.v1.ConversationSettingsR\x10acceptedSettings\x12D\n" +
-	"\x0eoutcome_reason\x18\f \x01(\x0e2\x1d.iulita.mobile.v1.ErrorReasonR\routcomeReason\"\xe9\x01\n" +
+	"\x0eoutcome_reason\x18\f \x01(\x0e2\x1d.iulita.mobile.v1.ErrorReasonR\routcomeReason\x12(\n" +
+	"\x10target_device_id\x18\r \x01(\tR\x0etargetDeviceId\"\xe9\x01\n" +
 	"\x19CreateConversationRequest\x127\n" +
 	"\x06client\x18\x01 \x01(\v2\x1f.iulita.mobile.v1.ClientContextR\x06client\x129\n" +
 	"\toperation\x18\x02 \x01(\v2\x1b.iulita.mobile.v1.OperationR\toperation\x12\x14\n" +
@@ -3152,14 +3171,15 @@ const file_iulita_mobile_v1_chat_proto_rawDesc = "" +
 	"\x14ListMessagesResponse\x125\n" +
 	"\bmessages\x18\x01 \x03(\v2\x19.iulita.mobile.v1.MessageR\bmessages\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12-\n" +
-	"\x12history_generation\x18\x03 \x01(\x04R\x11historyGeneration\"\xb1\x02\n" +
+	"\x12history_generation\x18\x03 \x01(\x04R\x11historyGeneration\"\xdb\x02\n" +
 	"\x12SendMessageRequest\x127\n" +
 	"\x06client\x18\x01 \x01(\v2\x1f.iulita.mobile.v1.ClientContextR\x06client\x129\n" +
 	"\toperation\x18\x02 \x01(\v2\x1b.iulita.mobile.v1.OperationR\toperation\x12'\n" +
 	"\x0fconversation_id\x18\x03 \x01(\tR\x0econversationId\x12*\n" +
 	"\x11client_message_id\x18\x04 \x01(\tR\x0fclientMessageId\x12>\n" +
 	"\x1bexpected_history_generation\x18\x05 \x01(\x04R\x19expectedHistoryGeneration\x12\x12\n" +
-	"\x04text\x18\x06 \x01(\tR\x04text\"\xc5\x01\n" +
+	"\x04text\x18\x06 \x01(\tR\x04text\x12(\n" +
+	"\x10target_device_id\x18\a \x01(\tR\x0etargetDeviceId\"\xc5\x01\n" +
 	"\x0eGetTurnRequest\x127\n" +
 	"\x06client\x18\x01 \x01(\v2\x1f.iulita.mobile.v1.ClientContextR\x06client\x12'\n" +
 	"\x0fconversation_id\x18\x02 \x01(\tR\x0econversationId\x12\x19\n" +

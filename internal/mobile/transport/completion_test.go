@@ -189,7 +189,7 @@ func (n *nativeSimulator) receipt(t *testing.T, command *v1.Command, state v1.Re
 		}
 	}
 }
-func origin(t *testing.T, h *harness, token, text string) (conversationID, turnID string) {
+func origin(t *testing.T, h *harness, token, text string, targets ...string) (conversationID, turnID string) {
 	t.Helper()
 	ctx := tokenContext(token)
 	chat := v1.NewChatServiceClient(h.conn)
@@ -197,7 +197,11 @@ func origin(t *testing.T, h *harness, token, text string) (conversationID, turnI
 	if err != nil {
 		t.Fatal(err)
 	}
-	turn, err := chat.SendMessage(ctx, &v1.SendMessageRequest{Client: clientContext(), Operation: operation(), ConversationId: c.ConversationId, ClientMessageId: uuid.NewString(), ExpectedHistoryGeneration: 1, Text: text})
+	target := ""
+	if len(targets) == 1 {
+		target = targets[0]
+	}
+	turn, err := chat.SendMessage(ctx, &v1.SendMessageRequest{Client: clientContext(), Operation: operation(), ConversationId: c.ConversationId, ClientMessageId: uuid.NewString(), ExpectedHistoryGeneration: 1, Text: text, TargetDeviceId: target})
 	if err != nil {
 		t.Fatal(err)
 	}

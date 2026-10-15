@@ -46,6 +46,8 @@ type Input struct {
 	ClientMessageID string
 	Generation      uint64
 	Text            string
+	TargetDeviceID  string `json:",omitempty"`
+	ActorDeviceID   string `json:"-"`
 }
 
 // Turn records the admission, execution and cancellation state of a message.
@@ -57,15 +59,16 @@ type Turn struct {
 	CreatedAt                                                           time.Time
 	CancellationRequestedAt                                             time.Time
 	OutcomeReason, OutputMessageID                                      string
+	TargetDeviceID                                                      string
 }
 
-const turnColumns = `id,owner_id,conversation_id,client_message_id,input_message_id,state,generation,turn_seq,admission_seq,conversation_version,profile_id,memory_mode,cancellation_requested,created_at,cancelled_at,outcome_reason,COALESCE((SELECT m.id FROM mobile_messages m WHERE m.turn_id=mobile_turns.id AND m.owner_id=mobile_turns.owner_id AND m.role='assistant' LIMIT 1),'')`
+const turnColumns = `id,owner_id,conversation_id,client_message_id,input_message_id,state,generation,turn_seq,admission_seq,conversation_version,profile_id,memory_mode,cancellation_requested,created_at,cancelled_at,outcome_reason,COALESCE((SELECT m.id FROM mobile_messages m WHERE m.turn_id=mobile_turns.id AND m.owner_id=mobile_turns.owner_id AND m.role='assistant' LIMIT 1),''),target_device_id`
 
 func scanTurn(row *sql.Row) (Turn, error) {
 	var t Turn
 	var created int64
 	var canceled int64
-	err := row.Scan(&t.ID, &t.OwnerID, &t.ConversationID, &t.ClientMessageID, &t.InputMessageID, &t.State, &t.Generation, &t.TurnSeq, &t.AdmissionSeq, &t.ConversationVersion, &t.AcceptedSettings.ProfileID, &t.AcceptedSettings.MemoryMode, &t.CancellationRequested, &created, &canceled, &t.OutcomeReason, &t.OutputMessageID)
+	err := row.Scan(&t.ID, &t.OwnerID, &t.ConversationID, &t.ClientMessageID, &t.InputMessageID, &t.State, &t.Generation, &t.TurnSeq, &t.AdmissionSeq, &t.ConversationVersion, &t.AcceptedSettings.ProfileID, &t.AcceptedSettings.MemoryMode, &t.CancellationRequested, &created, &canceled, &t.OutcomeReason, &t.OutputMessageID, &t.TargetDeviceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return t, ErrNotFound
 	}
@@ -90,7 +93,7 @@ func payloadDigest(owner, id string, in Input) []byte {
 // Accept atomically commits the turn, bound input row, counters and private
 // metadata outbox. No channel, model, tool or global bus is called here.
 func (r *Repository) Accept(ctx context.Context, owner, id string, in Input) (Turn, bool, error) {
-	if !validID(in.ClientMessageID) || in.Generation == 0 || !utf8.ValidString(in.Text) || in.Text == "" || len(in.Text) > 1<<20 {
+	if (in.TargetDeviceID != "" && !validID(in.TargetDeviceID)) || !validID(in.ClientMessageID) || in.Generation == 0 || !utf8.ValidString(in.Text) || in.Text == "" || len(in.Text) > 1<<20 {
 		return Turn{}, false, ErrInvalid
 	}
 	tx, err := r.begin(ctx)
@@ -149,14 +152,18 @@ func (r *Repository) Accept(ctx context.Context, owner, id string, in Input) (Tu
 	if checkErr5 := tx.QueryRowContext(ctx, `INSERT INTO mobile_event_sequences(owner_id,last_seq) VALUES(?,1) ON CONFLICT(owner_id) DO UPDATE SET last_seq=last_seq+1 RETURNING last_seq`, owner).Scan(&admission); checkErr5 != nil {
 		return Turn{}, false, checkErr5
 	}
-	t := Turn{ID: uuid.NewString(), OwnerID: owner, ConversationID: id, ClientMessageID: in.ClientMessageID, InputMessageID: uuid.NewString(), State: "queued", Generation: in.Generation, TurnSeq: seq, AdmissionSeq: admission, ConversationVersion: c.Version, AcceptedSettings: c.Settings, CreatedAt: time.Now().UTC()}
+	target := in.TargetDeviceID
+	if target == "" {
+		target = in.ActorDeviceID
+	}
+	t := Turn{ID: uuid.NewString(), OwnerID: owner, ConversationID: id, ClientMessageID: in.ClientMessageID, InputMessageID: uuid.NewString(), State: "queued", Generation: in.Generation, TurnSeq: seq, AdmissionSeq: admission, ConversationVersion: c.Version, AcceptedSettings: c.Settings, TargetDeviceID: target, CreatedAt: time.Now().UTC()}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO mobile_transcript_turns(id,owner_id,conversation_id,generation,turn_seq) VALUES(?,?,?,?,?)`, t.ID, owner, id, t.Generation, t.TurnSeq); err != nil {
 		return Turn{}, false, err
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO mobile_turns(id,owner_id,conversation_id,generation,turn_seq,client_message_id,digest,input_message_id,state,profile_id,memory_mode,conversation_version,admission_seq,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, t.ID, owner, id, t.Generation, t.TurnSeq, t.ClientMessageID, digest, t.InputMessageID, t.State, c.Settings.ProfileID, c.Settings.MemoryMode, c.Version, admission, t.CreatedAt.UnixMilli()); err != nil {
 		return Turn{}, false, err
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE mobile_turns SET account_stamp=? WHERE id=? AND owner_id=?`, account, t.ID, owner); err != nil {
+	if _, err = tx.ExecContext(ctx, `UPDATE mobile_turns SET account_stamp=?,target_device_id=? WHERE id=? AND owner_id=?`, account, target, t.ID, owner); err != nil {
 		return Turn{}, false, err
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO mobile_messages(id,owner_id,conversation_id,generation,turn_id,turn_seq,message_seq,role,text,created_at) VALUES(?,?,?,?,?,?,?,'user',?,?)`, t.InputMessageID, owner, id, t.Generation, t.ID, t.TurnSeq, c.MessageSeq+1, in.Text, t.CreatedAt.UnixMilli()); err != nil {

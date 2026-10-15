@@ -69,7 +69,15 @@ func migrate(ctx context.Context, db *sql.DB) error {
 		}
 		version = 3
 	}
-	if version != 3 {
+	if version == 3 {
+		for _, stmt := range targetSchema {
+			if _, err = tx.ExecContext(ctx, stmt); err != nil {
+				return err
+			}
+		}
+		version = 4
+	}
+	if version != 4 {
 		return errors.New("unsupported mobile chat schema")
 	}
 	return tx.Commit()

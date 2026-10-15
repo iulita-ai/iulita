@@ -100,7 +100,7 @@ func RotateOffline(ctx context.Context, keyDir, oauthPath, accountPath, issuer, 
 	}
 	defer tx.Rollback() //nolint:errcheck // Cleanup only; preserve the operation result.
 	var oauthVersion, chatVersion int
-	if tx.QueryRowContext(ctx, `SELECT MAX(version) FROM oauth_schema`).Scan(&oauthVersion) != nil || oauthVersion != 4 || accountTx.QueryRowContext(ctx, `SELECT MAX(version) FROM mobile_chat_schema`).Scan(&chatVersion) != nil || chatVersion != 3 {
+	if tx.QueryRowContext(ctx, `SELECT MAX(version) FROM oauth_schema`).Scan(&oauthVersion) != nil || oauthVersion != 4 || accountTx.QueryRowContext(ctx, `SELECT MAX(version) FROM mobile_chat_schema`).Scan(&chatVersion) != nil || (chatVersion != 3 && chatVersion != 4) {
 		return ErrInvalid
 	}
 	if exists(ctx, tx, "mobile_phone_schema") {

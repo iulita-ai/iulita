@@ -1,5 +1,5 @@
-// Package browseroauth implements the unmounted BE14 browser authorization
-// handler. It does not start a listener or implement the BE15 token endpoint.
+// Package browseroauth implements the independent browser authorization, token
+// and mobile protocol endpoints. Listener lifecycle belongs to the runtime.
 package browseroauth
 
 import (
@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/iulita-ai/iulita/internal/mobile/oauthstore"
+	"github.com/iulita-ai/iulita/internal/mobile/serverclock"
 	"github.com/ory/fosite"
 	"github.com/ory/fosite/compose"
 	"github.com/ory/fosite/handler/oauth2"
@@ -27,6 +28,7 @@ type Limits struct{ AuthorizePerIP, LoginPerIP, LoginPerAccount, ConsentPerIP in
 
 // Config collects dependencies and limits for the mobile server.
 type Config struct {
+	Clock    *serverclock.Clock
 	Store    *oauthstore.Store
 	Accounts Accounts
 	Scopes   []string
@@ -66,6 +68,9 @@ func New(c Config) (*Server, error) {
 	if c.Limits.ConsentPerIP <= 0 {
 		c.Limits.ConsentPerIP = 30
 	}
+	if c.Clock == nil {
+		c.Clock = serverclock.New()
+	}
 	cfg := c.Store.FrameworkConfig()
 	strategy := c.Store.Strategy()
 	p := compose.Compose(cfg, c.Store, strategy, compose.OAuth2AuthorizeExplicitFactory, compose.OAuth2RefreshTokenGrantFactory, compose.OAuth2PKCEFactory)
@@ -93,6 +98,8 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.metadata(w)
+	case "/oauth2/time":
+		s.timeSample(w, r)
 	case "/oauth2/jwks":
 		if r.Method != "GET" {
 			s.fail(w, 405, "Метод недоступен.")
@@ -134,7 +141,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) metadata(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
-	if writeErr := json.NewEncoder(w).Encode(map[string]any{"issuer": s.origin, "authorization_endpoint": s.origin + "/oauth2/authorize", "token_endpoint": s.origin + "/oauth2/token", "revocation_endpoint": s.origin + "/oauth2/revoke", "jwks_uri": s.origin + "/oauth2/jwks", "response_types_supported": []string{"code"}, "grant_types_supported": []string{"authorization_code", "refresh_token", oauthstore.DeviceGrant, "client_credentials"}, "device_authorization_endpoint": s.origin + "/oauth2/device_authorization", "token_endpoint_auth_methods_supported": []string{"none", "client_secret_basic"}, "code_challenge_methods_supported": []string{"S256"}, "scopes_supported": s.config.Scopes, "iulita_mobile_protocol_version": 1, "authorization_response_iss_parameter_supported": true}); writeErr != nil {
+	if writeErr := json.NewEncoder(w).Encode(map[string]any{"issuer": s.origin, "iulita_time_endpoint": s.origin + "/oauth2/time", "authorization_endpoint": s.origin + "/oauth2/authorize", "token_endpoint": s.origin + "/oauth2/token", "revocation_endpoint": s.origin + "/oauth2/revoke", "jwks_uri": s.origin + "/oauth2/jwks", "response_types_supported": []string{"code"}, "grant_types_supported": []string{"authorization_code", "refresh_token", oauthstore.DeviceGrant, "client_credentials"}, "device_authorization_endpoint": s.origin + "/oauth2/device_authorization", "token_endpoint_auth_methods_supported": []string{"none", "client_secret_basic"}, "code_challenge_methods_supported": []string{"S256"}, "scopes_supported": s.config.Scopes, "iulita_mobile_protocol_version": 1, "authorization_response_iss_parameter_supported": true}); writeErr != nil {
 		return
 	}
 }

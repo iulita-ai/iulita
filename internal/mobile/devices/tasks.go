@@ -146,6 +146,9 @@ func (s *Store) Create(ctx context.Context, f conversations.Fence, d Draft) (Tas
 		if err := s.auth.SyncAccount(ctx, a.ID, a.CredentialVersion, true); err != nil {
 			return err
 		}
+		if err := s.chats.PhoneTargetAllowed(ctx, f.OwnerID, f.ConversationID, f.TurnID, f.Generation, d.Device); err != nil {
+			return err
+		}
 		if err := s.chats.DispatchAllowed(ctx, f); err != nil {
 			return err
 		}
@@ -216,7 +219,7 @@ func (s *Store) Create(ctx context.Context, f conversations.Fence, d Draft) (Tas
 		if proto.Unmarshal(sessionBytes, &mirror) != nil {
 			return ErrUnavailable
 		}
-		if !nativeSessionLive(ctx, tx, Task{Owner: f.OwnerID, Device: d.Device, Session: session, SessionGeneration: sessionGeneration, Action: d.Kind}) {
+		if !s.nativeSessionLive(ctx, tx, Task{Owner: f.OwnerID, Device: d.Device, Session: session, SessionGeneration: sessionGeneration, Action: d.Kind}) {
 			return ErrUnavailable
 		}
 		allowed = false
@@ -275,7 +278,7 @@ func (s *Store) Create(ctx context.Context, f conversations.Fence, d Draft) (Tas
 			return checkErr6
 		}
 		commandID := uuid.NewSHA1(uuid.NameSpaceOID, []byte(d.ID+":1")).String()
-		command := &v1.Command{ProtocolVersion: 1, CommandId: commandID, TaskId: d.ID, DeviceId: d.Device, ServerSeq: seq, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(expiry), SessionId: session, SessionGeneration: sessionGeneration, CoordinatorEpoch: epoch, TaskStep: 1, Origin: &v1.TaskOrigin{ChannelType: "mobile", ChannelInstance: "mobile", BindingRevision: PolicyRevision, ConversationId: f.ConversationID, TurnId: f.TurnID}, Envelope: &v1.TaskEnvelope{Goal: d.Kind.String(), AllowedActions: []v1.ActionKind{d.Kind}, ExpiresAt: timestamppb.New(expiry)}}
+		command := &v1.Command{ClockId: s.clockID(), ProtocolVersion: 1, CommandId: commandID, TaskId: d.ID, DeviceId: d.Device, ServerSeq: seq, IssuedAt: timestamppb.New(now), ExpiresAt: timestamppb.New(expiry), SessionId: session, SessionGeneration: sessionGeneration, CoordinatorEpoch: epoch, TaskStep: 1, Origin: &v1.TaskOrigin{ChannelType: "mobile", ChannelInstance: "mobile", BindingRevision: PolicyRevision, ConversationId: f.ConversationID, TurnId: f.TurnID}, Envelope: &v1.TaskEnvelope{Goal: d.Kind.String(), AllowedActions: []v1.ActionKind{d.Kind}, ExpiresAt: timestamppb.New(expiry)}}
 		if d.System != nil {
 			cloned := new(v1.SystemAction)
 			proto.Merge(cloned, d.System)
@@ -409,7 +412,7 @@ func (s *Store) Next(ctx context.Context, identity Identity, epoch uint64) (*v1.
 			}
 			allowed = allowed && granted
 		}
-		invalid := !allowed || task.Cancelled || !task.ExpiresAt.After(time.Now()) || live != 1 || !nativeSessionLive(ctx, tx, task) || !s.originFamilyLive(ctx, tx, task) || s.chats.OriginAllowed(ctx, task.Owner, task.Conversation, task.Turn, task.Generation) != nil || s.externalLive(ctx, tx, task) != nil
+		invalid := !allowed || task.Cancelled || !task.ExpiresAt.After(time.Now()) || live != 1 || !s.nativeSessionLive(ctx, tx, task) || !s.originFamilyLive(ctx, tx, task) || s.chats.OriginAllowed(ctx, task.Owner, task.Conversation, task.Turn, task.Generation) != nil || s.externalLive(ctx, tx, task) != nil
 		payload, _, bodyErr := s.content.Get(ref, s.binding(task.Owner, task.Device, task.ID, task.Destination, task.Consent, "command"))
 		if invalid || bodyErr != nil {
 			if _, err = tx.ExecContext(ctx, `UPDATE mobile_phone_commands SET state='expired' WHERE id=?`, commandID); err != nil {

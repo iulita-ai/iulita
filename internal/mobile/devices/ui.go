@@ -138,7 +138,7 @@ func (s *Store) CreateUI(ctx context.Context, identity Identity, in *v1.CreateUI
 		if !oauthstore.HasScope(c, "phone:ui") || !oauthstore.HasScope(c, "devices:manage") || !s.auth.Fresh(c) {
 			return ErrUnavailable
 		}
-		if stepErr1 := s.chats.OriginAllowed(ctx, c.Subject, in.ConversationId, in.TurnId, in.HistoryGeneration); stepErr1 != nil {
+		if stepErr1 := s.chats.PhoneTargetAllowed(ctx, c.Subject, in.ConversationId, in.TurnId, in.HistoryGeneration, in.DeviceId); stepErr1 != nil {
 			return stepErr1
 		}
 		var existing, viewer string
@@ -198,7 +198,7 @@ func (s *Store) CreateUI(ctx context.Context, identity Identity, in *v1.CreateUI
 		}
 		id := in.Operation.OperationId
 		result = Task{ID: id, Owner: c.Subject, Device: in.DeviceId, ViewerDevice: c.DeviceID, CallerFamily: c.FamilyID, Conversation: in.ConversationId, Turn: in.TurnId, Generation: in.HistoryGeneration, Action: v1.ActionKind_ACTION_KIND_UI_OBSERVE, Session: sessionID, SessionGeneration: generation, Consent: PolicyRevision, Destination: "mobile.result:" + c.DeviceID, State: "queued", CreatedAt: now, ExpiresAt: expiry}
-		if !nativeSessionLive(ctx, tx, result) {
+		if !s.nativeSessionLive(ctx, tx, result) {
 			return ErrUnavailable
 		}
 		_, stepErr4 = tx.ExecContext(ctx, `INSERT INTO mobile_phone_tasks(id,owner_id,device_id,conversation_id,turn_id,history_generation,action,request_digest,caller_family_id,viewer_device_id,state,session_id,session_generation,created_at,expires_at,consent_revision,destination,approval_authority) VALUES(?,?,?,?,?,?,?,?,?,?,'queued',?,?,?,?,?,?,?)`, id, c.Subject, in.DeviceId, in.ConversationId, in.TurnId, in.HistoryGeneration, result.Action, requestDigest, c.FamilyID, c.DeviceID, sessionID, generation, now.UnixMilli(), expiry.UnixMilli(), PolicyRevision, result.Destination, approval)
@@ -242,7 +242,7 @@ func (s *Store) queueUI(ctx context.Context, tx *sql.Tx, t Task, epoch uint64, s
 	}
 	expiry := expiryBound(s.clock().Add(3*time.Second), time.UnixMilli(lease), t.ExpiresAt)
 	commandID := uuid.NewSHA1(uuid.NameSpaceOID, []byte(t.ID+":ui:"+strconv.Itoa(step+1))).String()
-	command := &v1.Command{ProtocolVersion: 1, CommandId: commandID, TaskId: t.ID, DeviceId: t.Device, ServerSeq: seq, IssuedAt: timestamppb.Now(), ExpiresAt: timestamppb.New(expiry), SessionId: t.Session, SessionGeneration: t.SessionGeneration, CoordinatorEpoch: epoch, TaskStep: uint32(step + 1), SnapshotId: snapshot, Origin: &v1.TaskOrigin{ChannelType: "mobile", ChannelInstance: "mobile", BindingRevision: PolicyRevision, ConversationId: t.Conversation, TurnId: t.Turn}, Envelope: e, Action: &v1.Command_Ui{Ui: action}}
+	command := &v1.Command{ClockId: s.clockID(), ProtocolVersion: 1, CommandId: commandID, TaskId: t.ID, DeviceId: t.Device, ServerSeq: seq, IssuedAt: timestamppb.Now(), ExpiresAt: timestamppb.New(expiry), SessionId: t.Session, SessionGeneration: t.SessionGeneration, CoordinatorEpoch: epoch, TaskStep: uint32(step + 1), SnapshotId: snapshot, Origin: &v1.TaskOrigin{ChannelType: "mobile", ChannelInstance: "mobile", BindingRevision: PolicyRevision, ConversationId: t.Conversation, TurnId: t.Turn}, Envelope: e, Action: &v1.Command_Ui{Ui: action}}
 	digest, err := semantic(command)
 	if err != nil {
 		return err
@@ -289,7 +289,7 @@ func (s *Store) uiLease(ctx context.Context, identity Identity, epoch uint64, re
 		if err != nil {
 			return err
 		}
-		if t.Device != c.DeviceID || t.Session != renew.SessionId || t.SessionGeneration != renew.SessionGeneration || !isUI(t.Action) || !nativeSessionLive(ctx, tx, t) || !s.originFamilyLive(ctx, tx, t) || s.chats.OriginAllowed(ctx, t.Owner, t.Conversation, t.Turn, t.Generation) != nil {
+		if t.Device != c.DeviceID || t.Session != renew.SessionId || t.SessionGeneration != renew.SessionGeneration || !isUI(t.Action) || !s.nativeSessionLive(ctx, tx, t) || !s.originFamilyLive(ctx, tx, t) || s.chats.OriginAllowed(ctx, t.Owner, t.Conversation, t.Turn, t.Generation) != nil {
 			return ErrUnavailable
 		}
 		var until, last, hard int64
@@ -303,7 +303,7 @@ func (s *Store) uiLease(ctx context.Context, identity Identity, epoch uint64, re
 				return err
 			}
 		}
-		result = &v1.Lease{TaskId: t.ID, SessionId: t.Session, SessionGeneration: t.SessionGeneration, ExpiresAt: timestamppb.New(expiry)}
+		result = &v1.Lease{ClockId: s.clockID(), TaskId: t.ID, SessionId: t.Session, SessionGeneration: t.SessionGeneration, ExpiresAt: timestamppb.New(expiry)}
 		return nil
 	})
 	return result, err
@@ -367,7 +367,7 @@ func (s *Store) advanceUI(ctx context.Context, tx *sql.Tx, t Task) error {
 		return lookupErr
 	}
 	t = current
-	if t.Cancelled || t.State != "running" || !nativeSessionLive(ctx, tx, t) || !s.originFamilyLive(ctx, tx, t) || s.chats.OriginAllowed(ctx, t.Owner, t.Conversation, t.Turn, t.Generation) != nil {
+	if t.Cancelled || t.State != "running" || !s.nativeSessionLive(ctx, tx, t) || !s.originFamilyLive(ctx, tx, t) || s.chats.OriginAllowed(ctx, t.Owner, t.Conversation, t.Turn, t.Generation) != nil {
 		return ErrUnavailable
 	}
 	var step int

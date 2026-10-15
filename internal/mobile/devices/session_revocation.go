@@ -10,14 +10,18 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func nativeSessionLive(ctx context.Context, tx *sql.Tx, t Task) bool {
-	var capabilities []byte
+func (s *Store) nativeSessionLive(ctx context.Context, tx *sql.Tx, t Task) bool {
+	var capabilities, mirrorBytes []byte
 	now := time.Now()
 	// A mirror cannot outlive the source transport or its authenticated token.
 	// This also fences reads and provider transfer by a separately live viewer.
-	err := tx.QueryRowContext(ctx, `SELECT control.capabilities FROM mobile_native_sessions s JOIN oauth_devices d ON d.owner_id=s.owner_id AND d.id=s.device_id JOIN oauth_families f ON f.id=s.family_id AND f.owner_id=s.owner_id AND f.device_id=s.device_id JOIN oauth_owners o ON o.id=f.owner_id JOIN oauth_realm r ON r.signing_epoch=f.signing_epoch JOIN mobile_device_streams control ON control.owner_id=s.owner_id AND control.device_id=s.device_id AND control.epoch=s.stream_epoch AND control.family_id=s.family_id WHERE s.owner_id=? AND s.device_id=? AND s.id=? AND s.generation=? AND s.state='active' AND s.expires_at>? AND control.expires_at>? AND control.token_expires_at>? AND d.revoked=0 AND d.activated=1 AND f.revoked=0 AND f.stage='active' AND f.expires_at>? AND f.owner_epoch=o.epoch AND f.device_epoch=d.epoch`, t.Owner, t.Device, t.Session, t.SessionGeneration, now.UnixMilli(), now.UnixMilli(), now.UnixMilli(), now.Unix()).Scan(&capabilities)
+	err := tx.QueryRowContext(ctx, `SELECT control.capabilities,s.metadata FROM mobile_native_sessions s JOIN oauth_devices d ON d.owner_id=s.owner_id AND d.id=s.device_id JOIN oauth_families f ON f.id=s.family_id AND f.owner_id=s.owner_id AND f.device_id=s.device_id JOIN oauth_owners o ON o.id=f.owner_id JOIN oauth_realm r ON r.signing_epoch=f.signing_epoch JOIN mobile_device_streams control ON control.owner_id=s.owner_id AND control.device_id=s.device_id AND control.epoch=s.stream_epoch AND control.family_id=s.family_id WHERE s.owner_id=? AND s.device_id=? AND s.id=? AND s.generation=? AND s.state='active' AND s.expires_at>? AND control.expires_at>? AND control.token_expires_at>? AND d.revoked=0 AND d.activated=1 AND f.revoked=0 AND f.stage='active' AND f.expires_at>? AND f.owner_epoch=o.epoch AND f.device_epoch=d.epoch`, t.Owner, t.Device, t.Session, t.SessionGeneration, now.UnixMilli(), now.UnixMilli(), now.UnixMilli(), now.Unix()).Scan(&capabilities, &mirrorBytes)
+	var mirror v1.SessionMirror
+	if err != nil || proto.Unmarshal(mirrorBytes, &mirror) != nil || (s.options.Clock != nil && mirror.ClockId != s.clockID()) {
+		return false
+	}
 	var reportedCapabilities v1.DeviceCapabilities
-	return err == nil && proto.Unmarshal(capabilities, &reportedCapabilities) == nil && capabilityPermits(&reportedCapabilities, t.Action)
+	return proto.Unmarshal(capabilities, &reportedCapabilities) == nil && capabilityPermits(&reportedCapabilities, t.Action)
 }
 
 func capabilityPermits(capabilities *v1.DeviceCapabilities, kind v1.ActionKind) bool {
