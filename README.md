@@ -270,7 +270,7 @@ docs/                # documentation (6 languages)
 
 Full public documentation is available in the [`docs/`](docs/) directory:
 
-- [Release guide](docs/en/release-notes.md) — released features through v0.48.0
+- [Release guide](docs/en/release-notes.md) — released features through v0.48.1
 - [Mobile, CLI and service API](docs/en/mobile-api.md) — isolated OAuth/gRPC, scopes, registration and operations; disabled by default, no client application included
 - [Model profiles and routing](docs/model-routing.md) — connections, verification, roles, classification and fallback
 

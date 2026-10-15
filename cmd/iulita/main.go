@@ -2086,6 +2086,7 @@ func main() {
 			CredentialManager: credStore,
 			Embedder:          embedder,
 			HTTPArtifacts:     httpArtifactStore, // nil unless downloads enabled + auth wired
+			StandingGrants:    store,
 			ModelManager:      modelManager, ModelHTTPClient: llmHTTPClient, LegacyModelSettings: legacySettings, LegacyClassifierActive: legacyClassifierActive,
 		})
 		wg.Add(1)

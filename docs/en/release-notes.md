@@ -1,8 +1,16 @@
 # Release guide
 
-This guide summarizes the public releases from v0.38.0 through v0.48.0. Follow the linked release for its
+This guide summarizes the public releases from v0.38.0 through v0.48.1. Follow the linked release for its
 exact changelog. A source feature is not automatically available in an older
 container or binary.
+
+## v0.48.1: HTTP approval management
+
+[v0.48.1](https://github.com/iulita-ai/iulita/releases/tag/v0.48.1) connects the
+standing-approval store to the production dashboard. The authenticated
+`/api/http-standing-grants` API now lists and revokes approvals, instead of
+falling through to the SPA. Users remain limited to their own grants;
+administrators can inspect and revoke another owner's grants.
 
 ## v0.48.0: mobile and remote-client backend
 
