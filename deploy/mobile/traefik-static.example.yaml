@@ -1,0 +1,16 @@
+# Merge only into a separately reviewed Traefik installation. The dedicated
+# entrypoint isolates stream timeouts from other applications.
+entryPoints:
+  mobile-secure:
+    address: ':443'
+    http2:
+      maxConcurrentStreams: 32
+    transport:
+      respondingTimeouts:
+        readTimeout: 0s
+        writeTimeout: 0s
+        idleTimeout: 90s
+      lifeCycle:
+        graceTimeOut: 10s
+# Disable access/debug tracing at every upstream hop, including the edge LB.
+# Never add Retry, Buffering, Error-page or auth-header rewriting middleware.

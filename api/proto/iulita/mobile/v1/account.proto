@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package iulita.mobile.v1;
+
+import "iulita/mobile/v1/common.proto";
+
+option go_package = "github.com/iulita-ai/iulita/api/gen/go/iulita/mobile/v1;mobilev1";
+option java_package = "ai.iulita.mobile.v1";
+option java_multiple_files = true;
+
+service AccountService {
+  rpc GetProfile(GetProfileRequest) returns (GetProfileResponse) {
+    option (rpc_policy) = { feature: FEATURE_IDENTITY stage: TOKEN_STAGE_ACTIVE binding: RESOURCE_BINDING_OWNER idempotent: true };
+  }
+}
+
+message GetProfileRequest { ClientContext client = 1; }
+message GetProfileResponse {
+  string owner_id = 1; // Canonical authenticated Iulita UUID, server-derived.
+  string display_name = 2;
+  ServerInfo server = 3;
+}

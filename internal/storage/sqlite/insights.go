@@ -9,6 +9,9 @@ import (
 )
 
 func (s *Store) SaveInsight(ctx context.Context, d *domain.Insight) error {
+	if err := domain.CheckLegacyChatID(d.ChatID); err != nil {
+		return err
+	}
 	if d.CreatedAt.IsZero() {
 		d.CreatedAt = time.Now()
 	}
@@ -40,6 +43,7 @@ func (s *Store) GetRecentInsights(ctx context.Context, chatID string, limit int)
 	}
 	err := s.db.NewSelect().
 		Model(&insights).
+		Where(legacyChatPredicate).
 		Where("chat_id = ?", chatID).
 		Where("expires_at IS NULL OR expires_at > ?", time.Now()).
 		OrderExpr("quality DESC, access_count DESC, created_at DESC").
@@ -64,6 +68,7 @@ func (s *Store) GetRecentInsights(ctx context.Context, chatID string, limit int)
 func (s *Store) DeleteExpiredInsights(ctx context.Context) error {
 	_, err := s.db.NewDelete().
 		Model((*domain.Insight)(nil)).
+		Where(legacyChatPredicate).
 		Where("expires_at IS NOT NULL AND expires_at < ?", time.Now()).
 		Exec(ctx)
 	if err != nil {
@@ -75,6 +80,7 @@ func (s *Store) DeleteExpiredInsights(ctx context.Context) error {
 func (s *Store) DeleteInsight(ctx context.Context, id int64, chatID string) error {
 	res, err := s.db.NewDelete().
 		Model((*domain.Insight)(nil)).
+		Where(legacyChatPredicate).
 		Where("id = ? AND chat_id = ?", id, chatID).
 		Exec(ctx)
 	if err != nil {
@@ -90,6 +96,7 @@ func (s *Store) DeleteInsight(ctx context.Context, id int64, chatID string) erro
 func (s *Store) ReinforceInsight(ctx context.Context, id int64) error {
 	_, err := s.db.NewUpdate().
 		Model((*domain.Insight)(nil)).
+		Where(legacyChatPredicate).
 		Set("access_count = access_count + 1").
 		Set("last_accessed_at = ?", time.Now()).
 		Where("id = ?", id).
@@ -112,6 +119,7 @@ func (s *Store) SearchInsights(ctx context.Context, chatID, query string, limit 
 	}
 	err := s.db.NewSelect().
 		Model(&insights).
+		Where(legacyChatPredicate).
 		Where("chat_id = ?", chatID).
 		Where("id IN (SELECT rowid FROM insights_fts WHERE insights_fts MATCH ?)", match).
 		Where("expires_at IS NULL OR expires_at > ?", time.Now()).
@@ -137,6 +145,7 @@ func (s *Store) SearchInsights(ctx context.Context, chatID, query string, limit 
 func (s *Store) CountInsights(ctx context.Context, chatID string) (int, error) {
 	q := s.db.NewSelect().
 		Model((*domain.Insight)(nil)).
+		Where(legacyChatPredicate).
 		Where("expires_at IS NULL OR expires_at > ?", time.Now())
 	if chatID != "" {
 		q = q.Where("chat_id = ?", chatID)

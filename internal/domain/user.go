@@ -15,13 +15,15 @@ const (
 // All knowledge (facts, insights, directives, techfacts) belongs to the user,
 // while message history belongs to a specific channel/chat.
 type User struct {
-	ID             string    `bun:",pk" json:"id"`                                                 // UUIDv7
-	Username       string    `bun:",notnull,unique" json:"username"`                               // login name
-	PasswordHash   string    `bun:",notnull" json:"-"`                                             // bcrypt hash
-	Role           UserRole  `bun:",notnull,default:'user'" json:"role"`                           // admin or user
-	DisplayName    string    `bun:",notnull,default:''" json:"display_name"`                       // human-readable name
-	Timezone       string    `bun:",notnull,default:'UTC'" json:"timezone"`                        // IANA timezone
-	SystemPrompt   string    `bun:",notnull,default:''" json:"system_prompt"`                      // per-user system prompt override
+	ID             string    `bun:",pk" json:"id"`                            // UUIDv7
+	Username       string    `bun:",notnull,unique" json:"username"`          // login name
+	PasswordHash   string    `bun:",notnull" json:"-"`                        // bcrypt hash
+	Role           UserRole  `bun:",notnull,default:'user'" json:"role"`      // admin or user
+	DisplayName    string    `bun:",notnull,default:''" json:"display_name"`  // human-readable name
+	Timezone       string    `bun:",notnull,default:'UTC'" json:"timezone"`   // IANA timezone
+	SystemPrompt   string    `bun:",notnull,default:''" json:"system_prompt"` // per-user system prompt override
+	Disabled       bool      `bun:",notnull,default:false" json:"disabled"`   // login is disabled
+	SecurityEpoch  uint64    `bun:",notnull,default:1" json:"-"`
 	MustChangePass bool      `bun:",notnull,default:false" json:"must_change_pass"`                // force password change on next login
 	CreatedAt      time.Time `bun:",nullzero,notnull,default:current_timestamp" json:"created_at"` // registration time
 	UpdatedAt      time.Time `bun:",nullzero,notnull,default:current_timestamp" json:"updated_at"` // last profile update

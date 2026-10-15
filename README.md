@@ -230,7 +230,7 @@ docs/                # documentation (6 languages)
 
 ## Tech Stack
 
-- **Go 1.25** with pure-Go SQLite ([modernc.org/sqlite](https://modernc.org/sqlite))
+- **Go 1.26+ (toolchain 1.27.2)** with pure-Go SQLite ([modernc.org/sqlite](https://modernc.org/sqlite))
 - **SQLite** (WAL mode) via [bun](https://bun.uptrace.dev/) ORM + FTS5 + ONNX vector search
 - **anthropic-sdk-go** — Claude API with prompt caching and extended thinking
 - **bubbletea + lipgloss + glamour** — console TUI

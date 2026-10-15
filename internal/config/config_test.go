@@ -68,8 +68,8 @@ func TestStructToMapCoversNonZeroDefaults(t *testing.T) {
 	}
 }
 
-// TestValidateSetupMode verifies that ValidateSetup mode always returns nil,
-// regardless of the config state (no LLM, no channels configured).
+// TestValidateSetupMode verifies that setup accepts legacy configurations with
+// no LLM or channels. Mobile dependency checks still apply in setup mode.
 func TestValidateSetupMode(t *testing.T) {
 	tests := []struct {
 		name string

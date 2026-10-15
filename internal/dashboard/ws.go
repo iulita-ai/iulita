@@ -62,6 +62,9 @@ func (h *WSHub) Count() int {
 
 // Broadcast sends a message to all connected clients.
 func (h *WSHub) Broadcast(msg WSMessage) {
+	if !eventbus.GlobalEventAllowed(eventbus.Event{Type: msg.Type, Payload: msg.Payload}) {
+		return
+	}
 	data, err := json.Marshal(msg)
 	if err != nil {
 		h.logger.Error("failed to marshal ws message", zap.Error(err))

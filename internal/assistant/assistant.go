@@ -166,6 +166,9 @@ func (a *Assistant) dynamicSystemPrompt(directive, facts, insights, techFacts, c
 
 // HandleMessage implements channel.MessageHandler.
 func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessage) (string, error) {
+	if err := domain.CheckLegacyChatID(msg.ChatID); err != nil {
+		return "", err
+	}
 	// Bound the entire agentic loop so a single message can't run forever.
 	timeout := a.effectiveTimeout()
 	ctx, cancel := context.WithTimeout(ctx, timeout)

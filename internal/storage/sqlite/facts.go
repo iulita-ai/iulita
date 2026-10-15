@@ -9,6 +9,9 @@ import (
 )
 
 func (s *Store) SaveFact(ctx context.Context, f *domain.Fact) error {
+	if err := domain.CheckLegacyChatID(f.ChatID); err != nil {
+		return err
+	}
 	if f.CreatedAt.IsZero() {
 		f.CreatedAt = time.Now()
 	}
@@ -46,6 +49,7 @@ func (s *Store) SearchFacts(ctx context.Context, chatID, query string, limit int
 	}
 	err := s.db.NewSelect().
 		Model(&facts).
+		Where(legacyChatPredicate).
 		Where("chat_id = ?", chatID).
 		Where("id IN (SELECT rowid FROM facts_fts WHERE facts_fts MATCH ?)", match).
 		OrderExpr("access_count DESC, last_accessed_at DESC").
@@ -70,6 +74,7 @@ func (s *Store) SearchFacts(ctx context.Context, chatID, query string, limit int
 func (s *Store) DeleteFact(ctx context.Context, id int64, chatID string) error {
 	res, err := s.db.NewDelete().
 		Model((*domain.Fact)(nil)).
+		Where(legacyChatPredicate).
 		Where("id = ? AND chat_id = ?", id, chatID).
 		Exec(ctx)
 	if err != nil {
@@ -85,6 +90,7 @@ func (s *Store) DeleteFact(ctx context.Context, id int64, chatID string) error {
 func (s *Store) DeleteFactByID(ctx context.Context, id int64) error {
 	res, err := s.db.NewDelete().
 		Model((*domain.Fact)(nil)).
+		Where(legacyChatPredicate).
 		Where("id = ?", id).
 		Exec(ctx)
 	if err != nil {
@@ -100,6 +106,7 @@ func (s *Store) DeleteFactByID(ctx context.Context, id int64) error {
 func (s *Store) UpdateFactContent(ctx context.Context, id int64, content string) error {
 	res, err := s.db.NewUpdate().
 		Model((*domain.Fact)(nil)).
+		Where(legacyChatPredicate).
 		Set("content = ?", content).
 		Set("last_accessed_at = ?", time.Now()).
 		Where("id = ?", id).
@@ -133,6 +140,7 @@ func (s *Store) DeleteFactsByQuery(ctx context.Context, chatID, query string) (i
 	}
 	res, err := s.db.NewDelete().
 		Model((*domain.Fact)(nil)).
+		Where(legacyChatPredicate).
 		Where("chat_id = ?", chatID).
 		Where("id IN (SELECT rowid FROM facts_fts WHERE facts_fts MATCH ?)", match).
 		Exec(ctx)
@@ -146,6 +154,7 @@ func (s *Store) DeleteFactsByQuery(ctx context.Context, chatID, query string) (i
 func (s *Store) ReinforceFact(ctx context.Context, id int64) error {
 	_, err := s.db.NewUpdate().
 		Model((*domain.Fact)(nil)).
+		Where(legacyChatPredicate).
 		Set("access_count = access_count + 1").
 		Set("last_accessed_at = ?", time.Now()).
 		Where("id = ?", id).
@@ -164,6 +173,7 @@ func (s *Store) GetRecentFacts(ctx context.Context, chatID string, limit int) ([
 	}
 	err := s.db.NewSelect().
 		Model(&facts).
+		Where(legacyChatPredicate).
 		Where("chat_id = ?", chatID).
 		Order("last_accessed_at DESC").
 		Limit(fetchLimit).
@@ -188,6 +198,7 @@ func (s *Store) GetAllFacts(ctx context.Context, chatID string) ([]domain.Fact, 
 	var facts []domain.Fact
 	q := s.db.NewSelect().
 		Model(&facts).
+		Where(legacyChatPredicate).
 		Order("created_at ASC")
 	if chatID != "" {
 		q = q.Where("chat_id = ?", chatID)

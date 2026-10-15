@@ -113,6 +113,18 @@ func (s *ProfileSnapshot) Revision() uint64 {
 	}
 	return s.revision
 }
+
+// ResolvePinned exposes a verified immutable client to bounded runtimes that
+// must not reclassify, silently fall back, or follow a hot-reloaded destination.
+func (s *ProfileSnapshot) ResolvePinned(id string) (ProfileBinding, error) {
+	if s == nil {
+		return ProfileBinding{}, fmt.Errorf("model profiles unavailable")
+	}
+	if err := s.eligible(id); err != nil {
+		return ProfileBinding{}, err
+	}
+	return s.profiles[id], nil
+}
 func (s *ProfileSnapshot) eligible(id string) error {
 	b, ok := s.profiles[id]
 	if !ok {

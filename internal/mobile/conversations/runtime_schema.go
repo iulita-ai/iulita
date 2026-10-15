@@ -1,0 +1,26 @@
+package conversations
+
+var runtimeSchema = []string{
+	`ALTER TABLE mobile_turns ADD COLUMN processing_epoch INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE mobile_turns ADD COLUMN outcome_reason TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE mobile_turns ADD COLUMN cancelled_at INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE mobile_turns ADD COLUMN policy_snapshot BLOB NOT NULL DEFAULT '{}'`,
+	`ALTER TABLE mobile_turns ADD COLUMN account_stamp TEXT NOT NULL DEFAULT ''`,
+	`CREATE TABLE mobile_runtime(id INTEGER PRIMARY KEY CHECK(id=1),instance TEXT NOT NULL,epoch INTEGER NOT NULL,expires_at INTEGER NOT NULL)`,
+	`CREATE TABLE mobile_operations(owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,client_id TEXT NOT NULL,method TEXT NOT NULL,id TEXT NOT NULL,digest BLOB NOT NULL,response BLOB NOT NULL,created_at INTEGER NOT NULL,conversation_id TEXT NOT NULL DEFAULT '',redacted INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(owner_id,client_id,method,id))`,
+	`CREATE INDEX mobile_operation_conversation ON mobile_operations(owner_id,conversation_id)`,
+	`CREATE TABLE mobile_tool_operations(owner_id TEXT NOT NULL,conversation_id TEXT NOT NULL,turn_id TEXT NOT NULL,id TEXT NOT NULL,digest BLOB NOT NULL,effect TEXT NOT NULL CHECK(effect IN ('read','mutating','unknown')),state TEXT NOT NULL CHECK(state IN ('prepared','started','succeeded','failed','unknown_outcome')),processing_epoch INTEGER NOT NULL,outcome TEXT NOT NULL DEFAULT '',PRIMARY KEY(owner_id,turn_id,id),FOREIGN KEY(owner_id,conversation_id) REFERENCES mobile_conversations(owner_id,id) ON DELETE CASCADE)`,
+	`CREATE TABLE mobile_prompts(id TEXT PRIMARY KEY,owner_id TEXT NOT NULL,conversation_id TEXT NOT NULL,turn_id TEXT NOT NULL,generation INTEGER NOT NULL,processing_epoch INTEGER NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('choice','confirmation')),operation_id TEXT NOT NULL,nonce_hash BLOB,fingerprint BLOB,state TEXT NOT NULL CHECK(state IN ('open','answered','rejected','expired','invalidated')),body BLOB NOT NULL,decision TEXT NOT NULL DEFAULT '',actor_device TEXT NOT NULL DEFAULT '',expires_at INTEGER NOT NULL,FOREIGN KEY(owner_id,conversation_id) REFERENCES mobile_conversations(owner_id,id) ON DELETE CASCADE)`,
+	`ALTER TABLE mobile_events RENAME TO mobile_events_v2`,
+	`CREATE TABLE mobile_events(owner_id TEXT NOT NULL,event_seq INTEGER NOT NULL,id TEXT NOT NULL UNIQUE,conversation_id TEXT NOT NULL,generation INTEGER NOT NULL,turn_id TEXT NOT NULL,turn_seq INTEGER NOT NULL,input_message_id TEXT NOT NULL,event_type TEXT NOT NULL,created_at INTEGER NOT NULL,PRIMARY KEY(owner_id,event_seq),FOREIGN KEY(owner_id,conversation_id) REFERENCES mobile_conversations(owner_id,id) ON DELETE CASCADE)`,
+	`INSERT INTO mobile_events SELECT * FROM mobile_events_v2`,
+	`DROP TABLE mobile_events_v2`,
+	`CREATE TABLE mobile_snapshots(id TEXT PRIMARY KEY,owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,subscription TEXT NOT NULL,watermark INTEGER NOT NULL,body BLOB NOT NULL,expires_at INTEGER NOT NULL)`,
+	`CREATE TABLE mobile_task_event_inbox(id TEXT PRIMARY KEY,owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,expires_at INTEGER NOT NULL)`,
+	`CREATE TABLE mobile_task_references(owner_id TEXT NOT NULL,conversation_id TEXT NOT NULL,turn_id TEXT NOT NULL,task_id TEXT PRIMARY KEY,state TEXT NOT NULL,source_seq INTEGER NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL,FOREIGN KEY(owner_id,conversation_id) REFERENCES mobile_conversations(owner_id,id) ON DELETE CASCADE)`,
+	`CREATE INDEX mobile_task_reference_owner ON mobile_task_references(owner_id,conversation_id,created_at)`,
+	`ALTER TABLE mobile_chat_schema RENAME TO mobile_chat_schema_v2`,
+	`CREATE TABLE mobile_chat_schema(version INTEGER PRIMARY KEY CHECK(version=3))`,
+	`INSERT INTO mobile_chat_schema VALUES(3)`,
+	`DROP TABLE mobile_chat_schema_v2`,
+}

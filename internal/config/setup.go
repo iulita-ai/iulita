@@ -616,6 +616,15 @@ func GenerateDefaultConfig(paths *Paths) (string, error) {
 	b.WriteString(fmt.Sprintf("token_expiry = %q\n", cfg.Auth.TokenExpiry))
 	b.WriteString(fmt.Sprintf("refresh_expiry = %q\n", cfg.Auth.RefreshExpiry))
 	b.WriteString("\n")
+	b.WriteString("[mobile]\n")
+	b.WriteString("# Disabled by default; requires an initialized independent mobile runtime. UI/Vision remain gated.\n")
+	fmt.Fprintf(&b, "chat_enabled = %v\n", cfg.Mobile.ChatEnabled)
+	fmt.Fprintf(&b, "device_enabled = %v\n", cfg.Mobile.DeviceEnabled)
+	fmt.Fprintf(&b, "ui_enabled = %v\n", cfg.Mobile.UIEnabled)
+	fmt.Fprintf(&b, "vision_enabled = %v\n\n", cfg.Mobile.VisionEnabled)
+	if cfg.Mobile.RuntimeFile != "" {
+		fmt.Fprintf(&b, "runtime_file = %q\n\n", cfg.Mobile.RuntimeFile)
+	}
 
 	b.WriteString("[embedding]\n")
 	b.WriteString("# provider = \"onnx\"  # enable for hybrid search\n")

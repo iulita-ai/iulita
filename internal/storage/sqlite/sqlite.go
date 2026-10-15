@@ -48,7 +48,7 @@ func New(path string) (*Store, error) {
 	// PRAGMA on a single connection would not). It makes a writer wait up to 5s for
 	// the WAL write lock and retry, instead of failing immediately with SQLITE_BUSY,
 	// so the live assistant tolerates a long-running import holding the writer.
-	dsn := fmt.Sprintf("file:%s?cache=shared&mode=rwc&_pragma=busy_timeout(5000)", path)
+	dsn := fmt.Sprintf("file:%s?cache=private&mode=rwc&_pragma=busy_timeout(5000)", path)
 	if path == ":memory:" {
 		// A plain `:memory:` shared cache is PROCESS-WIDE — every store shares one DB,
 		// so test stores leak state into each other whenever a connection lingers
@@ -278,7 +278,28 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 		}
 	}
 
+	// Account availability is rechecked by the mobile browser authorization flow.
+	if _, stepErr1 := s.db.ExecContext(ctx, `ALTER TABLE users ADD COLUMN disabled BOOLEAN NOT NULL DEFAULT 0`); stepErr1 != nil {
+		if _, checkErr := s.db.ExecContext(ctx, `SELECT disabled FROM users LIMIT 0`); checkErr != nil {
+			return fmt.Errorf("adding account disabled state: %w", stepErr1)
+		}
+	}
+
 	// --- Multi-user migration: add user_id columns to all data tables ---
+	if _, stepErr2 := s.db.ExecContext(ctx, `ALTER TABLE users ADD COLUMN security_epoch INTEGER NOT NULL DEFAULT 1`); stepErr2 != nil {
+		if _, checkErr := s.db.ExecContext(ctx, `SELECT security_epoch FROM users LIMIT 0`); checkErr != nil {
+			return fmt.Errorf("adding account security epoch: %w", stepErr2)
+		}
+	}
+	for _, query := range []string{
+		`CREATE TRIGGER IF NOT EXISTS users_security_epoch_monotonic BEFORE UPDATE OF security_epoch ON users WHEN NEW.security_epoch<OLD.security_epoch BEGIN SELECT RAISE(ABORT,'stale account security epoch'); END`,
+		`CREATE TRIGGER IF NOT EXISTS users_security_credentials AFTER UPDATE OF password_hash,disabled,must_change_pass ON users WHEN NEW.password_hash<>OLD.password_hash OR NEW.disabled<>OLD.disabled OR NEW.must_change_pass<>OLD.must_change_pass BEGIN UPDATE users SET security_epoch=security_epoch+1 WHERE id=NEW.id; END`,
+	} {
+		if _, stepErr3 := s.db.ExecContext(ctx, query); stepErr3 != nil {
+			return fmt.Errorf("account security triggers: %w", stepErr3)
+		}
+	}
+
 	// NOTE: SQLite doesn't allow NOT NULL on ALTER TABLE ADD COLUMN unless DEFAULT is provided.
 	// Some drivers (modernc) reject NOT NULL entirely on ALTER TABLE — use nullable with default.
 	userIDColumns := []string{
@@ -488,6 +509,9 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 }
 
 func (s *Store) SaveMessage(ctx context.Context, msg *domain.ChatMessage) error {
+	if err := domain.CheckLegacyChatID(msg.ChatID); err != nil {
+		return err
+	}
 	_, err := s.db.NewInsert().Model(msg).Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("inserting message: %w", err)
@@ -496,6 +520,9 @@ func (s *Store) SaveMessage(ctx context.Context, msg *domain.ChatMessage) error 
 }
 
 func (s *Store) GetHistory(ctx context.Context, chatID string, limit int) ([]domain.ChatMessage, error) {
+	if err := domain.CheckLegacyChatID(chatID); err != nil {
+		return nil, err
+	}
 	var msgs []domain.ChatMessage
 
 	// Get the last N messages ordered by creation time ascending.
@@ -519,6 +546,9 @@ func (s *Store) GetHistory(ctx context.Context, chatID string, limit int) ([]dom
 }
 
 func (s *Store) GetHistoryBefore(ctx context.Context, chatID string, beforeID int64, limit int) ([]domain.ChatMessage, error) {
+	if err := domain.CheckLegacyChatID(chatID); err != nil {
+		return nil, err
+	}
 	var msgs []domain.ChatMessage
 	err := s.db.NewSelect().
 		Model(&msgs).
@@ -538,6 +568,9 @@ func (s *Store) GetHistoryBefore(ctx context.Context, chatID string, beforeID in
 }
 
 func (s *Store) ClearHistory(ctx context.Context, chatID string) error {
+	if err := domain.CheckLegacyChatID(chatID); err != nil {
+		return err
+	}
 	_, err := s.db.NewDelete().
 		Model((*domain.ChatMessage)(nil)).
 		Where("chat_id = ?", chatID).
@@ -549,6 +582,9 @@ func (s *Store) ClearHistory(ctx context.Context, chatID string) error {
 }
 
 func (s *Store) DeleteMessagesBefore(ctx context.Context, chatID string, beforeID int64) error {
+	if err := domain.CheckLegacyChatID(chatID); err != nil {
+		return err
+	}
 	_, err := s.db.NewDelete().
 		Model((*domain.ChatMessage)(nil)).
 		Where("chat_id = ? AND id < ?", chatID, beforeID).

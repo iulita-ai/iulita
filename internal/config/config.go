@@ -38,6 +38,7 @@ type Config struct {
 	Storage       StorageConfig       `koanf:"storage"`
 	Server        ServerConfig        `koanf:"server"`
 	Auth          AuthConfig          `koanf:"auth"`
+	Mobile        MobileConfig        `koanf:"mobile"`
 	Skills        SkillsConfig        `koanf:"skills"`
 	TechFacts     TechFactsConfig     `koanf:"techfacts"`
 	Scheduler     SchedulerConfig     `koanf:"scheduler"`
@@ -409,7 +410,8 @@ func (c *Config) HasAnyLLMProvider() bool {
 // mode determines which fields are required:
 // - ValidateConsole: at least one LLM provider is required
 // - ValidateServer: at least one LLM provider + at least one channel
-// - ValidateSetup: no requirements (web wizard will configure)
+// - ValidateSetup: no provider/channel requirements (web wizard will configure)
+// Mobile feature dependencies are validated in every mode.
 func (c *Config) Validate(mode ValidateMode) error {
 	return c.ValidateWithModels(mode, false)
 }
@@ -417,6 +419,9 @@ func (c *Config) Validate(mode ValidateMode) error {
 // ValidateWithModels accepts a separately validated, encrypted model policy
 // without requiring a duplicate legacy vendor key in the flat configuration.
 func (c *Config) ValidateWithModels(mode ValidateMode, modelsConfigured bool) error {
+	if err := c.Mobile.Validate(); err != nil {
+		return err
+	}
 	if mode == ValidateSetup {
 		return nil
 	}
@@ -468,6 +473,11 @@ func Load(path string, paths *Paths) (*Config, *koanf.Koanf, bool, error) {
 
 	// Layer 3: environment variables
 	if err := k.Load(env.Provider("IULITA_", ".", func(s string) string {
+		// Mobile leaves contain underscores. Preserve their complete koanf key;
+		// the legacy underscore-to-dot mapping otherwise produces chat.enabled.
+		if key, ok := mobileEnvironmentKey(s); ok {
+			return key
+		}
 		return strings.ReplaceAll(
 			strings.ToLower(strings.TrimPrefix(s, "IULITA_")),
 			"_", ".")
@@ -549,6 +559,11 @@ func structToMap(cfg *Config) map[string]interface{} {
 	m["auth.jwt_secret"] = cfg.Auth.JWTSecret
 	m["auth.token_expiry"] = cfg.Auth.TokenExpiry
 	m["auth.refresh_expiry"] = cfg.Auth.RefreshExpiry
+	m["mobile.chat_enabled"] = cfg.Mobile.ChatEnabled
+	m["mobile.device_enabled"] = cfg.Mobile.DeviceEnabled
+	m["mobile.ui_enabled"] = cfg.Mobile.UIEnabled
+	m["mobile.vision_enabled"] = cfg.Mobile.VisionEnabled
+	m["mobile.runtime_file"] = cfg.Mobile.RuntimeFile
 
 	// Skills
 	m["skills.dir"] = cfg.Skills.Dir

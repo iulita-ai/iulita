@@ -10,6 +10,31 @@ permissions:
   contents: read
 
 jobs:
+  mobile-contract:
+    name: Mobile Contract Generation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Verify checked-in Go and generate Kotlin stubs
+        run: make proto-mobile-check proto-mobile-jvm
+      - name: Check persistent OAuth framework experiment
+        run: make test-mobile-oauth
+      - name: Check OAuth wire schemas
+        run: |
+          python3 -m pip install -r scripts/requirements-mobile-contract.txt
+          python3 scripts/check_mobile_oauth.py
+
   go-test:
     name: Go Tests
     runs-on: ubuntu-latest
@@ -28,6 +53,9 @@ jobs:
         env:
           CGO_ENABLED: "0"
         run: go test -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Check mobile persistence races
+        run: go test -race -p 2 ./internal/mobile/...
 
       - name: Upload Go coverage to Codecov
         uses: codecov/codecov-action@v5

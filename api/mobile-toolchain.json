@@ -1,0 +1,61 @@
+{
+  "protoc_version": "33.4",
+  "protoc_gen_go": "v1.36.11",
+  "protoc_gen_go_grpc": "v1.5.1",
+  "grpc_java_version": "1.79.0",
+  "grpc_kotlin_version": "1.5.0",
+  "artifacts": {
+    "protoc/osx-aarch_64": {
+      "url": "https://repo.maven.apache.org/maven2/com/google/protobuf/protoc/4.33.4/protoc-4.33.4-osx-aarch_64.exe",
+      "sha256": "7307a8eb130252c433432624b87a077e981816a7d8126f8c688f99cc59c280ff"
+    },
+    "protoc-gen-grpc-java/osx-aarch_64": {
+      "url": "https://repo.maven.apache.org/maven2/io/grpc/protoc-gen-grpc-java/1.79.0/protoc-gen-grpc-java-1.79.0-osx-aarch_64.exe",
+      "sha256": "7b0dcbe2cbc02ebaf03e571eb295f43c0ba3d919b5d9e8fe34015846c9887289"
+    },
+    "protoc/osx-x86_64": {
+      "url": "https://repo.maven.apache.org/maven2/com/google/protobuf/protoc/4.33.4/protoc-4.33.4-osx-x86_64.exe",
+      "sha256": "724e83dfa52c649f43c55553adda04e0ac3d0a0588935a815ff429e37a05c70b"
+    },
+    "protoc-gen-grpc-java/osx-x86_64": {
+      "url": "https://repo.maven.apache.org/maven2/io/grpc/protoc-gen-grpc-java/1.79.0/protoc-gen-grpc-java-1.79.0-osx-x86_64.exe",
+      "sha256": "7b0dcbe2cbc02ebaf03e571eb295f43c0ba3d919b5d9e8fe34015846c9887289"
+    },
+    "protoc/linux-aarch_64": {
+      "url": "https://repo.maven.apache.org/maven2/com/google/protobuf/protoc/4.33.4/protoc-4.33.4-linux-aarch_64.exe",
+      "sha256": "d073583627e26647723b66295a900d0486cc8129473f07284929fe0818d38866"
+    },
+    "protoc-gen-grpc-java/linux-aarch_64": {
+      "url": "https://repo.maven.apache.org/maven2/io/grpc/protoc-gen-grpc-java/1.79.0/protoc-gen-grpc-java-1.79.0-linux-aarch_64.exe",
+      "sha256": "445b924ba4d3f55abd651f71017d592552be706b3918af0d7837b70468137473"
+    },
+    "protoc/linux-x86_64": {
+      "url": "https://repo.maven.apache.org/maven2/com/google/protobuf/protoc/4.33.4/protoc-4.33.4-linux-x86_64.exe",
+      "sha256": "72e5311d8f2faaea1fcb15d5475ac5f5742ec6dbba8491bb473fc060e4e29e8f"
+    },
+    "protoc-gen-grpc-java/linux-x86_64": {
+      "url": "https://repo.maven.apache.org/maven2/io/grpc/protoc-gen-grpc-java/1.79.0/protoc-gen-grpc-java-1.79.0-linux-x86_64.exe",
+      "sha256": "3d16b70b18854988b29c41e20d06ca3358c47008edb9e6986b926c5bca790816"
+    },
+    "grpc-kotlin": {
+      "url": "https://repo.maven.apache.org/maven2/io/grpc/protoc-gen-grpc-kotlin/1.5.0/protoc-gen-grpc-kotlin-1.5.0-jdk8.jar",
+      "sha256": "da938e9047a7973d53916eee33a1465adce1e72dce75127474b8808388023026"
+    },
+    "include/descriptor.proto": {
+      "url": "https://raw.githubusercontent.com/protocolbuffers/protobuf/v33.4/src/google/protobuf/descriptor.proto",
+      "sha256": "826dd555e98d16a8360edcaae83778057f0a583ea7059e59d2d838096f912918"
+    },
+    "include/duration.proto": {
+      "url": "https://raw.githubusercontent.com/protocolbuffers/protobuf/v33.4/src/google/protobuf/duration.proto",
+      "sha256": "a3f7301ff2956ec2e30c2241ece07197e4a86c752348d5607224819d4921c9fe"
+    },
+    "include/empty.proto": {
+      "url": "https://raw.githubusercontent.com/protocolbuffers/protobuf/v33.4/src/google/protobuf/empty.proto",
+      "sha256": "ecef3d54cc9e079673b9816c67bac770f7f3bf6dada2d4596ba69d71daa971e6"
+    },
+    "include/timestamp.proto": {
+      "url": "https://raw.githubusercontent.com/protocolbuffers/protobuf/v33.4/src/google/protobuf/timestamp.proto",
+      "sha256": "79c9bb541fdd52214ca3d3a2c991e0dfec5bb2a9a05ba2e061e3fc68b460407d"
+    }
+  }
+}

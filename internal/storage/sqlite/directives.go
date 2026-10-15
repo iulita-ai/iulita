@@ -11,6 +11,9 @@ import (
 )
 
 func (s *Store) SaveDirective(ctx context.Context, d *domain.Directive) error {
+	if err := domain.CheckLegacyChatID(d.ChatID); err != nil {
+		return err
+	}
 	d.UpdatedAt = time.Now()
 	if d.CreatedAt.IsZero() {
 		d.CreatedAt = d.UpdatedAt
@@ -29,6 +32,9 @@ func (s *Store) SaveDirective(ctx context.Context, d *domain.Directive) error {
 }
 
 func (s *Store) GetDirective(ctx context.Context, chatID string) (*domain.Directive, error) {
+	if err := domain.CheckLegacyChatID(chatID); err != nil {
+		return nil, err
+	}
 	d := new(domain.Directive)
 	err := s.db.NewSelect().
 		Model(d).
@@ -44,8 +50,12 @@ func (s *Store) GetDirective(ctx context.Context, chatID string) (*domain.Direct
 }
 
 func (s *Store) DeleteDirective(ctx context.Context, chatID string) error {
+	if err := domain.CheckLegacyChatID(chatID); err != nil {
+		return err
+	}
 	_, err := s.db.NewDelete().
 		Model((*domain.Directive)(nil)).
+		Where(legacyChatPredicate).
 		Where("chat_id = ?", chatID).
 		Exec(ctx)
 	if err != nil {

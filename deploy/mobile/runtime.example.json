@@ -1,0 +1,13 @@
+{
+  "issuer": "https://mobile.example.invalid",
+  "audience": "iulita-mobile",
+  "account_db": "/data/iulita.db",
+  "oauth_db": "/data/mobile/oauth.sqlite",
+  "realm_dir": "/data/mobile/keys",
+  "tls_cert": "/run/mobile-tls/server.crt",
+  "tls_key": "/run/mobile-tls/server.key",
+  "grpc_address": "0.0.0.0:8443",
+  "oauth_address": "0.0.0.0:8444",
+  "client_id": "iulita-android",
+  "redirect_uri": "https://mobile.example.invalid/mobile/oauth/callback"
+}

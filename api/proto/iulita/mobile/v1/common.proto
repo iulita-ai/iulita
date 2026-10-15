@@ -1,0 +1,99 @@
+syntax = "proto3";
+
+package iulita.mobile.v1;
+
+import "google/protobuf/descriptor.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/iulita-ai/iulita/api/gen/go/iulita/mobile/v1;mobilev1";
+option java_package = "ai.iulita.mobile.v1";
+option java_multiple_files = true;
+
+// Required discriminators reject UNSPECIFIED and unknown values at the
+// application boundary; optional ErrorReason zero means no error, not a grant.
+// Successful protobuf decoding is never permission to execute.
+enum Feature {
+  FEATURE_UNSPECIFIED = 0;
+  FEATURE_IDENTITY = 1;
+  FEATURE_CHAT = 2;
+  FEATURE_DEVICE = 3;
+  FEATURE_UI = 4;
+  FEATURE_VISION = 5;
+}
+
+enum TokenStage {
+  TOKEN_STAGE_UNSPECIFIED = 0;
+  TOKEN_STAGE_PENDING_ACTIVATION = 1;
+  TOKEN_STAGE_PROVISIONAL_RECOVERY = 2;
+  TOKEN_STAGE_ACTIVE = 3;
+}
+
+enum ResourceBinding {
+  RESOURCE_BINDING_UNSPECIFIED = 0;
+  RESOURCE_BINDING_OWNER = 1;
+  RESOURCE_BINDING_TOKEN_DEVICE = 2;
+}
+
+// Static requirements for future unary/stream interceptors. Resource checks,
+// current DB revocation and native grants remain mandatory at execution time.
+message RpcPolicy {
+  Feature feature = 1;
+  TokenStage stage = 2;
+  repeated string scopes = 3;
+  ResourceBinding binding = 4;
+  bool fresh_authentication = 5;
+  bool idempotent = 6;
+}
+
+extend google.protobuf.MethodOptions {
+  RpcPolicy rpc_policy = 51001;
+}
+
+message ClientContext {
+  uint32 protocol_version = 1; // v1 requires exactly 1, including resumed calls.
+  string app_version = 2;
+  string installation_id = 3; // Hint only, never trusted identity/authority.
+}
+
+// Mutation keys are owner/client/resource scoped. Canonical digest excludes
+// transport credentials; same ID with changed semantic payload is rejected.
+message Operation {
+  string operation_id = 1; // UUID; reuse for an uncertain response.
+  google.protobuf.Timestamp issued_at = 2;
+}
+
+enum ErrorReason {
+  ERROR_REASON_UNSPECIFIED = 0;
+  ERROR_REASON_UNSUPPORTED_PROTOCOL = 1;
+  ERROR_REASON_FEATURE_DISABLED = 2;
+  ERROR_REASON_INVALID_INPUT = 3;
+  ERROR_REASON_STALE_GENERATION = 4;
+  ERROR_REASON_RESYNC_REQUIRED = 5;
+  ERROR_REASON_IDEMPOTENCY_CONFLICT = 6;
+  ERROR_REASON_QUEUE_FULL = 7;
+  ERROR_REASON_DEVICE_UNAVAILABLE = 8;
+  ERROR_REASON_DEVICE_BUSY = 9;
+  ERROR_REASON_LEASE_EXPIRED = 10;
+  ERROR_REASON_RESULT_EXPIRED = 11;
+  ERROR_REASON_CONFIRMATION_INVALIDATED = 12;
+  ERROR_REASON_UNKNOWN_OUTCOME = 13;
+  ERROR_REASON_REAUTHENTICATION_REQUIRED = 14;
+}
+
+// Attached to google.rpc.Status.details, not a substitute for canonical gRPC
+// status. No raw content, credentials, selectors or arbitrary error preview.
+message MobileError {
+  ErrorReason reason = 1;
+  google.protobuf.Duration retry_after = 2;
+  string operation_id = 3;
+}
+
+message ServerInfo {
+  uint32 protocol_version = 1;
+  string server_version = 2;
+  repeated Feature available_features = 3;
+  uint32 max_text_bytes = 4;
+  uint32 max_page_size = 5;
+  uint32 max_chunk_bytes = 6;
+}

@@ -196,6 +196,17 @@ func CoreConfigSchema() []ConfigSection {
 			},
 		},
 		{
+			Name:        "mobile",
+			Label:       "Mobile Backend",
+			Description: "Reserved mobile features; disabled until the independent OAuth backend and acceptance gates are ready",
+			Fields: []ConfigField{
+				{Key: "mobile.chat_enabled", Label: "Mobile Chat", Type: FieldBool, Default: "false", Section: "mobile", RestartRequired: true},
+				{Key: "mobile.device_enabled", Label: "Device Data and Commands", Type: FieldBool, Default: "false", Section: "mobile", RestartRequired: true},
+				{Key: "mobile.ui_enabled", Label: "Deterministic UI Control", Type: FieldBool, Default: "false", Section: "mobile", RestartRequired: true},
+				{Key: "mobile.vision_enabled", Label: "Experimental Vision", Type: FieldBool, Default: "false", Section: "mobile", RestartRequired: true},
+			},
+		},
+		{
 			Name:        "cost",
 			Label:       "Cost Tracking",
 			Description: "LLM usage cost tracking",

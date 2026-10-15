@@ -98,6 +98,9 @@ func (b *Bus) SubscribeAsync(eventType string, h Handler) {
 // Publish sends an event to all registered handlers.
 // Sync handlers run in order; async handlers are spawned as goroutines.
 func (b *Bus) Publish(ctx context.Context, evt Event) {
+	if !GlobalEventAllowed(evt) {
+		return
+	}
 	b.mu.RLock()
 	subs := b.subs[evt.Type]
 	b.mu.RUnlock()

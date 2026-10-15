@@ -123,6 +123,7 @@ func (s *Store) SearchFactsHybrid(ctx context.Context, chatID string, query stri
 	err = s.db.NewSelect().
 		TableExpr("fact_vectors fv").
 		Join("JOIN facts f ON f.id = fv.fact_id").
+		Where(legacyChatFilter("f.chat_id")).
 		Where("f.chat_id = ?", chatID).
 		ColumnExpr("fv.fact_id, fv.embedding").
 		Scan(ctx, &rows)
@@ -187,12 +188,14 @@ func (s *Store) SearchFactsHybrid(ctx context.Context, chatID string, query stri
 	var facts []domain.Fact
 	err = s.db.NewSelect().
 		Model(&facts).
+		Where(legacyChatPredicate).
 		Where("id IN (?)", s.db.NewSelect().TableExpr("unnest(?::bigint[]) AS id", ids)).
 		Scan(ctx)
 	if err != nil {
 		// Fallback: use bun's IN operator.
 		err = s.db.NewSelect().
 			Model(&facts).
+			Where(legacyChatPredicate).
 			Where("id IN (?)", ids).
 			Scan(ctx)
 		if err != nil {
@@ -235,6 +238,7 @@ func (s *Store) SearchInsightsHybrid(ctx context.Context, chatID string, query s
 	err = s.db.NewSelect().
 		TableExpr("insight_vectors iv").
 		Join("JOIN insights i ON i.id = iv.insight_id").
+		Where(legacyChatFilter("i.chat_id")).
 		Where("i.chat_id = ?", chatID).
 		ColumnExpr("iv.insight_id, iv.embedding").
 		Scan(ctx, &rows)
@@ -297,6 +301,7 @@ func (s *Store) SearchInsightsHybrid(ctx context.Context, chatID string, query s
 	var insights []domain.Insight
 	err = s.db.NewSelect().
 		Model(&insights).
+		Where(legacyChatPredicate).
 		Where("id IN (?)", ids).
 		Scan(ctx)
 	if err != nil {
@@ -320,6 +325,7 @@ func (s *Store) FactsWithoutEmbeddings(ctx context.Context, limit int) ([]domain
 	var facts []domain.Fact
 	err := s.db.NewSelect().
 		Model(&facts).
+		Where(legacyChatPredicate).
 		Where("id NOT IN (SELECT fact_id FROM fact_vectors)").
 		Order("created_at DESC").
 		Limit(limit).
@@ -335,6 +341,7 @@ func (s *Store) InsightsWithoutEmbeddings(ctx context.Context, limit int) ([]dom
 	var insights []domain.Insight
 	err := s.db.NewSelect().
 		Model(&insights).
+		Where(legacyChatPredicate).
 		Where("id NOT IN (SELECT insight_id FROM insight_vectors)").
 		Order("created_at DESC").
 		Limit(limit).

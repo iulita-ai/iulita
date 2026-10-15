@@ -9,6 +9,9 @@ import (
 )
 
 func (s *Store) UpsertTechFact(ctx context.Context, f *domain.TechFact) error {
+	if err := domain.CheckLegacyChatID(f.ChatID); err != nil {
+		return err
+	}
 	now := time.Now()
 	// Running average for confidence: new_avg = (old_avg * count + new_value) / (count + 1)
 	// Value is recalculated from the averaged confidence as a percentage.
@@ -29,7 +32,7 @@ func (s *Store) UpsertTechFact(ctx context.Context, f *domain.TechFact) error {
 
 func (s *Store) GetTechFacts(ctx context.Context, chatID string) ([]domain.TechFact, error) {
 	var facts []domain.TechFact
-	q := s.db.NewSelect().Model(&facts)
+	q := s.db.NewSelect().Model(&facts).Where(legacyChatPredicate)
 	if chatID != "" {
 		q = q.Where("chat_id = ?", chatID)
 	}
@@ -44,6 +47,7 @@ func (s *Store) GetTechFactsByCategory(ctx context.Context, chatID, category str
 	var facts []domain.TechFact
 	err := s.db.NewSelect().
 		Model(&facts).
+		Where(legacyChatPredicate).
 		Where("chat_id = ?", chatID).
 		Where("category = ?", category).
 		Order("key ASC").
@@ -55,7 +59,7 @@ func (s *Store) GetTechFactsByCategory(ctx context.Context, chatID, category str
 }
 
 func (s *Store) CountTechFacts(ctx context.Context, chatID string) (int, error) {
-	q := s.db.NewSelect().Model((*domain.TechFact)(nil))
+	q := s.db.NewSelect().Model((*domain.TechFact)(nil)).Where(legacyChatPredicate)
 	if chatID != "" {
 		q = q.Where("chat_id = ?", chatID)
 	}

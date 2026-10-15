@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package iulita.mobile.v1;
+
+import "google/protobuf/timestamp.proto";
+import "iulita/mobile/v1/common.proto";
+
+option go_package = "github.com/iulita-ai/iulita/api/gen/go/iulita/mobile/v1;mobilev1";
+option java_package = "ai.iulita.mobile.v1";
+option java_multiple_files = true;
+
+// Optional Vision feature, disabled until BE31/CL15; never a generic HTTP
+// artifact download ticket. No content delivery or retention via chat events.
+service ArtifactService {
+  rpc Upload(UploadArtifactRequest) returns (Artifact) { option (rpc_policy) = { feature: FEATURE_VISION stage: TOKEN_STAGE_ACTIVE scopes: "devices:sync" binding: RESOURCE_BINDING_TOKEN_DEVICE idempotent: true }; }
+  rpc Read(ReadArtifactRequest) returns (ArtifactChunk) { option (rpc_policy) = { feature: FEATURE_VISION stage: TOKEN_STAGE_ACTIVE scopes: "devices:read" binding: RESOURCE_BINDING_TOKEN_DEVICE idempotent: true }; }
+}
+
+enum ArtifactMediaType { ARTIFACT_MEDIA_TYPE_UNSPECIFIED = 0; ARTIFACT_MEDIA_TYPE_PNG = 1; ARTIFACT_MEDIA_TYPE_JPEG = 2; ARTIFACT_MEDIA_TYPE_WEBP = 3; }
+message ArtifactBinding { string task_id = 1; string session_id = 2; uint64 session_generation = 3; string snapshot_id = 4; uint64 window_id = 5; string package_name = 6; string consent_revision = 7; }
+message UploadArtifactRequest {
+  ClientContext client = 1; Operation operation = 2; string upload_id = 3;
+  ArtifactBinding binding = 4; ArtifactMediaType media_type = 5; uint64 total_bytes = 6;
+  bytes content_sha256 = 7; uint64 offset = 8; bytes chunk = 9; bool finalize = 10;
+}
+message Artifact { string artifact_id = 1; string upload_id = 2; uint64 committed_bytes = 3; bool complete = 4; google.protobuf.Timestamp expires_at = 5; }
+message ReadArtifactRequest { ClientContext client = 1; string artifact_id = 2; uint64 offset = 3; uint32 max_bytes = 4; }
+message ArtifactChunk { string artifact_id = 1; uint64 offset = 2; bytes chunk = 3; bool eof = 4; google.protobuf.Timestamp expires_at = 5; }

@@ -61,16 +61,9 @@ func NewService(store storage.Repository, jwtSecret string, tokenExpiry, refresh
 
 // Login validates credentials and returns an access token and refresh token.
 func (s *Service) Login(ctx context.Context, username, password string) (accessToken, refreshToken string, mustChangePass bool, err error) {
-	user, err := s.store.GetUserByUsername(ctx, username)
+	user, err := VerifyPasswordCredentials(ctx, s.store, username, password)
 	if err != nil {
-		return "", "", false, fmt.Errorf("looking up user: %w", err)
-	}
-	if user == nil {
-		return "", "", false, ErrInvalidCredentials
-	}
-
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		return "", "", false, ErrInvalidCredentials
+		return "", "", false, err
 	}
 
 	accessToken, err = s.createToken(user, s.tokenTTL)
@@ -92,7 +85,7 @@ func (s *Service) RefreshToken(ctx context.Context, tokenStr string) (string, er
 		return "", fmt.Errorf("invalid refresh token: %w", err)
 	}
 	user, err := s.store.GetUser(ctx, claims.UserID)
-	if err != nil || user == nil {
+	if err != nil || user == nil || user.Disabled {
 		return "", ErrUserNotFound
 	}
 	return s.createToken(user, s.tokenTTL)
@@ -128,7 +121,7 @@ func HashPassword(password string) (string, error) {
 // ChangePassword validates the old password and sets a new one.
 func (s *Service) ChangePassword(ctx context.Context, userID, oldPass, newPass string) error {
 	user, err := s.store.GetUser(ctx, userID)
-	if err != nil || user == nil {
+	if err != nil || user == nil || user.Disabled {
 		return ErrUserNotFound
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(oldPass)); err != nil {

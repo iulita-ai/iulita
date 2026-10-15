@@ -59,6 +59,9 @@ func (s *Server) handleStats(c *fiber.Ctx) error {
 			return s.errorResponse(c, err)
 		}
 		for _, id := range chatIDs {
+			if domain.IsMobileChatID(id) {
+				continue
+			}
 			count, err := s.store.CountMessages(ctx, id)
 			if err != nil {
 				return s.errorResponse(c, err)
@@ -111,6 +114,9 @@ func (s *Server) handleChats(c *fiber.Ctx) error {
 
 	result := make([]chatInfo, 0, len(chatIDs))
 	for _, id := range chatIDs {
+		if domain.IsMobileChatID(id) {
+			continue
+		}
 		count, err := s.store.CountMessages(ctx, id)
 		if err != nil {
 			return s.errorResponse(c, err)
@@ -241,6 +247,9 @@ func (s *Server) handleReminders(c *fiber.Ctx) error {
 func (s *Server) handleDirectives(c *fiber.Ctx) error {
 	ctx := c.Context()
 	chatID := c.Query("chat_id")
+	if domain.IsMobileChatID(chatID) {
+		return c.SendStatus(fiber.StatusNotFound)
+	}
 
 	if chatID == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -261,6 +270,9 @@ func (s *Server) handleDirectives(c *fiber.Ctx) error {
 func (s *Server) handleMessages(c *fiber.Ctx) error {
 	ctx := c.Context()
 	chatID := c.Query("chat_id")
+	if domain.IsMobileChatID(chatID) {
+		return c.SendStatus(fiber.StatusNotFound)
+	}
 	limit := queryInt(c, "limit", 50)
 	beforeID := int64(queryInt(c, "before_id", 0))
 

@@ -20,6 +20,7 @@ func (s *Store) GetDirectiveByUser(ctx context.Context, userID string) (*domain.
 	d := new(domain.Directive)
 	err := s.db.NewSelect().
 		Model(d).
+		Where(legacyChatPredicate).
 		Where("user_id = ?", userID).
 		Limit(1).
 		Scan(ctx)
@@ -49,6 +50,7 @@ func (s *Store) SearchFactsByUser(ctx context.Context, userID, query string, lim
 	}
 	err := s.db.NewSelect().
 		Model(&facts).
+		Where(legacyChatPredicate).
 		Where("user_id = ?", userID).
 		Where("id IN (SELECT rowid FROM facts_fts WHERE facts_fts MATCH ?)", match).
 		OrderExpr("access_count DESC, last_accessed_at DESC").
@@ -81,6 +83,7 @@ func (s *Store) GetRecentFactsByUser(ctx context.Context, userID string, limit i
 	}
 	err := s.db.NewSelect().
 		Model(&facts).
+		Where(legacyChatPredicate).
 		Where("user_id = ?", userID).
 		Order("last_accessed_at DESC").
 		Limit(fetchLimit).
@@ -105,6 +108,7 @@ func (s *Store) GetAllFactsByUser(ctx context.Context, userID string) ([]domain.
 	var facts []domain.Fact
 	q := s.db.NewSelect().
 		Model(&facts).
+		Where(legacyChatPredicate).
 		Order("created_at ASC")
 	if userID != "" {
 		q = q.Where("user_id = ?", userID)
@@ -129,6 +133,7 @@ func (s *Store) GetRecentInsightsByUser(ctx context.Context, userID string, limi
 	}
 	err := s.db.NewSelect().
 		Model(&insights).
+		Where(legacyChatPredicate).
 		Where("user_id = ?", userID).
 		Where("expires_at IS NULL OR expires_at > ?", time.Now()).
 		OrderExpr("quality DESC, access_count DESC, created_at DESC").
@@ -165,6 +170,7 @@ func (s *Store) SearchInsightsByUser(ctx context.Context, userID, query string, 
 	}
 	err := s.db.NewSelect().
 		Model(&insights).
+		Where(legacyChatPredicate).
 		Where("user_id = ?", userID).
 		Where("id IN (SELECT rowid FROM insights_fts WHERE insights_fts MATCH ?)", match).
 		Where("expires_at IS NULL OR expires_at > ?", time.Now()).
@@ -190,6 +196,7 @@ func (s *Store) SearchInsightsByUser(ctx context.Context, userID, query string, 
 func (s *Store) CountInsightsByUser(ctx context.Context, userID string) (int, error) {
 	q := s.db.NewSelect().
 		Model((*domain.Insight)(nil)).
+		Where(legacyChatPredicate).
 		Where("expires_at IS NULL OR expires_at > ?", time.Now())
 	if userID != "" {
 		q = q.Where("user_id = ?", userID)
@@ -205,7 +212,7 @@ func (s *Store) CountInsightsByUser(ctx context.Context, userID string) (int, er
 
 func (s *Store) GetTechFactsByUser(ctx context.Context, userID string) ([]domain.TechFact, error) {
 	var facts []domain.TechFact
-	q := s.db.NewSelect().Model(&facts)
+	q := s.db.NewSelect().Model(&facts).Where(legacyChatPredicate)
 	if userID != "" {
 		q = q.Where("user_id = ?", userID)
 	}
@@ -223,6 +230,7 @@ func (s *Store) GetTechFactsByCategoryAndUser(ctx context.Context, userID, categ
 	var facts []domain.TechFact
 	err := s.db.NewSelect().
 		Model(&facts).
+		Where(legacyChatPredicate).
 		Where("user_id = ?", userID).
 		Where("category = ?", category).
 		Order("key ASC").
@@ -234,7 +242,7 @@ func (s *Store) GetTechFactsByCategoryAndUser(ctx context.Context, userID, categ
 }
 
 func (s *Store) CountTechFactsByUser(ctx context.Context, userID string) (int, error) {
-	q := s.db.NewSelect().Model((*domain.TechFact)(nil))
+	q := s.db.NewSelect().Model((*domain.TechFact)(nil)).Where(legacyChatPredicate)
 	if userID != "" {
 		q = q.Where("user_id = ?", userID)
 	}
@@ -270,6 +278,7 @@ func (s *Store) SearchFactsHybridByUser(ctx context.Context, userID string, quer
 	err = s.db.NewSelect().
 		TableExpr("fact_vectors fv").
 		Join("JOIN facts f ON f.id = fv.fact_id").
+		Where(legacyChatFilter("f.chat_id")).
 		Where("f.user_id = ?", userID).
 		ColumnExpr("fv.fact_id, fv.embedding").
 		Scan(ctx, &rows)
@@ -329,6 +338,7 @@ func (s *Store) SearchFactsHybridByUser(ctx context.Context, userID string, quer
 	var facts []domain.Fact
 	err = s.db.NewSelect().
 		Model(&facts).
+		Where(legacyChatPredicate).
 		Where("id IN (?)", ids).
 		Scan(ctx)
 	if err != nil {
@@ -369,6 +379,7 @@ func (s *Store) SearchInsightsHybridByUser(ctx context.Context, userID string, q
 	err = s.db.NewSelect().
 		TableExpr("insight_vectors iv").
 		Join("JOIN insights i ON i.id = iv.insight_id").
+		Where(legacyChatFilter("i.chat_id")).
 		Where("i.user_id = ?", userID).
 		ColumnExpr("iv.insight_id, iv.embedding").
 		Scan(ctx, &rows)
@@ -428,6 +439,7 @@ func (s *Store) SearchInsightsHybridByUser(ctx context.Context, userID string, q
 	var insights []domain.Insight
 	err = s.db.NewSelect().
 		Model(&insights).
+		Where(legacyChatPredicate).
 		Where("id IN (?)", ids).
 		Scan(ctx)
 	if err != nil {

@@ -1,0 +1,132 @@
+syntax = "proto3";
+
+package iulita.mobile.v1;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "iulita/mobile/v1/common.proto";
+
+option go_package = "github.com/iulita-ai/iulita/api/gen/go/iulita/mobile/v1;mobilev1";
+option java_package = "ai.iulita.mobile.v1";
+option java_multiple_files = true;
+
+service ChatService {
+  rpc CreateConversation(CreateConversationRequest) returns (Conversation) { option (rpc_policy) = { feature: FEATURE_CHAT stage: TOKEN_STAGE_ACTIVE scopes: "chats:write" binding: RESOURCE_BINDING_OWNER idempotent: true }; }
+  rpc ListConversations(ListConversationsRequest) returns (ListConversationsResponse) { option (rpc_policy) = { feature: FEATURE_CHAT stage: TOKEN_STAGE_ACTIVE scopes: "chats:read" binding: RESOURCE_BINDING_OWNER idempotent: true }; }
+  rpc GetConversation(GetConversationRequest) returns (Conversation) { option (rpc_policy) = { feature: FEATURE_CHAT stage: TOKEN_STAGE_ACTIVE scopes: "chats:read" binding: RESOURCE_BINDING_OWNER idempotent: true }; }
+  rpc UpdateConversation(UpdateConversationRequest) returns (Conversation) { option (rpc_policy) = { feature: FEATURE_CHAT stage: TOKEN_STAGE_ACTIVE scopes: "chats:write" binding: RESOURCE_BINDING_OWNER idempotent: true }; }
+  rpc ArchiveConversation(ArchiveConversationRequest) returns (Conversation) { option (rpc_policy) = { feature: FEATURE_CHAT stage: TOKEN_STAGE_ACTIVE scopes: "chats:write" binding: RESOURCE_BINDING_OWNER idempotent: true }; }
+  rpc ClearHistory(ClearHistoryRequest) returns (Conversation) { option (rpc_policy) = { feature: FEATURE_CHAT stage: TOKEN_STAGE_ACTIVE scopes: "chats:write" binding: RESOURCE_BINDING_OWNER idempotent: true }; }
+  rpc ListMessages(ListMessagesRequest) returns (ListMessagesResponse) { option (rpc_policy) = { feature: FEATURE_CHAT stage: TOKEN_STAGE_ACTIVE scopes: "chats:read" binding: RESOURCE_BINDING_OWNER idempotent: true }; }
+  rpc SendMessage(SendMessageRequest) returns (Turn) { option (rpc_policy) = { feature: FEATURE_CHAT stage: TOKEN_STAGE_ACTIVE scopes: "chats:write" binding: RESOURCE_BINDING_OWNER idempotent: true }; }
+  rpc GetTurn(GetTurnRequest) returns (Turn) { option (rpc_policy) = { feature: FEATURE_CHAT stage: TOKEN_STAGE_ACTIVE scopes: "chats:read" binding: RESOURCE_BINDING_OWNER idempotent: true }; }
+  rpc CancelTurn(CancelTurnRequest) returns (Turn) { option (rpc_policy) = { feature: FEATURE_CHAT stage: TOKEN_STAGE_ACTIVE scopes: "chats:write" binding: RESOURCE_BINDING_OWNER idempotent: true }; }
+  rpc RespondToPrompt(RespondToPromptRequest) returns (Prompt) { option (rpc_policy) = { feature: FEATURE_CHAT stage: TOKEN_STAGE_ACTIVE scopes: "chats:write" binding: RESOURCE_BINDING_OWNER idempotent: true }; }
+  rpc RespondToConfirmation(RespondToConfirmationRequest) returns (Prompt) { option (rpc_policy) = { feature: FEATURE_CHAT stage: TOKEN_STAGE_ACTIVE scopes: "chats:write" binding: RESOURCE_BINDING_OWNER idempotent: true }; }
+  rpc GetSnapshot(GetSnapshotRequest) returns (ChatSnapshot) { option (rpc_policy) = { feature: FEATURE_CHAT stage: TOKEN_STAGE_ACTIVE scopes: "chats:read" binding: RESOURCE_BINDING_OWNER idempotent: true }; }
+  rpc MarkRead(MarkReadRequest) returns (ReadPosition) { option (rpc_policy) = { feature: FEATURE_CHAT stage: TOKEN_STAGE_ACTIVE scopes: "chats:write" binding: RESOURCE_BINDING_OWNER idempotent: true }; }
+  rpc WatchEvents(WatchEventsRequest) returns (stream ChatEvent) { option (rpc_policy) = { feature: FEATURE_CHAT stage: TOKEN_STAGE_ACTIVE scopes: "chats:read" binding: RESOURCE_BINDING_OWNER }; }
+}
+
+enum MemoryMode { MEMORY_MODE_UNSPECIFIED = 0; MEMORY_MODE_ISOLATED = 1; MEMORY_MODE_ACCOUNT = 2; }
+enum MessageRole { MESSAGE_ROLE_UNSPECIFIED = 0; MESSAGE_ROLE_USER = 1; MESSAGE_ROLE_ASSISTANT = 2; }
+enum TurnState {
+  TURN_STATE_UNSPECIFIED = 0; TURN_STATE_ACCEPTED = 1; TURN_STATE_QUEUED = 2;
+  TURN_STATE_RUNNING = 3; TURN_STATE_AWAITING_PROMPT = 4; TURN_STATE_COMPLETED = 5;
+  TURN_STATE_FAILED = 6; TURN_STATE_CANCELLED = 7; TURN_STATE_UNKNOWN_OUTCOME = 8;
+}
+
+message ConversationSettings { string profile_id = 1; MemoryMode memory_mode = 2; }
+message Conversation {
+  string conversation_id = 1; string title = 2; ConversationSettings settings = 3;
+  uint64 version = 4; uint64 history_generation = 5; bool archived = 6;
+  google.protobuf.Timestamp created_at = 7; google.protobuf.Timestamp updated_at = 8;
+  ReadPosition read_position = 9; uint64 unread_count = 10;
+}
+message Message {
+  string message_id = 1; string conversation_id = 2; string turn_id = 3;
+  uint64 turn_seq = 4; uint64 message_seq = 5; uint64 history_generation = 6;
+  MessageRole role = 7; string text = 8; google.protobuf.Timestamp created_at = 9;
+}
+message Turn {
+  string turn_id = 1; string conversation_id = 2; string client_message_id = 3;
+  uint64 turn_seq = 4; uint64 history_generation = 5; TurnState state = 6;
+  bool cancellation_requested = 7; google.protobuf.Timestamp cancellation_requested_at = 8;
+  string input_message_id = 9; string output_message_id = 10;
+  ConversationSettings accepted_settings = 11; ErrorReason outcome_reason = 12;
+}
+
+message CreateConversationRequest { ClientContext client = 1; Operation operation = 2; string title = 3; ConversationSettings settings = 4; }
+message ListConversationsRequest { ClientContext client = 1; uint32 page_size = 2; string page_token = 3; bool include_archived = 4; }
+message ListConversationsResponse { repeated Conversation conversations = 1; string next_page_token = 2; }
+message GetConversationRequest { ClientContext client = 1; string conversation_id = 2; }
+message UpdateConversationRequest { ClientContext client = 1; Operation operation = 2; string conversation_id = 3; uint64 expected_version = 4; optional string title = 5; ConversationSettings settings = 6; }
+message ArchiveConversationRequest { ClientContext client = 1; Operation operation = 2; string conversation_id = 3; uint64 expected_version = 4; bool archived = 5; }
+message ClearHistoryRequest { ClientContext client = 1; Operation operation = 2; string conversation_id = 3; uint64 expected_history_generation = 4; }
+message ListMessagesRequest { ClientContext client = 1; string conversation_id = 2; uint64 history_generation = 3; uint32 page_size = 4; string page_token = 5; }
+message ListMessagesResponse {
+  repeated Message messages = 1;
+  string next_page_token = 2;
+  uint64 history_generation = 3;
+}
+message SendMessageRequest {
+  ClientContext client = 1; Operation operation = 2; string conversation_id = 3;
+  string client_message_id = 4; uint64 expected_history_generation = 5; string text = 6;
+}
+message GetTurnRequest {
+  ClientContext client = 1; string conversation_id = 2;
+  oneof lookup { string turn_id = 3; string client_message_id = 4; }
+}
+message CancelTurnRequest { ClientContext client = 1; Operation operation = 2; string conversation_id = 3; string turn_id = 4; uint64 history_generation = 5; }
+
+enum PromptState { PROMPT_STATE_UNSPECIFIED = 0; PROMPT_STATE_OPEN = 1; PROMPT_STATE_ANSWERED = 2; PROMPT_STATE_REJECTED = 3; PROMPT_STATE_EXPIRED = 4; PROMPT_STATE_INVALIDATED = 5; }
+enum Decision { DECISION_UNSPECIFIED = 0; DECISION_APPROVE = 1; DECISION_REJECT = 2; }
+message PromptBinding { string conversation_id = 1; string turn_id = 2; string prompt_id = 3; uint64 history_generation = 4; }
+message Choice { string choice_id = 1; string label = 2; }
+message ChoicePrompt { string question = 1; repeated Choice choices = 2; }
+message SecurityConfirmation {
+  string operation_id = 1; string nonce = 2; bytes fingerprint_sha256 = 3;
+  string safe_preview = 4; uint64 max_bytes = 5; google.protobuf.Timestamp expires_at = 6;
+  // No Actor input and no standing/global permission: server verifies actor.
+}
+message Prompt {
+  PromptBinding binding = 1; PromptState state = 2; google.protobuf.Timestamp expires_at = 3;
+  oneof body { ChoicePrompt choice = 4; SecurityConfirmation confirmation = 5; }
+}
+message RespondToPromptRequest { ClientContext client = 1; Operation operation = 2; PromptBinding binding = 3; string choice_id = 4; }
+message RespondToConfirmationRequest {
+  ClientContext client = 1; Operation operation = 2; PromptBinding binding = 3;
+  string security_operation_id = 4; string nonce = 5; bytes fingerprint_sha256 = 6;
+  Decision decision = 7; uint64 granted_max_bytes = 8;
+}
+
+message ConversationIDs { repeated string conversation_ids = 1; }
+message Subscription {
+  oneof filter { google.protobuf.Empty all_owned = 1; ConversationIDs selected = 2; }
+}
+message GetSnapshotRequest { ClientContext client = 1; Subscription subscription = 2; uint32 page_size = 3; string page_token = 4; }
+message ConversationSnapshot { Conversation conversation = 1; repeated Turn active_turns = 2; repeated Prompt pending_prompts = 3; repeated TaskReference tasks = 4; }
+message ChatSnapshot {
+  string snapshot_id = 1; string cursor = 2; uint64 watermark = 3;
+  repeated ConversationSnapshot conversations = 4; string next_page_token = 5;
+  google.protobuf.Timestamp expires_at = 6;
+  // All pages describe the SAME materialized snapshot/watermark, not new cuts.
+}
+message ReadPosition { string conversation_id = 1; uint64 history_generation = 2; uint64 message_seq = 3; }
+message MarkReadRequest { ClientContext client = 1; string conversation_id = 2; uint64 history_generation = 3; uint64 visible_message_seq = 4; }
+message WatchEventsRequest { ClientContext client = 1; Subscription subscription = 2; string snapshot_id = 3; string cursor = 4; }
+message MessageReference { string message_id = 1; uint64 message_seq = 2; }
+message TokenDelta { uint64 chunk_seq = 1; string text = 2; }
+message GenerationReset { uint64 new_generation = 1; }
+message TaskReference { string task_id = 1; } // No phone content or free-form summary.
+message ChatEvent {
+  string event_id = 1; string cursor = 2; uint64 durable_seq = 3;
+  string conversation_id = 4; string turn_id = 5; uint64 history_generation = 6;
+  oneof body {
+    Conversation conversation = 7; MessageReference message = 8; Turn turn = 9;
+    Prompt prompt = 10; ReadPosition read = 11; GenerationReset reset = 12;
+    TokenDelta delta = 13; TaskReference task = 14;
+  }
+  // Delta is transient and never advances a durable cursor. Other bodies are
+  // owner-scoped durable metadata; raw/derived phone results NEVER enter here.
+}

@@ -107,6 +107,21 @@ allow_register = false
 # Enable multi-user mode (admin can create/manage users via dashboard).
 multi_user = false
 
+[mobile]
+# Mobile backend features, all disabled by default; restart required.
+# Separate TLS gRPC/OAuth runtime requires explicit offline bootstrap and gates.
+# UI and Vision remain unavailable until their joint native acceptance gates.
+# Environment: IULITA_MOBILE_CHAT_ENABLED, IULITA_MOBILE_DEVICE_ENABLED,
+# IULITA_MOBILE_UI_ENABLED, IULITA_MOBILE_VISION_ENABLED.
+chat_enabled = false
+device_enabled = false
+# UI requires device; Vision requires UI. These are server gates, not phone grants.
+ui_enabled = false
+vision_enabled = false
+# Independent realm/DB/TLS/client settings (no token or key material).
+# IULITA_MOBILE_RUNTIME_FILE; see deploy/mobile/runtime.example.json.
+runtime_file = ""
+
 # ============================================================================
 # Skills Configuration
 # ============================================================================

@@ -1,4 +1,17 @@
 .PHONY: build run clean tidy setup-hooks check-secrets ui build-go dev version release console server test test-go test-ui test-coverage docs docs-dev docs-build
+.PHONY: proto-mobile proto-mobile-go proto-mobile-jvm proto-mobile-check
+
+proto-mobile:
+	python3 scripts/generate_mobile_proto.py all
+
+proto-mobile-go:
+	python3 scripts/generate_mobile_proto.py go
+
+proto-mobile-jvm:
+	python3 scripts/generate_mobile_proto.py jvm
+
+proto-mobile-check:
+	python3 scripts/generate_mobile_proto.py check
 
 APP_NAME := iulita
 BUILD_DIR := bin
@@ -91,3 +104,12 @@ test-ui:
 test-coverage:
 	go test -cover ./...
 	cd ui && npm run test:coverage
+
+# Isolated persistent Fosite feasibility experiment (not linked into iulita).
+.PHONY: test-mobile-oauth
+test-mobile-oauth:
+	cd experiments/mobileoauth && CGO_ENABLED=0 go test -count=1 ./...
+
+.PHONY: test-mobile-storage
+test-mobile-storage:
+	CGO_ENABLED=0 go test ./internal/mobile/...

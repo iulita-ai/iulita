@@ -311,6 +311,11 @@ func (s *Store) isKnownKey(key string) bool {
 
 // restartOnlyKeys are keys that cannot be hot-reloaded and require a restart.
 var restartOnlyKeys = map[string]bool{
+	"mobile.chat_enabled":                 true,
+	"mobile.device_enabled":               true,
+	"mobile.ui_enabled":                   true,
+	"mobile.vision_enabled":               true,
+	"mobile.runtime_file":                 true,
 	"skills.http.consent_threshold_bytes": true,
 	"skills.http.max_download_bytes":      true,
 	"skills.http.max_upload_bytes":        true,

@@ -28,6 +28,9 @@ func sanitizeFTS5Query(q string) string {
 
 // SearchMessages returns chat-scoped messages matching the query, newest first.
 func (s *Store) SearchMessages(ctx context.Context, chatID, query string, limit int) ([]domain.ChatMessage, error) {
+	if err := domain.CheckLegacyChatID(chatID); err != nil {
+		return nil, err
+	}
 	return s.searchMessages(ctx, "chat_id = ?", chatID, query, limit)
 }
 
@@ -51,6 +54,7 @@ func (s *Store) searchMessages(ctx context.Context, scopeClause, scopeVal, query
 	var msgs []domain.ChatMessage
 	err := s.db.NewSelect().
 		Model(&msgs).
+		Where(legacyChatPredicate).
 		Where(scopeClause, scopeVal).
 		Where("id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)", match).
 		OrderExpr("id DESC").

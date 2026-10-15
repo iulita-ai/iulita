@@ -1,0 +1,152 @@
+syntax = "proto3";
+
+package iulita.mobile.v1;
+
+import "google/protobuf/timestamp.proto";
+import "iulita/mobile/v1/common.proto";
+
+option go_package = "github.com/iulita-ai/iulita/api/gen/go/iulita/mobile/v1;mobilev1";
+option java_package = "ai.iulita.mobile.v1";
+option java_multiple_files = true;
+
+service DeviceService {
+  rpc ActivateDevice(ActivateDeviceRequest) returns (Device) { option (rpc_policy) = { feature: FEATURE_IDENTITY stage: TOKEN_STAGE_PENDING_ACTIVATION binding: RESOURCE_BINDING_TOKEN_DEVICE idempotent: true }; }
+  rpc CompleteRecovery(CompleteRecoveryRequest) returns (Device) { option (rpc_policy) = { feature: FEATURE_IDENTITY stage: TOKEN_STAGE_PROVISIONAL_RECOVERY binding: RESOURCE_BINDING_TOKEN_DEVICE fresh_authentication: true idempotent: true }; }
+  rpc ListDevices(ListDevicesRequest) returns (ListDevicesResponse) { option (rpc_policy) = { feature: FEATURE_IDENTITY stage: TOKEN_STAGE_ACTIVE scopes: "devices:read" binding: RESOURCE_BINDING_OWNER idempotent: true }; }
+  rpc RevokeDevice(RevokeDeviceRequest) returns (Device) { option (rpc_policy) = { feature: FEATURE_IDENTITY stage: TOKEN_STAGE_ACTIVE scopes: "devices:manage" binding: RESOURCE_BINDING_OWNER fresh_authentication: true idempotent: true }; }
+  rpc Control(stream ClientControlFrame) returns (stream ServerControlFrame) { option (rpc_policy) = { feature: FEATURE_DEVICE stage: TOKEN_STAGE_ACTIVE scopes: "devices:receive" scopes: "devices:sync" binding: RESOURCE_BINDING_TOKEN_DEVICE }; }
+  rpc SyncObservations(SyncObservationsRequest) returns (SyncObservationsResponse) { option (rpc_policy) = { feature: FEATURE_DEVICE stage: TOKEN_STAGE_ACTIVE scopes: "devices:sync" binding: RESOURCE_BINDING_TOKEN_DEVICE idempotent: true }; }
+  rpc GetTask(GetTaskRequest) returns (Task) { option (rpc_policy) = { feature: FEATURE_DEVICE stage: TOKEN_STAGE_ACTIVE scopes: "devices:read" binding: RESOURCE_BINDING_OWNER idempotent: true }; }
+  rpc GetTaskResult(GetTaskResultRequest) returns (EphemeralResult) { option (rpc_policy) = { feature: FEATURE_DEVICE stage: TOKEN_STAGE_ACTIVE scopes: "devices:read" binding: RESOURCE_BINDING_TOKEN_DEVICE idempotent: true }; }
+}
+
+enum DeviceState { DEVICE_STATE_UNSPECIFIED = 0; DEVICE_STATE_PENDING = 1; DEVICE_STATE_ACTIVE = 2; DEVICE_STATE_REVOKED = 3; DEVICE_STATE_EXPIRED = 4; }
+message Device { string device_id = 1; string label = 2; DeviceState state = 3; uint64 credential_epoch = 4; google.protobuf.Timestamp last_seen = 5; }
+// P-256 JWK x/y coordinates, exactly 32 bytes. Thumbprint is computed server-
+// side using RFC 7638, never trusted from this message.
+message InstallationPublicKey { bytes p256_x = 1; bytes p256_y = 2; }
+message InstallationProof { string nonce = 1; bytes signature_der = 2; }
+message ActivateDeviceRequest { ClientContext client = 1; Operation operation = 2; InstallationPublicKey public_key = 3; InstallationProof proof = 4; string label = 5; }
+message CompleteRecoveryRequest { ClientContext client = 1; Operation operation = 2; InstallationProof proof = 3; }
+message ListDevicesRequest { ClientContext client = 1; uint32 page_size = 2; string page_token = 3; }
+message ListDevicesResponse { repeated Device devices = 1; string next_page_token = 2; }
+message RevokeDeviceRequest { ClientContext client = 1; Operation operation = 2; string device_id = 3; }
+
+enum ActionKind {
+  ACTION_KIND_UNSPECIFIED = 0;
+  ACTION_KIND_READ_STATUS = 1; ACTION_KIND_READ_LOCATION = 2; ACTION_KIND_READ_NOTIFICATIONS = 3;
+  ACTION_KIND_SET_TORCH = 4; ACTION_KIND_OPEN_NAVIGATION = 5;
+  ACTION_KIND_UI_OBSERVE = 6; ACTION_KIND_UI_CLICK = 7; ACTION_KIND_UI_SET_TEXT = 8;
+  ACTION_KIND_UI_SCROLL = 9; ACTION_KIND_UI_SUBMIT = 10;
+}
+enum SessionState { SESSION_STATE_UNSPECIFIED = 0; SESSION_STATE_ACTIVE = 1; SESSION_STATE_REVOKED = 2; SESSION_STATE_EXPIRED = 3; }
+message SessionMirror {
+  string session_id = 1; uint64 session_generation = 2; SessionState state = 3;
+  repeated string allowed_packages = 4; repeated ActionKind allowed_actions = 5;
+  google.protobuf.Timestamp expires_at = 6; bool screen_content_allowed = 7;
+  bool screenshot_allowed = 8; string policy_revision = 9;
+  // Report of a NATIVE-created session, never a server-created grant.
+}
+message DeviceCapabilities {
+  uint32 protocol_version = 1; repeated ActionKind supported_actions = 2;
+  repeated string granted_categories = 3; string policy_revision = 4;
+  google.protobuf.Timestamp reported_at = 5; bool ui_safety_control_available = 6;
+}
+message ControlHello { ClientContext client = 1; uint64 last_server_seq = 2; }
+message LeaseRenewal { string task_id = 1; string session_id = 2; uint64 session_generation = 3; }
+message Lease {
+  string task_id = 1; string session_id = 2; uint64 session_generation = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+enum ReceiptState {
+  RECEIPT_STATE_UNSPECIFIED = 0; RECEIPT_STATE_DELIVERED = 1; RECEIPT_STATE_ACCEPTED = 2;
+  RECEIPT_STATE_STARTED = 3; RECEIPT_STATE_AWAITING_CONFIRMATION = 4; RECEIPT_STATE_NEEDS_USER_ACTION = 5;
+  RECEIPT_STATE_SUCCEEDED = 6; RECEIPT_STATE_FAILED = 7; RECEIPT_STATE_CANCELLED = 8;
+  RECEIPT_STATE_EXPIRED = 9; RECEIPT_STATE_UNKNOWN_OUTCOME = 10;
+}
+message CommandReceipt {
+  string receipt_id = 1; string command_id = 2; string task_id = 3; uint64 server_seq = 4;
+  ReceiptState state = 5; uint64 session_generation = 6;
+  google.protobuf.Timestamp occurred_at = 7; ErrorReason reason = 8;
+  bool dispatch_started = 9; bytes payload_digest_sha256 = 10;
+}
+message ClientControlFrame {
+  uint32 protocol_version = 1; uint64 control_stream_epoch = 2;
+  oneof body { ControlHello hello = 3; DeviceCapabilities capabilities = 4; SessionMirror session = 5; CommandReceipt receipt = 6; LeaseRenewal renew = 7; }
+  // First frame is hello with epoch 0. All subsequent frames must match the
+  // server-issued epoch; old epoch frames NEVER renew authority.
+}
+message ControlWelcome { uint64 control_stream_epoch = 1; uint64 current_server_seq = 2; ServerInfo server = 3; }
+message ReceiptAck { string receipt_id = 1; }
+message SessionRevocation { string session_id = 1; uint64 session_generation = 2; ErrorReason reason = 3; }
+message ServerControlFrame {
+  uint32 protocol_version = 1; uint64 control_stream_epoch = 2;
+  oneof body { ControlWelcome welcome = 3; Command command = 4; Lease lease = 5; ReceiptAck receipt_ack = 6; SessionRevocation revoked = 7; Task task = 8; }
+}
+
+message TaskOrigin {
+  string channel_type = 1; string channel_instance = 2; string binding_revision = 3;
+  string conversation_id = 4; string turn_id = 5;
+  // Server-created exact private origin; not a client-selected delivery target.
+}
+enum TaskState {
+  TASK_STATE_UNSPECIFIED = 0; TASK_STATE_QUEUED = 1; TASK_STATE_RUNNING = 2;
+  TASK_STATE_AWAITING_CONFIRMATION = 3; TASK_STATE_NEEDS_USER_ACTION = 4;
+  TASK_STATE_SUCCEEDED = 5; TASK_STATE_FAILED = 6; TASK_STATE_CANCELLED = 7;
+  TASK_STATE_EXPIRED = 8; TASK_STATE_UNKNOWN_OUTCOME = 9;
+}
+message Task {
+  string task_id = 1; string device_id = 2; TaskOrigin origin = 3; TaskState state = 4;
+  bool cancellation_requested = 5; ErrorReason outcome_reason = 6;
+  google.protobuf.Timestamp expires_at = 7; uint32 current_step = 8;
+  string result_destination_device_id = 9; // Result reads bind to this verified viewer; observations bind to source device_id.
+  // No arbitrary model summary/raw content in task or receipt metadata.
+}
+message GetTaskRequest { ClientContext client = 1; string task_id = 2; }
+message GetTaskResultRequest { ClientContext client = 1; string task_id = 2; }
+
+message ScenarioBinding { string scenario_id = 1; uint32 version = 2; string package_name = 3; bytes signer_sha256 = 4; string supported_app_version = 5; string ui_language = 6; string layout_revision = 7; }
+message TaskEnvelope {
+  string goal = 1; string target_object = 2; string recipient = 3;
+  repeated ActionKind allowed_actions = 4; ScenarioBinding scenario = 5;
+  google.protobuf.Timestamp expires_at = 6;
+  // Sensitive fields are ephemeral, not durable history/outbox material.
+}
+message ReadAction { ActionKind kind = 1; }
+message SystemAction {
+  oneof body { bool torch_enabled = 1; NavigationDestination navigation = 2; }
+}
+message NavigationDestination { double latitude = 1; double longitude = 2; string label = 3; }
+message UIAction { ActionKind kind = 1; string node_handle = 2; string text = 3; int32 scroll_direction = 4; }
+message Command {
+  uint32 protocol_version = 1; string command_id = 2; string task_id = 3; string device_id = 4;
+  uint64 server_seq = 5; bytes payload_digest_sha256 = 6;
+  google.protobuf.Timestamp issued_at = 7; google.protobuf.Timestamp expires_at = 8;
+  string session_id = 9; uint64 session_generation = 10; uint64 coordinator_epoch = 11;
+  uint32 task_step = 12; string snapshot_id = 13; TaskOrigin origin = 14; TaskEnvelope envelope = 15;
+  oneof action { ReadAction read = 16; SystemAction system = 17; UIAction ui = 18; }
+  // Fixed typed templates, no shell, arbitrary callback URL or code. Validation
+  // of this shape is not approval; native policy/lease/freshness still apply.
+}
+
+enum ObservationCategory { OBSERVATION_CATEGORY_UNSPECIFIED = 0; OBSERVATION_CATEGORY_STATUS = 1; OBSERVATION_CATEGORY_LOCATION = 2; OBSERVATION_CATEGORY_NOTIFICATIONS = 3; OBSERVATION_CATEGORY_UI_TREE = 4; }
+message DeviceStatus { optional uint32 battery_percent = 1; optional bool charging = 2; optional uint64 free_storage_bytes = 3; string model = 4; string os_version = 5; string network_type = 6; }
+message LocationReading { double latitude = 1; double longitude = 2; double accuracy_meters = 3; string provider = 4; }
+message NotificationReading { string package_name = 1; string title = 2; string text = 3; google.protobuf.Timestamp posted_at = 4; }
+message NotificationBatch { repeated NotificationReading notifications = 1; }
+message Bounds { int32 left = 1; int32 top = 2; int32 right = 3; int32 bottom = 4; }
+message UINode { string handle = 1; string class_name = 2; string text = 3; string description = 4; Bounds bounds = 5; repeated ActionKind actions = 6; }
+message UITree { string snapshot_id = 1; string package_name = 2; uint64 window_id = 3; repeated UINode nodes = 4; google.protobuf.Timestamp expires_at = 5; }
+message Observation {
+  string observation_id = 1; ObservationCategory category = 2;
+  google.protobuf.Timestamp collected_at = 3; google.protobuf.Timestamp expires_at = 4;
+  string task_id = 5; string session_id = 6; uint64 session_generation = 7;
+  oneof value { DeviceStatus status = 8; LocationReading location = 9; NotificationBatch notifications = 10; UITree ui_tree = 11; }
+  // Sensitive observations/results use ONLY ephemeral sinks and read-time TTL.
+}
+message SyncObservationsRequest { ClientContext client = 1; Operation operation = 2; repeated Observation observations = 3; }
+message SyncObservationsResponse { repeated string accepted_observation_ids = 1; }
+message EphemeralResult {
+  string task_id = 1; google.protobuf.Timestamp expires_at = 2;
+  repeated Observation observations = 3; optional string derived_text = 4;
+}

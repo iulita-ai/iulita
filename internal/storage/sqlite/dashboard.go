@@ -11,6 +11,7 @@ func (s *Store) GetChatIDs(ctx context.Context) ([]string, error) {
 	var chatIDs []string
 	err := s.db.NewSelect().
 		Model((*domain.ChatMessage)(nil)).
+		Where(legacyChatPredicate).
 		ColumnExpr("DISTINCT chat_id").
 		Order("chat_id ASC").
 		Scan(ctx, &chatIDs)
@@ -21,8 +22,12 @@ func (s *Store) GetChatIDs(ctx context.Context) ([]string, error) {
 }
 
 func (s *Store) CountMessages(ctx context.Context, chatID string) (int, error) {
+	if err := domain.CheckLegacyChatID(chatID); err != nil {
+		return 0, err
+	}
 	count, err := s.db.NewSelect().
 		Model((*domain.ChatMessage)(nil)).
+		Where(legacyChatPredicate).
 		Where("chat_id = ?", chatID).
 		Count(ctx)
 	if err != nil {
@@ -35,6 +40,7 @@ func (s *Store) ListAllReminders(ctx context.Context, chatID string) ([]domain.R
 	var reminders []domain.Reminder
 	q := s.db.NewSelect().
 		Model(&reminders).
+		Where(legacyChatPredicate).
 		Order("due_at DESC")
 	if chatID != "" {
 		q = q.Where("chat_id = ?", chatID)

@@ -1,0 +1,1027 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Iulita Mobile OAuth2 Wire Contract",
+    "version": "1.0.0",
+    "description": "Mobile HTTPS public-client PKCE wire contract. The browser handler is implemented but unmounted; token/revoke and activation/recovery remain gated. Dynamic scope/stage/family/epoch checks remain mandatory."
+  },
+  "paths": {
+    "/.well-known/oauth-authorization-server": {
+      "get": {
+        "operationId": "mobileOAuthMetadata",
+        "responses": {
+          "200": {
+            "description": "Public AS metadata; no credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Metadata"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/oauth2/authorize": {
+      "get": {
+        "operationId": "mobileOAuthAuthorize",
+        "parameters": [
+          {
+            "name": "response_type",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "const": "code"
+            }
+          },
+          {
+            "name": "client_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "redirect_uri",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^https://"
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 512,
+              "not": {
+                "pattern": "[\\r\\n\\u0000]"
+              }
+            }
+          },
+          {
+            "name": "code_challenge",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          },
+          {
+            "name": "code_challenge_method",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "const": "S256"
+            }
+          },
+          {
+            "name": "iulita_installation_key_thumbprint",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          },
+          {
+            "name": "iulita_device_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "iulita_fresh_auth",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Browser password form with an explicit subsequent consent page; no credentials or tokens in HTML",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Local invalid-request HTML page; invalid redirects never receive a Location header",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Persistent request limit reached"
+          }
+        }
+      }
+    },
+    "/oauth2/token": {
+      "post": {
+        "operationId": "mobileOAuthToken",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenForm"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "TokenResponse",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              },
+              "Pragma": {
+                "schema": {
+                  "const": "no-cache"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "OAuthError",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              },
+              "Pragma": {
+                "schema": {
+                  "const": "no-cache"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "OAuthError",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              },
+              "Pragma": {
+                "schema": {
+                  "const": "no-cache"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/oauth2/revoke": {
+      "post": {
+        "operationId": "mobileOAuthRevoke",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/RevocationForm"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Revoked or unknown token; no existence leak"
+          },
+          "400": {
+            "description": "OAuthError",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              },
+              "Pragma": {
+                "schema": {
+                  "const": "no-cache"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/oauth2/jwks": {
+      "get": {
+        "operationId": "mobileOAuthJWKS",
+        "responses": {
+          "200": {
+            "description": "Public signing keys only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SigningJWKS"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/oauth2/login": {
+      "post": {
+        "operationId": "mobileOAuthBrowserLogin",
+        "description": "Browser form only. Requires the Secure HttpOnly SameSite=Lax __Host-iulita_oauth_browser binding cookie, exact issuer Origin and flow-specific CSRF. Never accepts a dashboard JWT as password authentication.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "flow_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "csrf": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{43}$"
+                  },
+                  "username": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "password": {
+                    "type": "string",
+                    "maxLength": 72
+                  }
+                },
+                "required": [
+                  "flow_id",
+                  "csrf",
+                  "username",
+                  "password"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Explicit consent page after password verification, or generic password form error"
+          },
+          "400": {
+            "description": "Invalid/expired flow, CSRF or Origin"
+          },
+          "429": {
+            "description": "Persistent login rate limit"
+          }
+        }
+      }
+    },
+    "/oauth2/consent": {
+      "post": {
+        "operationId": "mobileOAuthBrowserConsent",
+        "description": "Browser form only. Requires the Secure HttpOnly SameSite=Lax __Host-iulita_oauth_browser binding cookie, exact issuer Origin and flow-specific CSRF. Never accepts a dashboard JWT as password authentication.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "flow_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "csrf": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{43}$"
+                  },
+                  "decision": {
+                    "enum": [
+                      "approve",
+                      "deny"
+                    ]
+                  }
+                },
+                "required": [
+                  "flow_id",
+                  "csrf",
+                  "decision"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "303": {
+            "description": "Exact registered callback with code or access_denied, original state and issuer (iss), only after the transaction commits"
+          },
+          "400": {
+            "description": "Invalid/expired/replayed consent, credential change or failed grant commit"
+          },
+          "403": {
+            "description": "Account disabled or password change required"
+          },
+          "429": {
+            "description": "Persistent consent rate limit"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "InstallationJWK": {
+        "type": "object",
+        "properties": {
+          "kty": {
+            "const": "EC"
+          },
+          "crv": {
+            "const": "P-256"
+          },
+          "x": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          },
+          "y": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          }
+        },
+        "required": [
+          "kty",
+          "crv",
+          "x",
+          "y"
+        ],
+        "additionalProperties": false
+      },
+      "Challenge": {
+        "type": "object",
+        "properties": {
+          "issuer": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://"
+          },
+          "owner_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "client_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "device_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "family_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operation_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "key_thumbprint": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          },
+          "purpose": {
+            "enum": [
+              "activate_device",
+              "recover_device"
+            ]
+          },
+          "expires_at": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "nonce": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          },
+          "signing_input": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+$"
+          }
+        },
+        "required": [
+          "issuer",
+          "owner_id",
+          "client_id",
+          "device_id",
+          "family_id",
+          "operation_id",
+          "key_thumbprint",
+          "purpose",
+          "expires_at",
+          "nonce",
+          "signing_input"
+        ],
+        "additionalProperties": false
+      },
+      "TokenResponse": {
+        "type": "object",
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "minLength": 1
+          },
+          "token_type": {
+            "const": "Bearer"
+          },
+          "expires_in": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 900
+          },
+          "refresh_token": {
+            "type": "string",
+            "minLength": 1
+          },
+          "scope": {
+            "type": "string"
+          },
+          "iulita_token_stage": {
+            "enum": [
+              "pending_activation",
+              "provisional_recovery",
+              "active"
+            ]
+          },
+          "iulita_challenge": {
+            "$ref": "#/components/schemas/Challenge"
+          }
+        },
+        "required": [
+          "access_token",
+          "token_type",
+          "expires_in",
+          "refresh_token",
+          "scope",
+          "iulita_token_stage"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "iulita_token_stage": {
+                  "const": "active"
+                }
+              },
+              "required": [
+                "iulita_token_stage"
+              ]
+            },
+            "then": {
+              "not": {
+                "required": [
+                  "iulita_challenge"
+                ]
+              },
+              "properties": {
+                "scope": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "else": {
+              "required": [
+                "iulita_challenge"
+              ],
+              "properties": {
+                "scope": {
+                  "const": ""
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "iulita_token_stage": {
+                  "const": "pending_activation"
+                }
+              },
+              "required": [
+                "iulita_token_stage"
+              ]
+            },
+            "then": {
+              "properties": {
+                "expires_in": {
+                  "maximum": 600
+                },
+                "iulita_challenge": {
+                  "properties": {
+                    "purpose": {
+                      "const": "activate_device"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "iulita_token_stage": {
+                  "const": "provisional_recovery"
+                }
+              },
+              "required": [
+                "iulita_token_stage"
+              ]
+            },
+            "then": {
+              "properties": {
+                "expires_in": {
+                  "maximum": 300
+                },
+                "iulita_challenge": {
+                  "properties": {
+                    "purpose": {
+                      "const": "recover_device"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "AccessClaims": {
+        "type": "object",
+        "properties": {
+          "iss": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://"
+          },
+          "aud": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sub": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "client_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "exp": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "iat": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "jti": {
+            "type": "string",
+            "minLength": 1
+          },
+          "scope": {
+            "type": "string"
+          },
+          "device_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "family_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "token_stage": {
+            "enum": [
+              "pending_activation",
+              "provisional_recovery",
+              "active"
+            ]
+          },
+          "owner_security_epoch": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "device_epoch": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "signing_epoch": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "auth_time": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "iss",
+          "aud",
+          "sub",
+          "client_id",
+          "exp",
+          "iat",
+          "jti",
+          "scope",
+          "device_id",
+          "family_id",
+          "token_stage",
+          "owner_security_epoch",
+          "device_epoch",
+          "signing_epoch"
+        ],
+        "additionalProperties": false
+      },
+      "Metadata": {
+        "type": "object",
+        "properties": {
+          "issuer": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://"
+          },
+          "authorization_endpoint": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://"
+          },
+          "token_endpoint": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://"
+          },
+          "revocation_endpoint": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://"
+          },
+          "jwks_uri": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://"
+          },
+          "response_types_supported": {
+            "type": "array",
+            "items": {
+              "const": "code"
+            },
+            "minItems": 1,
+            "maxItems": 1
+          },
+          "grant_types_supported": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "authorization_code",
+                "refresh_token"
+              ]
+            },
+            "minItems": 2,
+            "maxItems": 2,
+            "uniqueItems": true
+          },
+          "token_endpoint_auth_methods_supported": {
+            "type": "array",
+            "items": {
+              "const": "none"
+            },
+            "minItems": 1,
+            "maxItems": 1
+          },
+          "code_challenge_methods_supported": {
+            "type": "array",
+            "items": {
+              "const": "S256"
+            },
+            "minItems": 1,
+            "maxItems": 1
+          },
+          "scopes_supported": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "chats:read",
+                "chats:write",
+                "devices:read",
+                "devices:receive",
+                "devices:sync",
+                "devices:manage"
+              ]
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "iulita_mobile_protocol_version": {
+            "const": 1
+          },
+          "authorization_response_iss_parameter_supported": {
+            "const": true
+          }
+        },
+        "required": [
+          "issuer",
+          "authorization_endpoint",
+          "token_endpoint",
+          "revocation_endpoint",
+          "jwks_uri",
+          "response_types_supported",
+          "grant_types_supported",
+          "token_endpoint_auth_methods_supported",
+          "code_challenge_methods_supported",
+          "scopes_supported",
+          "iulita_mobile_protocol_version",
+          "authorization_response_iss_parameter_supported"
+        ],
+        "additionalProperties": false
+      },
+      "AuthorizationCodeForm": {
+        "type": "object",
+        "properties": {
+          "grant_type": {
+            "const": "authorization_code"
+          },
+          "client_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "code": {
+            "type": "string",
+            "minLength": 1
+          },
+          "redirect_uri": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://"
+          },
+          "code_verifier": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._~-]{43,128}$"
+          },
+          "iulita_installation_jwk": {
+            "type": "string",
+            "contentMediaType": "application/json",
+            "contentSchema": {
+              "$ref": "#/components/schemas/InstallationJWK"
+            }
+          }
+        },
+        "required": [
+          "grant_type",
+          "client_id",
+          "code",
+          "redirect_uri",
+          "code_verifier",
+          "iulita_installation_jwk"
+        ],
+        "additionalProperties": false
+      },
+      "RefreshForm": {
+        "type": "object",
+        "properties": {
+          "grant_type": {
+            "const": "refresh_token"
+          },
+          "client_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "refresh_token": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "grant_type",
+          "client_id",
+          "refresh_token"
+        ],
+        "additionalProperties": false
+      },
+      "TokenForm": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/AuthorizationCodeForm"
+          },
+          {
+            "$ref": "#/components/schemas/RefreshForm"
+          }
+        ]
+      },
+      "RevocationForm": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "token": {
+            "type": "string",
+            "minLength": 1
+          },
+          "token_type_hint": {
+            "enum": [
+              "access_token",
+              "refresh_token"
+            ]
+          }
+        },
+        "required": [
+          "client_id",
+          "token"
+        ],
+        "additionalProperties": false
+      },
+      "OAuthError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "enum": [
+              "invalid_request",
+              "invalid_client",
+              "invalid_grant",
+              "unauthorized_client",
+              "unsupported_grant_type",
+              "invalid_scope",
+              "access_denied",
+              "server_error",
+              "temporarily_unavailable"
+            ]
+          },
+          "error_description": {
+            "type": "string",
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "additionalProperties": false
+      },
+      "SigningJWK": {
+        "type": "object",
+        "properties": {
+          "kty": {
+            "const": "RSA"
+          },
+          "alg": {
+            "const": "RS256"
+          },
+          "use": {
+            "const": "sig"
+          },
+          "kid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "n": {
+            "type": "string",
+            "minLength": 512,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          "e": {
+            "const": "AQAB"
+          }
+        },
+        "required": [
+          "kty",
+          "alg",
+          "use",
+          "kid",
+          "n",
+          "e"
+        ],
+        "additionalProperties": false
+      },
+      "SigningJWKS": {
+        "type": "object",
+        "properties": {
+          "keys": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/SigningJWK"
+            }
+          }
+        },
+        "required": [
+          "keys"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "x-iulita-access-jwt-header": {
+    "alg": "RS256",
+    "typ": "at+jwt"
+  },
+  "x-iulita-control-frame-scopes": {
+    "client.hello": [
+      "devices:receive",
+      "devices:sync"
+    ],
+    "client.capabilities": [
+      "devices:sync"
+    ],
+    "client.session": [
+      "devices:sync"
+    ],
+    "client.receipt": [
+      "devices:sync"
+    ],
+    "client.renew": [
+      "devices:sync"
+    ],
+    "server.welcome": [
+      "devices:receive",
+      "devices:sync"
+    ],
+    "server.command": [
+      "devices:receive"
+    ],
+    "server.lease": [
+      "devices:receive"
+    ],
+    "server.revoked": [
+      "devices:receive"
+    ],
+    "server.task": [
+      "devices:receive"
+    ],
+    "server.receipt_ack": [
+      "devices:sync"
+    ]
+  }
+}

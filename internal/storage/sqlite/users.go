@@ -7,9 +7,13 @@ import (
 	"time"
 
 	"github.com/iulita-ai/iulita/internal/domain"
+	"github.com/uptrace/bun"
 )
 
 func (s *Store) CreateUser(ctx context.Context, u *domain.User) error {
+	if u.SecurityEpoch == 0 {
+		u.SecurityEpoch = 1
+	}
 	u.CreatedAt = time.Now()
 	u.UpdatedAt = time.Now()
 	_, err := s.db.NewInsert().Model(u).Exec(ctx)
@@ -45,7 +49,12 @@ func (s *Store) GetUserByUsername(ctx context.Context, username string) (*domain
 
 func (s *Store) UpdateUser(ctx context.Context, u *domain.User) error {
 	u.UpdatedAt = time.Now()
-	_, err := s.db.NewUpdate().Model(u).WherePK().Exec(ctx)
+	err := s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if _, err := tx.NewUpdate().Model(u).WherePK().Exec(ctx); err != nil {
+			return err
+		}
+		return tx.NewRaw(`SELECT security_epoch FROM users WHERE id=?`, u.ID).Scan(ctx, &u.SecurityEpoch)
+	})
 	if err != nil {
 		return fmt.Errorf("updating user: %w", err)
 	}

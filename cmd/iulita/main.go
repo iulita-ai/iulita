@@ -43,6 +43,9 @@ import (
 	"github.com/iulita-ai/iulita/internal/llm/onnx"
 	openaillm "github.com/iulita-ai/iulita/internal/llm/openai"
 	"github.com/iulita-ai/iulita/internal/metrics"
+	"github.com/iulita-ai/iulita/internal/mobile"
+	"github.com/iulita-ai/iulita/internal/mobile/browseroauth"
+	mobileruntime "github.com/iulita-ai/iulita/internal/mobile/runtime"
 	"github.com/iulita-ai/iulita/internal/modelruntime"
 	"github.com/iulita-ai/iulita/internal/notify"
 	"github.com/iulita-ai/iulita/internal/ratelimit"
@@ -94,6 +97,12 @@ func (c registrySkillChecker) IsEnabled(name string) bool {
 }
 
 func main() {
+	if len(os.Args) > 1 && (os.Args[1] == "mobile-init" || os.Args[1] == "mobile-rotate") {
+		if err := runMobileCommand(os.Args[1], os.Args[2:]); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	// Handle --version / -v flag.
 	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
 		fmt.Println("iulita " + version.String())
@@ -359,6 +368,15 @@ func main() {
 		if f, convErr := strconv.ParseFloat(v, 64); convErr == nil {
 			cfg.Skills.Memory.VectorWeight = f
 		}
+	}
+
+	// Mobile flags are restart-only and never reuse dashboard auth readiness.
+	// A build gate stays closed until its server acceptance record is complete.
+	if stepErr1 := mobile.ApplyOverrides(&cfg.Mobile, cfgStore.GetEffective); stepErr1 != nil {
+		logger.Fatal("invalid mobile configuration", zap.Error(stepErr1))
+	}
+	if stepErr2 := mobile.ValidateStartup(cfg.Mobile, mobile.BuildReadiness()); stepErr2 != nil {
+		logger.Fatal("mobile backend is not ready", zap.Error(stepErr2))
 	}
 
 	// HTTP clients (proxy support).
@@ -1835,6 +1853,30 @@ func main() {
 
 	// Background services tracked by WaitGroup for graceful shutdown.
 	var wg sync.WaitGroup
+
+	if cfg.Mobile.ChatEnabled || cfg.Mobile.DeviceEnabled {
+		settings, err := mobileruntime.ReadSettings(cfg.Mobile.RuntimeFile)
+		if err != nil {
+			logger.Fatal("mobile runtime settings unavailable")
+		}
+		accountPath, err := filepath.Abs(cfg.Storage.Path)
+		if err != nil || accountPath != settings.AccountDB {
+			logger.Fatal("mobile account database mismatch")
+		}
+		service, err := mobileruntime.New(ctx, settings, cfg.Mobile, browseroauth.PasswordAccounts{Users: store}, routingProvider, cfg.App.SystemPrompt, version.String())
+		if err != nil {
+			logger.Fatal("mobile runtime initialization failed")
+		}
+		defer service.Close()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := service.Run(ctx); err != nil && ctx.Err() == nil {
+				logger.Error("mobile service stopped; shutting down")
+				cancel()
+			}
+		}()
+	}
 
 	// --- Unified Task Scheduler ---
 	var taskScheduler *scheduler.Scheduler

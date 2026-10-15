@@ -76,6 +76,9 @@ linters:
         - hugeParam
     misspell:
       locale: US
+      # Persisted mobile state/column names and Protobuf enums use this spelling.
+      ignore-rules:
+        - cancelled
     gosec:
       excludes:
         - G401
