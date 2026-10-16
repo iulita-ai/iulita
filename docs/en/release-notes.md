@@ -1,8 +1,15 @@
 # Release guide
 
-This guide summarizes the public releases from v0.38.0 through v0.49.1. Follow the linked release for its
+This guide summarizes the public releases from v0.38.0 through v0.49.2. Follow the linked release for its
 exact changelog. A source feature is not automatically available in an older
 container or binary.
+
+## v0.49.2: OAuth response contract compatibility
+
+[v0.49.2](https://github.com/iulita-ai/iulita/releases/tag/v0.49.2) normalizes
+Fosite browser/refresh replies to the published OpenAPI `token_type: Bearer`.
+Device Flow and service replies already use this spelling. Token authority,
+lifetimes, rotation and revocation remain unchanged.
 
 ## v0.49.1: chat refresh and browser OAuth
 

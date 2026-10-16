@@ -15,6 +15,7 @@ import (
 )
 
 type tokenReply struct {
+	TokenType string                `json:"token_type"`
 	Access    string                `json:"access_token"`
 	Refresh   string                `json:"refresh_token"`
 	Stage     oauthstore.Stage      `json:"iulita_token_stage"`
@@ -48,6 +49,9 @@ func (f *fixture) exchange(t *testing.T, form url.Values) tokenReply {
 	var reply tokenReply
 	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &reply) != nil || reply.Access == "" || reply.Refresh == "" {
 		t.Fatalf("token exchange: %d %s", w.Code, w.Body.String())
+	}
+	if reply.TokenType != "Bearer" {
+		t.Fatal("token_type does not match the published UserTokenResponse schema")
 	}
 	if strings.Contains(w.Body.String(), "debug") {
 		t.Fatal("debug leaked")

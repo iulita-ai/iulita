@@ -6,6 +6,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/iulita-ai/iulita/internal/mobile/oauthstore"
@@ -134,6 +135,13 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 			if stepErr2 != nil {
 				return stepErr2
 			}
+			// OAuth treats the scheme case-insensitively, but the published
+			// wire schema promises "Bearer" for every grant. Normalize Fosite's
+			// lowercase form inside the transaction, before issuing any reply.
+			if !strings.EqualFold(response.GetTokenType(), "Bearer") {
+				return fosite.ErrServerError
+			}
+			response.SetTokenType("Bearer")
 			session, validSession := ar.GetSession().(*oauthstore.Session)
 			if !validSession || session == nil {
 				return fosite.ErrInvalidGrant
