@@ -1,8 +1,19 @@
 # Release guide
 
-This guide summarizes the public releases from v0.38.0 through v0.49.0. Follow the linked release for its
+This guide summarizes the public releases from v0.38.0 through v0.49.1. Follow the linked release for its
 exact changelog. A source feature is not automatically available in an older
 container or binary.
+
+## v0.49.1: chat refresh and browser OAuth
+
+[v0.49.1](https://github.com/iulita-ai/iulita/releases/tag/v0.49.1) fixes mobile
+snapshot cache exhaustion during chat refresh. The owner limit remains32
+snapshots: a fresh snapshot replaces the oldest entry, whose cursors then
+require resynchronization. Other owners and persisted messages are unaffected.
+
+Login and consent forms use `Referrer-Policy: same-origin` so browser form
+POSTs retain Origin. Exact Origin and CSRF checks remain mandatory; OAuth
+redirect responses retain `no-referrer`.
 
 ## v0.49.0: explicit phone targets and runtime time samples
 

@@ -449,6 +449,10 @@ type pageData struct {
 var page = template.Must(template.New("oauth").Parse(`<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Вход в Iulita</title><main><h1>Вход в {{.App}}</h1>{{if .Error}}<p role="alert">{{.Error}}</p>{{end}}{{if .Login}}<form method="post" action="/oauth2/login"><input type="hidden" name="flow_id" value="{{.Flow}}"><input type="hidden" name="csrf" value="{{.CSRF}}"><p><label>Имя пользователя <input name="username" autocomplete="username" required maxlength="128"></label></p><p><label>Пароль <input type="password" name="password" autocomplete="current-password" required maxlength="72"></label></p><button type="submit">Войти</button></form>{{else if .Flow}}<p>Аккаунт: {{.DisplayName}}</p><p>Приложение запрашивает:</p><ul>{{range .Scopes}}<li>{{.}}</li>{{end}}</ul><p>Разрешения Android и управление телефоном включаются отдельно на самом устройстве.</p><form method="post" action="/oauth2/consent"><input type="hidden" name="flow_id" value="{{.Flow}}"><input type="hidden" name="csrf" value="{{.CSRF}}">{{if .Device}}<p>Подтверждайте вход только если вы сами начали его в своей консоли. Сверьте имя приложения и введите код, показанный консолью.</p><label>Код из консоли <input name="user_code" required maxlength="9" autocomplete="off"></label>{{end}}<button type="submit" name="decision" value="approve">Разрешить вход</button><button type="submit" name="decision" value="deny">Отказаться</button></form>{{end}}</main></html>`))
 
 func (s *Server) page(w http.ResponseWriter, data pageData) {
+	// no-referrer makes navigational form POSTs carry Origin: null. Preserve
+	// same-origin browser submissions while denying referrers to other origins.
+	// Non-form responses and the authorization-code redirect stay no-referrer.
+	w.Header().Set("Referrer-Policy", "same-origin")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if writeErr := page.Execute(w, data); writeErr != nil {
 		return

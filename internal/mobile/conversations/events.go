@@ -218,7 +218,14 @@ func (r *Repository) Snapshot(ctx context.Context, owner string, ids []string, l
 			return out, checkErr7
 		}
 		if count >= 32 {
-			return out, ErrQueueFull
+			// Snapshots are bounded resynchronization caches. Refreshing a
+			// visible chat must not lock its owner out for the full 15-minute
+			// cursor TTL. Retire the oldest cache entry at capacity; a client
+			// still using it receives ErrResync and obtains a fresh snapshot.
+			// The transaction keeps the same owner-scoped 32-entry ceiling.
+			if _, stepErr2 = tx.ExecContext(ctx, `DELETE FROM mobile_snapshots WHERE owner_id=? AND id=(SELECT id FROM mobile_snapshots WHERE owner_id=? ORDER BY expires_at,rowid LIMIT 1)`, owner, owner); stepErr2 != nil {
+				return out, stepErr2
+			}
 		}
 		if _, stepErr2 = tx.ExecContext(ctx, `INSERT INTO mobile_snapshots VALUES(?,?,?,?,?,?)`, out.ID, owner, binding, out.Watermark, body, out.ExpiresAt.Unix()); stepErr2 != nil {
 			return out, stepErr2

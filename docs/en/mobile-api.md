@@ -202,6 +202,12 @@ cursor may require a new snapshot. Ordinary chat transcripts contain no raw
 phone observations or UI images. Dashboard history endpoints are not an alternate
 way to read mobile conversations.
 
+From v0.49.1, the snapshot cache holds at most32 entries per owner. New
+snapshots retire the oldest entry at capacity. Clients using a retired event
+or page cursor must obtain a fresh snapshot; they must not treat resync as a
+message retry or permission to replay a device action. Other owners' entries
+remain isolated.
+
 Device tasks require an active owner/device/session binding and live Control
 stream. Supported server contracts include status, location, notifications,
 torch/navigation and constrained UI tasks. They do not perform the action without
