@@ -112,6 +112,12 @@ func Initialize(ctx context.Context, s Settings) error {
 
 // New constructs the subsystem with explicit dependencies and limits.
 func New(ctx context.Context, s Settings, features config.MobileConfig, accounts browseroauth.Accounts, models llm.ProfileInvoker, system, version string, origins ...devices.OriginResolver) (result *Runtime, err error) {
+	return NewWithTools(ctx, s, features, accounts, models, system, version, nil, origins...)
+}
+
+// NewWithTools adds explicitly reviewed tools, without importing the legacy
+// assistant's memory, event bus, automatic retries or unrestricted registry.
+func NewWithTools(ctx context.Context, s Settings, features config.MobileConfig, accounts browseroauth.Accounts, models llm.ProfileInvoker, system, version string, publicTools []engine.Tool, origins ...devices.OriginResolver) (result *Runtime, err error) {
 	if checkErr1 := s.Validate(); checkErr1 != nil {
 		return nil, checkErr1
 	}
@@ -188,7 +194,7 @@ func New(ctx context.Context, s Settings, features config.MobileConfig, accounts
 	if err != nil {
 		return nil, err
 	}
-	var tools []engine.Tool
+	tools := append([]engine.Tool(nil), publicTools...)
 	var originResolver devices.OriginResolver
 	if len(origins) > 1 {
 		return nil, errors.New("one canonical origin resolver required")
@@ -201,7 +207,7 @@ func New(ctx context.Context, s Settings, features config.MobileConfig, accounts
 		if err != nil {
 			return nil, err
 		}
-		tools = r.devices.Tools()
+		tools = append(tools, r.devices.Tools()...)
 	}
 	r.engine, err = engine.New(r.chats, engine.Models(models), system, tools)
 	if err != nil {

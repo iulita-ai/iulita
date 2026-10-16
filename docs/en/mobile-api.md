@@ -30,6 +30,20 @@ no refresh token, and default to `chats:read` when scope is omitted. Enabling
 `chats:write` permits owner-scoped chat mutations and model usage; it is an
 explicit policy choice.
 
+## Public information tools
+
+Starting with v0.49.7, the backend connects `datetime`, `weather`,
+`websearch` and `webfetch` to chat execution, including isolated conversations.
+They require `chats:write` and the corresponding built-in skill to be enabled.
+These tools work with `device_enabled = false` and reuse the configured HTTP
+clients, proxy and search providers. Web page reads retain SSRF protections.
+Disabling or replacing a skill prevents new dispatches under its old policy.
+
+Weather needs a city or coordinates supplied in the conversation. Without a
+location the assistant asks for one; it does not resolve location from legacy
+memory, the server IP or private phone observations. Tool availability does not
+grant access to other legacy integrations, shell commands or arbitrary phone UI.
+
 ## Prepare a server
 
 Use the existing account database and an initialized model configuration. Set up

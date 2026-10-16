@@ -46,6 +46,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/mobile"
 	"github.com/iulita-ai/iulita/internal/mobile/browseroauth"
 	mobileexternal "github.com/iulita-ai/iulita/internal/mobile/external"
+	"github.com/iulita-ai/iulita/internal/mobile/publictools"
 	mobileruntime "github.com/iulita-ai/iulita/internal/mobile/runtime"
 	"github.com/iulita-ai/iulita/internal/modelruntime"
 	"github.com/iulita-ai/iulita/internal/notify"
@@ -1871,7 +1872,7 @@ func main() {
 		if err != nil || accountPath != settings.AccountDB {
 			logger.Fatal("mobile account database mismatch")
 		}
-		service, err := mobileruntime.New(ctx, settings, cfg.Mobile, browseroauth.PasswordAccounts{Users: store}, routingProvider, cfg.App.SystemPrompt, version.String(), mobileexternal.Adapter{Store: store, Sender: mgr})
+		service, err := mobileruntime.NewWithTools(ctx, settings, cfg.Mobile, browseroauth.PasswordAccounts{Users: store}, routingProvider, cfg.App.SystemPrompt, version.String(), publictools.Tools(registry), mobileexternal.Adapter{Store: store, Sender: mgr})
 		if err != nil {
 			logger.Fatal("mobile runtime initialization failed")
 		}

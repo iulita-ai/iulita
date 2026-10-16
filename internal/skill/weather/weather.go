@@ -108,17 +108,33 @@ func (s *Skill) Execute(ctx context.Context, raw json.RawMessage) (string, error
 		return "Please specify a location for the weather forecast.", nil
 	}
 
-	// Build backend chain.
-	chain := s.buildBackendChain()
-
-	result, err := chain.Fetch(ctx, location, days)
+	result, err := s.Forecast(ctx, location, days)
 	if err != nil {
 		return fmt.Sprintf("Unable to fetch weather for %q: %s. The service may be temporarily unavailable.", location, err), nil
 	}
 
-	// Format based on channel capabilities.
-	caps := channel.CapsFrom(ctx)
-	return formatForecast(result, caps), nil
+	return result, nil
+}
+
+// Forecast fetches an explicit location without consulting account memory,
+// interactive prompts or server IP geolocation. Errors remain errors so callers
+// can redact transport/provider details before returning them to a model.
+func (s *Skill) Forecast(ctx context.Context, location string, days int) (string, error) {
+	location = strings.TrimSpace(location)
+	if location == "" {
+		return "", fmt.Errorf("explicit weather location required")
+	}
+	if days < 1 {
+		days = 1
+	}
+	if days > 16 {
+		days = 16
+	}
+	result, err := s.buildBackendChain().Fetch(ctx, location, days)
+	if err != nil {
+		return "", err
+	}
+	return formatForecast(result, channel.CapsFrom(ctx)), nil
 }
 
 func (s *Skill) buildBackendChain() WeatherBackend {
