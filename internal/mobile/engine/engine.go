@@ -336,6 +336,12 @@ func (e *Engine) process(root context.Context, t conversations.Turn, f conversat
 	for _, name := range names {
 		req.Tools = append(req.Tools, e.tools[name].Definition)
 	}
+	directCall, direct, directError := phoneCommand(input, t.TargetDeviceID)
+	if directError != "" {
+		text, state = directError, "completed"
+		return
+	}
+	directReply := "Запрос телефону не создан: действие недоступно или отклонено."
 	for round := 0; round < 10; round++ {
 		if e.Repo.CheckFence(ctx, f) != nil {
 			return
@@ -344,9 +350,18 @@ func (e *Engine) process(root context.Context, t conversations.Turn, f conversat
 		if err != nil || current.Revision != p.ProfileRevision || current.Digest != p.ProfileDigest {
 			return
 		}
-		response, err := profile.Provider.Complete(ctx, req)
-		if err != nil {
-			return
+		var response llm.Response
+		if direct {
+			if round > 0 {
+				text, state = directReply, "completed"
+				return
+			}
+			response.ToolCalls = []llm.ToolCall{directCall}
+		} else {
+			response, err = profile.Provider.Complete(ctx, req)
+			if err != nil {
+				return
+			}
 		}
 		if len(response.ToolCalls) == 0 {
 			text = response.Content
@@ -386,6 +401,14 @@ func (e *Engine) process(root context.Context, t conversations.Turn, f conversat
 				return
 			}
 			if op.State == "succeeded" {
+				if direct {
+					var valid bool
+					directReply, valid = phoneCommandAcknowledgement(op.Outcome)
+					if !valid {
+						state = "unknown_outcome"
+						return
+					}
+				}
 				exchange.Results = append(exchange.Results, llm.ToolResult{ToolCallID: call.ID, Content: op.Outcome})
 				continue
 			}
@@ -419,6 +442,15 @@ func (e *Engine) process(root context.Context, t conversations.Turn, f conversat
 			if len(result) > 64<<10 {
 				state = "unknown_outcome"
 				return
+			}
+			if direct {
+				var valid bool
+				directReply, valid = phoneCommandAcknowledgement(result)
+				if !valid {
+					state = "unknown_outcome"
+					_ = e.Repo.FinishTool(ctx, f, id, "unknown_outcome", "") //nolint:errcheck // Started remains non-replayable even if cleanup cannot commit.
+					return
+				}
 			}
 			if err = e.Repo.FinishTool(ctx, f, id, "succeeded", result); err != nil {
 				return

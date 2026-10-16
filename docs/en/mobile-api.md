@@ -208,6 +208,14 @@ or page cursor must obtain a fresh snapshot; they must not treat resync as a
 message retry or permission to replay a device action. Other owners' entries
 remain isolated.
 
+From v0.49.3, exact message commands `/phone status`, `/phone location` and
+`/phone notifications` request fixed typed reads without model inference.
+They use the turn's immutable `target_device_id`; text cannot choose another
+device or action. The same pinned tool policy, OAuth authority, journal,
+per-request confirmation and local native grant apply. Unknown `/phone`
+commands are rejected. Message-ID retries retain the original deduplication
+identity; an uncertain dispatch is not repeated automatically.
+
 Device tasks require an active owner/device/session binding and live Control
 stream. Supported server contracts include status, location, notifications,
 torch/navigation and constrained UI tasks. They do not perform the action without

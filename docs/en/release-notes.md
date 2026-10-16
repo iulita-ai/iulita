@@ -1,8 +1,17 @@
 # Release guide
 
-This guide summarizes the public releases from v0.38.0 through v0.49.2. Follow the linked release for its
+This guide summarizes the public releases from v0.38.0 through v0.49.3. Follow the linked release for its
 exact changelog. A source feature is not automatically available in an older
 container or binary.
+
+## v0.49.3: explicit phone data requests
+
+[v0.49.3](https://github.com/iulita-ai/iulita/releases/tag/v0.49.3) handles
+`/phone status`, `/phone location` and `/phone notifications` as fixed requests
+to the selected phone. They retain the normal turn journal, authority, consent
+and native-session checks without relying on a model to invoke a tool.
+Acknowledgements come from actual tool results; raw content remains in private
+views. Ambiguous operations are never automatically repeated.
 
 ## v0.49.2: OAuth response contract compatibility
 
