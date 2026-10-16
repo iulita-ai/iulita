@@ -91,7 +91,7 @@ func New(c Config) (*Server, error) {
 	tlsConfig := c.TLS.Clone()
 	tlsConfig.MinVersion = tls.VersionTLS13
 	tlsConfig.NextProtos = []string{"h2"}
-	s.grpc = grpc.NewServer(grpc.Creds(credentials.NewTLS(tlsConfig)), grpc.ConnectionTimeout(5*time.Second), grpc.MaxRecvMsgSize(2<<20), grpc.MaxSendMsgSize(2<<20), grpc.MaxHeaderListSize(16<<10), grpc.MaxConcurrentStreams(32), grpc.KeepaliveParams(keepalive.ServerParameters{MaxConnectionIdle: 5 * time.Minute, MaxConnectionAge: 15 * time.Minute, MaxConnectionAgeGrace: 5 * time.Second, Time: time.Minute, Timeout: 10 * time.Second}), grpc.ChainUnaryInterceptor(s.unary), grpc.ChainStreamInterceptor(s.stream))
+	s.grpc = grpc.NewServer(grpc.Creds(credentials.NewTLS(tlsConfig)), grpc.ConnectionTimeout(5*time.Second), grpc.MaxRecvMsgSize(2<<20), grpc.MaxSendMsgSize(2<<20), grpc.MaxHeaderListSize(16<<10), grpc.MaxConcurrentStreams(32), grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{MinTime: 30 * time.Second, PermitWithoutStream: false}), grpc.KeepaliveParams(keepalive.ServerParameters{MaxConnectionIdle: 5 * time.Minute, MaxConnectionAge: 15 * time.Minute, MaxConnectionAgeGrace: 5 * time.Second, Time: time.Minute, Timeout: 10 * time.Second}), grpc.ChainUnaryInterceptor(s.unary), grpc.ChainStreamInterceptor(s.stream))
 	v1.RegisterAccountServiceServer(s.grpc, s)
 	v1.RegisterChatServiceServer(s.grpc, s)
 	v1.RegisterDeviceServiceServer(s.grpc, s)

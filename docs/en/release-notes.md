@@ -1,8 +1,16 @@
 # Release guide
 
-This guide summarizes the public releases from v0.38.0 through v0.49.3. Follow the linked release for its
+This guide summarizes the public releases from v0.38.0 through v0.49.4. Follow the linked release for its
 exact changelog. A source feature is not automatically available in an older
 container or binary.
+
+## v0.49.4: mobile stream keepalive
+
+[v0.49.4](https://github.com/iulita-ai/iulita/releases/tag/v0.49.4) permits HTTP/2
+keepalive pings at intervals of at least 30 seconds while an RPC is active.
+Native clients can use 45 seconds to keep idle streams alive across network
+proxies. Pings without active RPCs remain disallowed. Authentication expiry,
+revocation, local-consent deadlines and stream capacity limits still apply.
 
 ## v0.49.3: explicit phone data requests
 

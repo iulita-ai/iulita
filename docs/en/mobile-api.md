@@ -254,3 +254,7 @@ checks use `scripts/check_mobile_oauth.py` with
 `scripts/requirements-mobile-contract.txt`. Device permissions, Accessibility,
 background execution and screenshots on Android/GrapheneOS remain client/device
 acceptance work. iOS requires its own capability design.
+
+## Stream keepalive
+
+From v0.49.4, the server permits HTTP/2 PING no more frequently than once per 30 seconds while a call is active. A native client interval of 45 seconds is suitable for network paths with a 60-second idle cutoff; disable pings without active calls. Configure ingress stream read/write limits above the local-consent window. PINGs keep transport alive only: token expiry, revocation and native session deadlines still terminate authority. Lost phone sessions require fresh local consent, and ambiguous actions must not be replayed.
