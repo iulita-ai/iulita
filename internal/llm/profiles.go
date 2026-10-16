@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -402,4 +403,25 @@ func (s *ProfileSnapshot) ContextWindow(req Request) int {
 		return 0
 	}
 	return b.ContextTokens
+}
+
+// AvailableProfile contains a verified identifier and image capability, never credentials.
+type AvailableProfile struct {
+	ID     string
+	Images bool
+}
+
+// AvailableProfiles lists eligible profiles in stable order.
+func (s *ProfileSnapshot) AvailableProfiles() []AvailableProfile {
+	out := []AvailableProfile{}
+	if s == nil {
+		return out
+	}
+	for id := range s.profiles {
+		if s.eligible(id) == nil {
+			out = append(out, AvailableProfile{id, s.profiles[id].Images})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }

@@ -4,6 +4,7 @@ package conversations
 
 import (
 	"context"
+	"crypto/cipher"
 	"database/sql"
 	"errors"
 	"strings"
@@ -49,6 +50,7 @@ type Message struct {
 
 // Repository stores owned conversations, turns and durable operation metadata.
 type Repository struct {
+	media          cipher.AEAD
 	db             *sql.DB
 	authorityReads *sql.DB
 	cursors        *securetoken.Signer
@@ -248,6 +250,9 @@ func (r *Repository) Clear(ctx context.Context, owner, id string, generation uin
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM mobile_snapshots WHERE owner_id=?`, owner); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM mobile_chat_photos WHERE owner_id=? AND conversation_id=?`, owner, id); err != nil {
 			return err
 		}
 		// Remove text atomically, retaining turn ID tombstones for BE05/BE06.

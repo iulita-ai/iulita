@@ -1,8 +1,29 @@
 # Release guide
 
-This guide summarizes the public releases from v0.38.0 through v0.49.5. Follow the linked release for its
+This guide summarizes the public releases from v0.38.0 through v0.49.6. Follow the linked release for its
 exact changelog. A source feature is not automatically available in an older
 container or binary.
+
+## v0.49.6: photos and explicit account facts in mobile chats
+
+[v0.49.6](https://github.com/iulita-ai/iulita/releases/tag/v0.49.6) adds
+`ChatExtrasService`: verified model choices, up to four compressed photos per
+message, owned photo retrieval and explicit export of an assistant answer to
+account facts. Photo admission is atomic and idempotent; images are encrypted
+with a dedicated persistent key and retained until chat history is cleared.
+Only the current message's images are sent for visual analysis. Missing or
+changed image bodies fail closed instead of producing a text-only request.
+
+Saving a fact requires explicit user confirmation, checks the source message's
+owner and generation, and preserves legacy mobile-history isolation. Service
+principals cannot export facts. Saved facts are shared within the account and
+survive clearing the source chat. Telemetry keeps its separate 24-hour retention.
+
+Before upgrading an existing mobile server, stop its runtime, run the new
+binary's `mobile-init --settings …`, and include `mobile-chat-media-v1.key` in
+backups together with the account/OAuth databases. Normal startup does not
+regenerate missing keys. See the [API guide](mobile-api.md#rich-chat-extension-v0-49-6).
+This release publishes the backend only; Android distribution remains separate.
 
 ## v0.49.5: deferred telemetry history
 

@@ -39,8 +39,8 @@ func TestEveryRPCDeclaresPolicyAndCredentialStage(t *testing.T) {
 		}
 		return true
 	})
-	if count != 33 {
-		t.Fatalf("review new or missing RPC policies: got %d, want 33", count)
+	if count != 38 {
+		t.Fatalf("review new or missing RPC policies: got %d, want 38", count)
 	}
 	for method, scope := range map[string]string{
 		mobilev1.DeviceTelemetryService_UploadBatch_FullMethodName: "devices:sync",
@@ -49,6 +49,18 @@ func TestEveryRPCDeclaresPolicyAndCredentialStage(t *testing.T) {
 		policy, err := MethodPolicy(method)
 		if err != nil || policy.Feature != mobilev1.Feature_FEATURE_DEVICE || policy.Stage != mobilev1.TokenStage_TOKEN_STAGE_ACTIVE || policy.Binding != mobilev1.ResourceBinding_RESOURCE_BINDING_TOKEN_DEVICE || !policy.Idempotent || len(policy.Scopes) != 1 || policy.Scopes[0] != scope {
 			t.Fatalf("passive telemetry policy must remain narrowed: %s", method)
+		}
+	}
+	for method, scope := range map[string]string{
+		mobilev1.ChatExtrasService_ListChatProfiles_FullMethodName: "chats:read",
+		mobilev1.ChatExtrasService_ListChatPhotos_FullMethodName:   "chats:read",
+		mobilev1.ChatExtrasService_GetChatPhoto_FullMethodName:     "chats:read",
+		mobilev1.ChatExtrasService_SendPhotos_FullMethodName:       "chats:write",
+		mobilev1.ChatExtrasService_SaveAnswerFact_FullMethodName:   "chats:write",
+	} {
+		p, err := MethodPolicy(method)
+		if err != nil || p.Feature != mobilev1.Feature_FEATURE_CHAT || p.Stage != mobilev1.TokenStage_TOKEN_STAGE_ACTIVE || p.Binding != mobilev1.ResourceBinding_RESOURCE_BINDING_OWNER || !p.Idempotent || len(p.Scopes) != 1 || p.Scopes[0] != scope {
+			t.Fatalf("chat extras must retain owned chat authority: %s", method)
 		}
 	}
 	for _, method := range []string{"", "/iulita.mobile.v2.ChatService/SendMessage", "/iulita.mobile.v1.ChatService/Login", "/ws/chat", "/iulita.mobile.v1.Turn/SendMessage"} {

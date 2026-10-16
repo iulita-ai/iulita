@@ -46,8 +46,9 @@ type Input struct {
 	ClientMessageID string
 	Generation      uint64
 	Text            string
-	TargetDeviceID  string `json:",omitempty"`
-	ActorDeviceID   string `json:"-"`
+	TargetDeviceID  string  `json:",omitempty"`
+	Photos          []Photo `json:",omitempty"`
+	ActorDeviceID   string  `json:"-"`
 }
 
 // Turn records the admission, execution and cancellation state of a message.
@@ -93,7 +94,7 @@ func payloadDigest(owner, id string, in Input) []byte {
 // Accept atomically commits the turn, bound input row, counters and private
 // metadata outbox. No channel, model, tool or global bus is called here.
 func (r *Repository) Accept(ctx context.Context, owner, id string, in Input) (Turn, bool, error) {
-	if (in.TargetDeviceID != "" && !validID(in.TargetDeviceID)) || !validID(in.ClientMessageID) || in.Generation == 0 || !utf8.ValidString(in.Text) || in.Text == "" || len(in.Text) > 1<<20 {
+	if (in.TargetDeviceID != "" && !validID(in.TargetDeviceID)) || !validID(in.ClientMessageID) || in.Generation == 0 || !utf8.ValidString(in.Text) || (in.Text == "" && len(in.Photos) == 0) || len(in.Text) > 1<<20 {
 		return Turn{}, false, ErrInvalid
 	}
 	tx, err := r.begin(ctx)
@@ -171,6 +172,9 @@ func (r *Repository) Accept(ctx context.Context, owner, id string, in Input) (Tu
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO mobile_events(owner_id,event_seq,id,conversation_id,generation,turn_id,turn_seq,input_message_id,event_type,created_at) VALUES(?,?,?,?,?,?,?,?,'turn.accepted',?)`, owner, admission, uuid.NewString(), id, t.Generation, t.ID, t.TurnSeq, t.InputMessageID, t.CreatedAt.UnixMilli()); err != nil {
 		return Turn{}, false, err
+	}
+	if stepError1 := r.storePhotos(ctx, tx, t, in.Photos); stepError1 != nil {
+		return Turn{}, false, stepError1
 	}
 	if checkErr6 := bump(ctx, tx, owner); checkErr6 != nil {
 		return Turn{}, false, checkErr6

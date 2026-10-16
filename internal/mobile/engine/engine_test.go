@@ -46,7 +46,9 @@ func engineFixture(t *testing.T, p llm.Provider, tools []Tool) (*Engine, string,
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { repo.Close() })
-	e, err := New(repo, func(context.Context, string, string) (Profile, error) { return Profile{p, 1, "model-fixture"}, nil }, "ordinary mobile policy", tools)
+	e, err := New(repo, func(context.Context, string, string) (Profile, error) {
+		return Profile{Provider: p, Revision: 1, Digest: "model-fixture"}, nil
+	}, "ordinary mobile policy", tools)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +130,9 @@ func TestAmbiguousToolNeverRetriesAndProfileDriftStops(t *testing.T) {
 		t.Fatal("ambiguous effect retried", got)
 	}
 	turn = accepted(t, e, owner, c.ID, "policy changed")
-	e.Resolve = func(context.Context, string, string) (Profile, error) { return Profile{p, 2, "new-destination"}, nil }
+	e.Resolve = func(context.Context, string, string) (Profile, error) {
+		return Profile{Provider: p, Revision: 2, Digest: "new-destination"}, nil
+	}
 	runOne(t, e, owner)
 	got, _ = e.Repo.GetTurn(context.Background(), owner, c.ID, turn.ID)
 	if got.State != "failed" || calls.Load() != 1 {

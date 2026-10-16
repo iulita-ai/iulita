@@ -63,6 +63,10 @@ func TestServiceClientTLSGRPCLeastPrivilege(t *testing.T) {
 		t.Fatal(err)
 	}
 	writer := h.serviceToken(t, "writer", writerSecret, "chats:read chats:write")
+	if _, factErr := v1.NewChatExtrasServiceClient(h.conn).SaveAnswerFact(tokenContext(writer), &v1.SaveAnswerFactRequest{Client: clientContext(), Operation: operation(), ConfirmAccountExport: true}); status.Code(factErr) != codes.PermissionDenied {
+		t.Fatal("service principal exported account fact", factErr)
+	}
+
 	if _, promptErr := client.RespondToConfirmation(tokenContext(writer), &v1.RespondToConfirmationRequest{Client: clientContext()}); status.Code(promptErr) != codes.PermissionDenied {
 		t.Fatal("service supplied interactive approval", promptErr)
 	}

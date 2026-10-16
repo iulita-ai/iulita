@@ -84,6 +84,9 @@ func Initialize(ctx context.Context, s Settings) error {
 		return err
 	}
 	defer lock.Close() //nolint:errcheck // Cleanup only; preserve the operation result.
+	if stepError2 := conversations.InitializeMediaKey(ctx, s.AccountDB, s.RealmDir); stepError2 != nil {
+		return stepError2
+	}
 	if checkErr2 := os.MkdirAll(filepath.Dir(s.OAuthDB), 0o700); checkErr2 != nil {
 		return checkErr2
 	}
@@ -174,6 +177,13 @@ func New(ctx context.Context, s Settings, features config.MobileConfig, accounts
 	if err != nil {
 		return nil, err
 	}
+	mediaKey, err := conversations.LoadMediaKey(s.RealmDir)
+	if err != nil {
+		return nil, err
+	}
+	if stepError3 := r.chats.ConfigureMedia(mediaKey); stepError3 != nil {
+		return nil, stepError3
+	}
 	r.content, err = ephemeral.New()
 	if err != nil {
 		return nil, err
@@ -197,6 +207,7 @@ func New(ctx context.Context, s Settings, features config.MobileConfig, accounts
 	if err != nil {
 		return nil, err
 	}
+	r.engine.Profiles = func() []llm.AvailableProfile { return models.AcquireProfileSnapshot().AvailableProfiles() }
 	r.engine.VerifyAuthority = func(ctx context.Context, authority engine.Authority) error {
 		return verifyExecutionAuthority(ctx, accounts, r.oauth, authority)
 	}

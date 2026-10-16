@@ -36,6 +36,7 @@ type Profile struct {
 	Provider llm.Provider
 	Revision uint64
 	Digest   string
+	Images   bool
 }
 
 // Resolver resolves an explicitly requested immutable model profile.
@@ -57,12 +58,13 @@ func Models(invoker llm.ProfileInvoker) Resolver {
 		}
 		data, _ := json.Marshal(b.Profile) //nolint:errcheck // This internal snapshot contains only JSON-supported values.
 		sum := sha256.Sum256(data)
-		return Profile{b.Provider, s.Revision(), hex.EncodeToString(sum[:])}, nil
+		return Profile{Provider: b.Provider, Revision: s.Revision(), Digest: hex.EncodeToString(sum[:]), Images: b.Images}, nil
 	}
 }
 
 type policy struct {
 	Version         int
+	PhotoDigests    []string `json:",omitempty"`
 	ProfileRevision uint64
 	ProfileDigest   string
 	Tools           map[string]string
@@ -74,6 +76,7 @@ type policy struct {
 
 // Engine executes accepted mobile turns under durable fencing and policy.
 type Engine struct {
+	Profiles        func() []llm.AvailableProfile
 	Repo            *conversations.Repository
 	Resolve         Resolver
 	System          string
@@ -127,10 +130,19 @@ func (e *Engine) Accept(ctx context.Context, owner, conversation string, in conv
 		if err != nil || p.Provider == nil || p.Digest == "" || p.Revision == 0 {
 			return nil, errors.New("requested mobile model profile unavailable")
 		}
+		if len(in.Photos) > 0 && !p.Images {
+			return nil, conversations.ErrInvalid
+		}
 		if AuthorityFrom(ctx).PrincipalType == "service" && t.AcceptedSettings.MemoryMode != "isolated" {
 			return nil, conversations.ErrInvalid
 		}
 		frozen := policy{ExternalBinding: ExternalBinding(ctx), Version: 1, ProfileRevision: p.Revision, ProfileDigest: p.Digest, Tools: map[string]string{}, MemoryMode: t.AcceptedSettings.MemoryMode, Authority: AuthorityFrom(ctx)}
+		if len(in.Photos) > 0 {
+			frozen.Version = 2 // Older runtimes must fail closed instead of dropping images.
+			for _, photo := range in.Photos {
+				frozen.PhotoDigests = append(frozen.PhotoDigests, photo.Digest)
+			}
+		}
 		if frozen.Authority.OwnerID != "" && frozen.Authority.OwnerID != owner {
 			return nil, conversations.ErrInvalid
 		}
@@ -282,7 +294,7 @@ func (e *Engine) process(root context.Context, t conversations.Turn, f conversat
 		return
 	}
 	var p policy
-	if json.Unmarshal(body, &p) != nil || p.Version != 1 || p.MemoryMode != t.AcceptedSettings.MemoryMode {
+	if json.Unmarshal(body, &p) != nil || (p.Version != 1 && p.Version != 2) || p.MemoryMode != t.AcceptedSettings.MemoryMode {
 		return
 	}
 	if p.Authority.FamilyID != "" || p.Authority.PrincipalType == "service" {
@@ -313,7 +325,14 @@ func (e *Engine) process(root context.Context, t conversations.Turn, f conversat
 	if err != nil {
 		return
 	}
+	photos, err := e.Repo.TurnPhotos(ctx, f)
+	if err != nil || !matchingPhotos(p.Version, p.PhotoDigests, photos) || (len(photos) > 0 && !profile.Images) {
+		return
+	}
 	req := llm.Request{SystemPrompt: e.System, Message: input, ProfileID: t.AcceptedSettings.ProfileID, PinnedProfile: true, Operation: "mobile.chat", UserID: t.OwnerID, ChatID: "mobile:" + t.ConversationID, PolicyRevision: p.ProfileRevision}
+	for _, data := range photos {
+		req.Images = append(req.Images, llm.ImageAttachment{Data: data, MediaType: "image/jpeg"})
+	}
 	if t.TargetDeviceID != "" {
 		req.SystemPrompt += "\nSelected phone target (server-enforced): " + t.TargetDeviceID + ". Phone tool arguments must use this exact device_id."
 	}
@@ -460,4 +479,18 @@ func (e *Engine) process(root context.Context, t conversations.Turn, f conversat
 		req.ToolExchanges = append(req.ToolExchanges, exchange)
 	}
 	return
+}
+
+// matchingPhotos rejects missing/reordered bodies rather than silently sending text only.
+func matchingPhotos(version int, digests []string, photos [][]byte) bool {
+	if len(digests) != len(photos) || (version == 1 && len(photos) > 0) || (version == 2 && (len(photos) == 0 || len(photos) > conversations.MaxPhotos)) {
+		return false
+	}
+	for i, data := range photos {
+		sum := sha256.Sum256(data)
+		if hex.EncodeToString(sum[:]) != digests[i] {
+			return false
+		}
+	}
+	return true
 }

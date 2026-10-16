@@ -1,0 +1,40 @@
+syntax = "proto3";
+package iulita.mobile.v1;
+import "iulita/mobile/v1/common.proto";
+import "iulita/mobile/v1/chat.proto";
+option go_package = "github.com/iulita-ai/iulita/api/gen/go/iulita/mobile/v1;mobilev1";
+option java_package = "ai.iulita.mobile.v1";
+option java_multiple_files = true;
+
+// Explicit gallery inputs, independent of phone observation/UI permissions.
+service ChatExtrasService {
+  rpc ListChatProfiles(ListChatProfilesRequest) returns (ListChatProfilesResponse) { option (rpc_policy) = { feature: FEATURE_CHAT stage: TOKEN_STAGE_ACTIVE scopes: "chats:read" binding: RESOURCE_BINDING_OWNER idempotent: true }; }
+  rpc SendPhotos(SendPhotosRequest) returns (Turn) { option (rpc_policy) = { feature: FEATURE_CHAT stage: TOKEN_STAGE_ACTIVE scopes: "chats:write" binding: RESOURCE_BINDING_OWNER idempotent: true }; }
+  rpc ListChatPhotos(ListChatPhotosRequest) returns (ListChatPhotosResponse) { option (rpc_policy) = { feature: FEATURE_CHAT stage: TOKEN_STAGE_ACTIVE scopes: "chats:read" binding: RESOURCE_BINDING_OWNER idempotent: true }; }
+  rpc GetChatPhoto(GetChatPhotoRequest) returns (ChatPhoto) { option (rpc_policy) = { feature: FEATURE_CHAT stage: TOKEN_STAGE_ACTIVE scopes: "chats:read" binding: RESOURCE_BINDING_OWNER idempotent: true }; }
+  // Interactive user clients only. Explicit export into the owner's account facts.
+  rpc SaveAnswerFact(SaveAnswerFactRequest) returns (SavedAnswerFact) { option (rpc_policy) = { feature: FEATURE_CHAT stage: TOKEN_STAGE_ACTIVE scopes: "chats:write" binding: RESOURCE_BINDING_OWNER idempotent: true }; }
+}
+message ChatProfile { string profile_id = 1; bool images = 2; }
+message ListChatProfilesRequest { ClientContext client = 1; }
+message ListChatProfilesResponse { repeated ChatProfile profiles = 1; }
+message PhotoInput { bytes jpeg = 1; }
+message SendPhotosRequest {
+  ClientContext client = 1; Operation operation = 2; string conversation_id = 3;
+  string client_message_id = 4; uint64 expected_history_generation = 5;
+  string text = 6; repeated PhotoInput photos = 7;
+}
+message ChatPhotoInfo {
+  string photo_id = 1; string message_id = 2; uint32 position = 3;
+  uint32 width = 4; uint32 height = 5; uint32 size = 6;
+}
+message ListChatPhotosRequest { ClientContext client = 1; string conversation_id = 2; uint64 history_generation = 3; repeated string message_ids = 4; }
+message ListChatPhotosResponse { repeated ChatPhotoInfo photos = 1; }
+message GetChatPhotoRequest { ClientContext client = 1; string conversation_id = 2; uint64 history_generation = 3; string photo_id = 4; }
+message ChatPhoto { ChatPhotoInfo info = 1; bytes jpeg = 2; }
+message SaveAnswerFactRequest {
+  ClientContext client = 1; Operation operation = 2; string conversation_id = 3;
+  uint64 history_generation = 4; string message_id = 5;
+  string text = 6; bool confirm_account_export = 7;
+}
+message SavedAnswerFact { int64 fact_id = 1; }

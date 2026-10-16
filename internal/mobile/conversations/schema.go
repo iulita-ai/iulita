@@ -80,5 +80,14 @@ func migrate(ctx context.Context, db *sql.DB) error {
 	if version != 4 {
 		return errors.New("unsupported mobile chat schema")
 	}
+	for _, q := range []string{
+		`CREATE TABLE IF NOT EXISTS mobile_chat_media_key(slot INTEGER PRIMARY KEY CHECK(slot=1),fingerprint BLOB NOT NULL CHECK(length(fingerprint)=32))`,
+		`CREATE TABLE IF NOT EXISTS mobile_chat_photos(id TEXT PRIMARY KEY,owner_id TEXT NOT NULL,conversation_id TEXT NOT NULL,generation INTEGER NOT NULL,message_id TEXT NOT NULL,position INTEGER NOT NULL CHECK(position>=0 AND position<4),width INTEGER NOT NULL CHECK(width BETWEEN 1 AND 2048),height INTEGER NOT NULL CHECK(height BETWEEN 1 AND 2048),size INTEGER NOT NULL CHECK(size BETWEEN 1 AND 393216),ciphertext BLOB NOT NULL CHECK(length(ciphertext)=size+28), FOREIGN KEY(message_id) REFERENCES mobile_messages(id) ON DELETE CASCADE, FOREIGN KEY(owner_id,conversation_id) REFERENCES mobile_conversations(owner_id,id) ON DELETE CASCADE,UNIQUE(owner_id,conversation_id,generation,message_id,position))`,
+		`CREATE INDEX IF NOT EXISTS mobile_chat_photos_input ON mobile_chat_photos(owner_id,conversation_id,generation,message_id)`,
+	} {
+		if _, err = tx.ExecContext(ctx, q); err != nil {
+			return err
+		}
+	}
 	return tx.Commit()
 }
