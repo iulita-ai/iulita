@@ -1,8 +1,28 @@
 # Release guide
 
-This guide summarizes the public releases from v0.38.0 through v0.49.4. Follow the linked release for its
+This guide summarizes the public releases from v0.38.0 through v0.49.5. Follow the linked release for its
 exact changelog. A source feature is not automatically available in an older
 container or binary.
+
+## v0.49.5: deferred telemetry history
+
+[v0.49.5](https://github.com/iulita-ai/iulita/releases/tag/v0.49.5) adds
+`DeviceTelemetryService.UploadBatch` and `ListHistory` for selected device status,
+location and notification history captured offline. Records have immutable IDs;
+identical retries are safe, changed duplicates fail and retention remains limited
+to 24 hours from capture. Owner/device/current-family checks, method-specific
+OAuth scopes and feature flags apply to every request.
+
+Raw history uses separate bounded encrypted process memory; SQLite contains only
+metadata and replay digests. A client can reupload retained records after server
+restart. History is not added to chat transcripts or sent to models automatically.
+Passive-only native grants can renew short execution leases across transport and
+token refresh with unchanged sources; UI authority and explicit Stop cannot be
+inherited this way. Existing task/model TTLs and consent checks remain unchanged.
+See the [API guide](mobile-api.md#deferred-telemetry-history) for limits.
+
+This backend release does not publish an Android application or automatically
+enable device access.
 
 ## v0.49.4: mobile stream keepalive
 

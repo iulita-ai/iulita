@@ -39,8 +39,17 @@ func TestEveryRPCDeclaresPolicyAndCredentialStage(t *testing.T) {
 		}
 		return true
 	})
-	if count != 31 {
-		t.Fatalf("review new or missing RPC policies: got %d, want 31", count)
+	if count != 33 {
+		t.Fatalf("review new or missing RPC policies: got %d, want 33", count)
+	}
+	for method, scope := range map[string]string{
+		mobilev1.DeviceTelemetryService_UploadBatch_FullMethodName: "devices:sync",
+		mobilev1.DeviceTelemetryService_ListHistory_FullMethodName: "devices:read",
+	} {
+		policy, err := MethodPolicy(method)
+		if err != nil || policy.Feature != mobilev1.Feature_FEATURE_DEVICE || policy.Stage != mobilev1.TokenStage_TOKEN_STAGE_ACTIVE || policy.Binding != mobilev1.ResourceBinding_RESOURCE_BINDING_TOKEN_DEVICE || !policy.Idempotent || len(policy.Scopes) != 1 || policy.Scopes[0] != scope {
+			t.Fatalf("passive telemetry policy must remain narrowed: %s", method)
+		}
 	}
 	for _, method := range []string{"", "/iulita.mobile.v2.ChatService/SendMessage", "/iulita.mobile.v1.ChatService/Login", "/ws/chat", "/iulita.mobile.v1.Turn/SendMessage"} {
 		if _, err := MethodPolicy(method); err == nil {

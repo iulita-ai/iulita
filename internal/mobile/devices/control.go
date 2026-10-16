@@ -191,10 +191,10 @@ func (s *Store) Session(ctx context.Context, identity Identity, epoch uint64, se
 			}
 		}
 		var oldGeneration, oldEpoch uint64
-		var oldState string
+		var oldState, oldFamily string
 		var oldExpiry int64
 		var oldBody []byte
-		err := tx.QueryRowContext(ctx, `SELECT generation,stream_epoch,state,expires_at,metadata FROM mobile_native_sessions WHERE owner_id=? AND device_id=? AND id=?`, c.Subject, c.DeviceID, session.SessionId).Scan(&oldGeneration, &oldEpoch, &oldState, &oldExpiry, &oldBody)
+		err := tx.QueryRowContext(ctx, `SELECT generation,stream_epoch,state,expires_at,metadata,family_id FROM mobile_native_sessions WHERE owner_id=? AND device_id=? AND id=?`, c.Subject, c.DeviceID, session.SessionId).Scan(&oldGeneration, &oldEpoch, &oldState, &oldExpiry, &oldBody, &oldFamily)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
@@ -207,10 +207,15 @@ func (s *Store) Session(ctx context.Context, identity Identity, epoch uint64, se
 				return ErrBusy
 			}
 		}
-		if err == nil && (session.SessionGeneration < oldGeneration || (oldState != "active" && session.SessionGeneration == oldGeneration) || oldEpoch != epoch) {
+		if err == nil && (session.SessionGeneration < oldGeneration || (oldState != "active" && session.SessionGeneration == oldGeneration)) {
 			return ErrEpoch
 		}
 		var original v1.SessionMirror
+		if err == nil && oldEpoch != epoch {
+			if proto.Unmarshal(oldBody, &original) != nil || !passiveContinuation(&original, session, oldFamily, c.FamilyID) {
+				return ErrEpoch
+			}
+		}
 		if err == nil && session.SessionGeneration == oldGeneration && (proto.Unmarshal(oldBody, &original) != nil || !proto.Equal(&original, session)) {
 			return ErrInvalid
 		}
@@ -347,4 +352,34 @@ func (s *Store) Receipt(ctx context.Context, identity Identity, epoch uint64, re
 		}
 		return err
 	})
+}
+
+// A long-lived local telemetry choice may publish a fresh, short lease after
+// token rotation. Never move UI authority, changed sources, a different OAuth
+// family, or an explicit native Stop across transports. OpenControl still
+// cancels old tasks/commands before this higher generation can be accepted.
+func passiveContinuation(old, next *v1.SessionMirror, oldFamily, nextFamily string) bool {
+	if oldFamily == "" || oldFamily != nextFamily || old.State != v1.SessionState_SESSION_STATE_ACTIVE || next.State != v1.SessionState_SESSION_STATE_ACTIVE || next.SessionGeneration <= old.SessionGeneration || len(old.AllowedActions) == 0 || old.ScreenContentAllowed || old.ScreenshotAllowed || len(old.ApprovedEnvelopeSha256) != 0 {
+		return false
+	}
+	for _, action := range old.AllowedActions {
+		if action != v1.ActionKind_ACTION_KIND_READ_STATUS && action != v1.ActionKind_ACTION_KIND_READ_LOCATION && action != v1.ActionKind_ACTION_KIND_READ_NOTIFICATIONS {
+			return false
+		}
+	}
+	a, ok := proto.Clone(old).(*v1.SessionMirror)
+	if !ok {
+		return false
+	}
+	b, ok := proto.Clone(next).(*v1.SessionMirror)
+	if !ok {
+		return false
+	}
+	a.SessionGeneration = 0
+	b.SessionGeneration = 0
+	a.ExpiresAt = nil
+	b.ExpiresAt = nil
+	a.ClockId = ""
+	b.ClockId = ""
+	return proto.Equal(a, b)
 }

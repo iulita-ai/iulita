@@ -39,6 +39,7 @@ type Store struct {
 	accounts browseroauth.Accounts
 	chats    *conversations.Repository
 	content  *ephemeral.Store
+	history  *ephemeral.Store
 	options  Options
 }
 
@@ -49,6 +50,9 @@ type Identity struct {
 }
 
 var schema = []string{
+	`CREATE TABLE IF NOT EXISTS mobile_telemetry_records(owner_id TEXT NOT NULL,device_id TEXT NOT NULL,id TEXT NOT NULL,collection_id TEXT NOT NULL,family_id TEXT NOT NULL,category TEXT NOT NULL,digest BLOB NOT NULL,captured_at INTEGER NOT NULL,expires_at INTEGER NOT NULL,received_at INTEGER NOT NULL,bytes INTEGER NOT NULL,PRIMARY KEY(owner_id,device_id,id),FOREIGN KEY(owner_id,device_id) REFERENCES oauth_devices(owner_id,id))`,
+	`CREATE INDEX IF NOT EXISTS mobile_telemetry_history ON mobile_telemetry_records(owner_id,device_id,family_id,captured_at,id)`,
+	`CREATE INDEX IF NOT EXISTS mobile_telemetry_received ON mobile_telemetry_records(owner_id,device_id,received_at)`,
 	`CREATE TABLE IF NOT EXISTS mobile_phone_schema(version INTEGER PRIMARY KEY CHECK(version=3))`,
 	`INSERT INTO mobile_phone_schema SELECT 3 WHERE NOT EXISTS(SELECT 1 FROM mobile_phone_schema)`,
 	`CREATE TABLE IF NOT EXISTS mobile_device_streams(owner_id TEXT NOT NULL,device_id TEXT NOT NULL,epoch INTEGER NOT NULL,family_id TEXT REFERENCES oauth_families(id),server_seq INTEGER NOT NULL DEFAULT 0,token_expires_at INTEGER NOT NULL,expires_at INTEGER NOT NULL,capabilities BLOB,PRIMARY KEY(owner_id,device_id),FOREIGN KEY(owner_id,device_id) REFERENCES oauth_devices(owner_id,id))`,
@@ -74,7 +78,11 @@ func Open(ctx context.Context, path string, auth *oauthstore.Store, accounts bro
 	if auth == nil || accounts == nil || chats == nil || content == nil {
 		return nil, ErrInvalid
 	}
-	s := &Store{auth: auth, accounts: accounts, chats: chats, content: content}
+	history, historyErr := ephemeral.NewTelemetry()
+	if historyErr != nil {
+		return nil, historyErr
+	}
+	s := &Store{auth: auth, accounts: accounts, chats: chats, content: content, history: history}
 	if len(options) > 1 {
 		return nil, ErrInvalid
 	}

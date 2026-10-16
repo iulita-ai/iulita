@@ -1,0 +1,27 @@
+syntax = "proto3";
+package iulita.mobile.v1;
+import "google/protobuf/timestamp.proto";
+import "iulita/mobile/v1/common.proto";
+import "iulita/mobile/v1/device.proto";
+option go_package = "github.com/iulita-ai/iulita/api/gen/go/iulita/mobile/v1;mobilev1";
+option java_package = "ai.iulita.mobile.v1";
+option java_multiple_files = true;
+
+// Passive history captured under explicit native consent. This API never
+// grants command execution or model processing, and never writes chat history.
+service DeviceTelemetryService {
+  rpc UploadBatch(UploadTelemetryRequest) returns (UploadTelemetryResponse) { option (rpc_policy) = { feature: FEATURE_DEVICE stage: TOKEN_STAGE_ACTIVE scopes: "devices:sync" binding: RESOURCE_BINDING_TOKEN_DEVICE idempotent: true }; }
+  rpc ListHistory(ListTelemetryRequest) returns (ListTelemetryResponse) { option (rpc_policy) = { feature: FEATURE_DEVICE stage: TOKEN_STAGE_ACTIVE scopes: "devices:read" binding: RESOURCE_BINDING_TOKEN_DEVICE idempotent: true }; }
+}
+message TelemetryRecord {
+  string record_id = 1;
+  string collection_id = 2;
+  google.protobuf.Timestamp captured_at = 3;
+  // Historical timestamps are informational; never an execution lease/clock.
+  bool device_clock_estimate = 4;
+  oneof value { DeviceStatus status = 5; LocationReading location = 6; NotificationReading notification = 7; }
+}
+message UploadTelemetryRequest { ClientContext client = 1; repeated TelemetryRecord records = 2; }
+message UploadTelemetryResponse { repeated string accepted_record_ids = 1; string server_clock_id = 2; }
+message ListTelemetryRequest { ClientContext client = 1; google.protobuf.Timestamp since = 2; uint32 page_size = 3; string before_record_id = 4; }
+message ListTelemetryResponse { repeated TelemetryRecord records = 1; string next_record_id = 2; string server_clock_id = 3; }

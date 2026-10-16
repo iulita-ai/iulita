@@ -252,7 +252,13 @@ func operation() *v1.Operation {
 func tokenContext(token string) context.Context {
 	return metadata.NewOutgoingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+token))
 }
-func (h *harness) login(t *testing.T, username string, requestedScopes ...string) (accessToken, refreshToken string) {
+func (h *harness) login(t *testing.T, username string, requestedScopes ...string) (accessToken, deviceID string) {
+	t.Helper()
+	reply, device := h.loginCredentials(t, username, requestedScopes...)
+	return reply.Access, device
+}
+
+func (h *harness) loginCredentials(t *testing.T, username string, requestedScopes ...string) (tokens credentialsReply, deviceID string) {
 	t.Helper()
 	if len(requestedScopes) == 0 {
 		requestedScopes = harnessScopes
@@ -295,7 +301,7 @@ func (h *harness) login(t *testing.T, username string, requestedScopes ...string
 		t.Fatal("gRPC activation", err)
 	}
 	active := h.tokens(t, url.Values{"grant_type": {"refresh_token"}, "client_id": {"mobile"}, "refresh_token": {pending.Refresh}})
-	return active.Access, device.DeviceId
+	return active, device.DeviceId
 }
 func TestTLSGRPCMultichatIdempotencyAndSecurity(t *testing.T) {
 	h := setupHarness(t)

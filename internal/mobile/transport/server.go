@@ -50,6 +50,7 @@ type Server struct {
 	v1.UnimplementedAccountServiceServer
 	v1.UnimplementedChatServiceServer
 	v1.UnimplementedDeviceServiceServer
+	v1.UnimplementedDeviceTelemetryServiceServer
 	v1.UnimplementedArtifactServiceServer
 	v1.UnimplementedPhoneServiceServer
 	config  Config
@@ -95,6 +96,7 @@ func New(c Config) (*Server, error) {
 	v1.RegisterAccountServiceServer(s.grpc, s)
 	v1.RegisterChatServiceServer(s.grpc, s)
 	v1.RegisterDeviceServiceServer(s.grpc, s)
+	v1.RegisterDeviceTelemetryServiceServer(s.grpc, s)
 	v1.RegisterArtifactServiceServer(s.grpc, s)
 	v1.RegisterPhoneServiceServer(s.grpc, s)
 	return s, nil

@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,11 +34,12 @@ type entry struct {
 
 // Store owns persistence or bounded content for this mobile subsystem.
 type Store struct {
-	mu      sync.Mutex
-	aead    cipher.AEAD
-	entries map[string]entry
-	bytes   int
-	now     func() time.Time
+	mu        sync.Mutex
+	aead      cipher.AEAD
+	entries   map[string]entry
+	bytes     int
+	now       func() time.Time
+	telemetry bool
 }
 
 // New constructs the subsystem with explicit dependencies and limits.
@@ -57,6 +59,18 @@ func New() (*Store, error) {
 	}
 	return &Store{aead: aead, entries: map[string]entry{}, now: time.Now}, nil
 }
+
+// NewTelemetry separates passive history from command/result content and its
+// shorter limits. Its random encryption key never leaves this process.
+func NewTelemetry() (*Store, error) {
+	s, err := New()
+	if err != nil {
+		return nil, err
+	}
+	s.telemetry = true
+	return s, nil
+}
+
 func valid(b Binding) bool {
 	for _, id := range []string{b.Owner, b.Device, b.Task} {
 		parsed, err := uuid.Parse(id)
@@ -79,7 +93,16 @@ func (s *Store) Put(id string, b Binding, body []byte, expiry time.Time) error {
 	defer s.mu.Unlock()
 	s.cleanup()
 	now := s.now()
-	if !expiry.After(now) || expiry.After(now.Add(15*time.Minute)) {
+	maxTTL := 15 * time.Minute
+	maxEntries, maxBytes, maxOwner := 1024, 16<<20, 4<<20
+	if s.telemetry {
+		maxTTL = 24 * time.Hour
+		maxEntries, maxBytes, maxOwner = 20000, 32<<20, 8<<20
+		if b.ConsentRevision != "mobile-telemetry-v1" || !strings.HasPrefix(b.Destination, "mobile.telemetry:") || (b.Category != "status" && b.Category != "location" && b.Category != "notifications") {
+			return ErrExpired
+		}
+	}
+	if !expiry.After(now) || expiry.After(now.Add(maxTTL)) {
 		return ErrExpired
 	}
 	digest := sha256.Sum256(body)
@@ -89,7 +112,7 @@ func (s *Store) Put(id string, b Binding, body []byte, expiry time.Time) error {
 		}
 		return ErrExpired
 	}
-	if len(s.entries) >= 1024 || s.bytes+len(body)+s.aead.Overhead() > 16<<20 {
+	if len(s.entries) >= maxEntries || s.bytes+len(body)+s.aead.Overhead() > maxBytes {
 		return ErrQuota
 	}
 	ownerBytes := 0
@@ -98,7 +121,7 @@ func (s *Store) Put(id string, b Binding, body []byte, expiry time.Time) error {
 			ownerBytes += len(e.ciphertext)
 		}
 	}
-	if ownerBytes+len(body) > 4<<20 {
+	if ownerBytes+len(body) > maxOwner {
 		return ErrQuota
 	}
 	nonce := make([]byte, s.aead.NonceSize())
@@ -186,3 +209,6 @@ func (s *Store) Run(ctx context.Context) {
 		}
 	}
 }
+
+// Sweep erases expired ciphertext even while there are no uploads.
+func (s *Store) Sweep() { s.mu.Lock(); defer s.mu.Unlock(); s.cleanup() }

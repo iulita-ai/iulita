@@ -258,3 +258,13 @@ acceptance work. iOS requires its own capability design.
 ## Stream keepalive
 
 From v0.49.4, the server permits HTTP/2 PING no more frequently than once per 30 seconds while a call is active. A native client interval of 45 seconds is suitable for network paths with a 60-second idle cutoff; disable pings without active calls. Configure ingress stream read/write limits above the local-consent window. PINGs keep transport alive only: token expiry, revocation and native session deadlines still terminate authority. Lost phone sessions require fresh local consent, and ambiguous actions must not be replayed.
+
+## Deferred telemetry history
+
+The additive `DeviceTelemetryService` contract separates passive history from short command leases. Enable `device_enabled`; an active device token needs `devices:sync` for `UploadBatch` and `devices:read` for `ListHistory`. Owner and device are bound to the token. Service principals are denied; a CLI cannot read another device's history by impersonating its executor.
+
+Each immutable record has a record UUID, local collection UUID, capture timestamp and one value: status, location or notification. Batches contain at most 100 records, each at most 16 KiB. Reusing a UUID with different bytes fails. New records are limited to 10,000 per device over 24 hours; duplicates do not consume additional quota. Captures older than 24 hours or more than one minute in the future fail. `device_clock_estimate` is informational historical time, never execution authority.
+
+Raw bodies use separate bounded AES-GCM encrypted process memory: at most 24 hours from capture and no more than 24 hours from receipt, 20,000 records / 32 MiB globally and 8 MiB per owner. Retries never extend retention. SQLite stores only identifiers, category, timestamps, size, digest and the current OAuth family binding. Restart loses bodies; a client retaining records can reupload the same immutable bytes and UUIDs. This is not a durable archive. Metadata expires seven days after body expiry. Reads revalidate the current family; refresh preserves it, revocation denies access. A new explicit local enable and authorization can reupload retained history under fresh consent.
+
+History does not enter chats or model requests automatically. `SyncObservations` and result processing retain their existing freshness, command/task/session bindings and separate model consent. A continuous native collector can renew a short passive-only mirror under the same ID only with unchanged sources/packages and family, a higher generation and no UI actions. A revoked mirror cannot be revived this way; ambiguous old commands are never replayed.

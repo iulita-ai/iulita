@@ -16,6 +16,7 @@ func (s *Store) Sweep(ctx context.Context) error {
 	}
 	defer tx.Rollback() //nolint:errcheck // Cleanup only; preserve the operation result.
 	now := s.clock().UnixMilli()
+	s.history.Sweep()
 	if stepErr2 := taskTransitions(ctx, tx, `UPDATE mobile_phone_tasks SET state=CASE WHEN EXISTS(SELECT 1 FROM mobile_phone_commands c WHERE c.task_id=mobile_phone_tasks.id AND c.state IN ('dispatched','started','unknown_outcome')) THEN 'unknown_outcome' ELSE 'expired' END,cancellation_requested=1,reason=? WHERE action>=6 AND id IN (SELECT task_id FROM mobile_ui_tasks WHERE lease_until<=?) AND state IN ('queued','running','awaiting_confirmation','needs_user_action')`, v1.ErrorReason_ERROR_REASON_UNKNOWN_OUTCOME, now); stepErr2 != nil {
 		return stepErr2
 	}
@@ -33,6 +34,7 @@ func (s *Store) Sweep(ctx context.Context) error {
 		return err
 	}
 	for _, q := range []string{
+		`DELETE FROM mobile_telemetry_records WHERE expires_at<?`,
 		`DELETE FROM mobile_artifact_chunks WHERE upload_id IN (SELECT upload_id FROM mobile_artifacts WHERE expires_at<?)`,
 		`DELETE FROM mobile_artifacts WHERE expires_at<?`,
 		`DELETE FROM mobile_processing WHERE expires_at<?`,
