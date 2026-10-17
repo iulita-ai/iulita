@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/iulita-ai/iulita/internal/defaults"
 	"github.com/iulita-ai/iulita/internal/domain"
 	"github.com/iulita-ai/iulita/internal/skill"
 	"github.com/iulita-ai/iulita/internal/storage"
@@ -47,7 +48,7 @@ func (s *Skill) InputSchema() json.RawMessage {
 			},
 			"timezone": {
 				"type": "string",
-				"description": "IANA timezone, e.g. Europe/Helsinki. Defaults to UTC."
+				"description": "IANA timezone, e.g. Europe/Helsinki. If unknown or omitted, defaults to Asia/Irkutsk (UTC+08:00); explicit timezones and RFC3339 offsets take precedence."
 			},
 			"id": {
 				"type": "integer",
@@ -98,10 +99,7 @@ func (s *Skill) create(ctx context.Context, in input, chatID, userID string) (st
 		return "", fmt.Errorf("due_at is required for create")
 	}
 
-	tz := in.Timezone
-	if tz == "" {
-		tz = "UTC"
-	}
+	tz := defaults.TimezoneOrDefault(in.Timezone)
 	loc, err := time.LoadLocation(tz)
 	if err != nil {
 		return "", fmt.Errorf("unknown timezone %q: %w", tz, err)

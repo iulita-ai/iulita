@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/iulita-ai/iulita/internal/defaults"
 	"github.com/iulita-ai/iulita/internal/llm"
 )
 
@@ -26,7 +27,7 @@ func (s *Skill) InputSchema() json.RawMessage {
 		"properties": {
 			"timezone": {
 				"type": "string",
-				"description": "IANA timezone, e.g. Europe/Helsinki. Defaults to UTC."
+				"description": "IANA timezone, e.g. Europe/Helsinki. If unknown or omitted, defaults to Asia/Irkutsk (UTC+08:00). An explicitly requested timezone, including UTC, takes precedence."
 			}
 		}
 	}`)
@@ -44,13 +45,10 @@ func (s *Skill) Execute(_ context.Context, raw json.RawMessage) (string, error) 
 		}
 	}
 
-	loc := time.UTC
-	if in.Timezone != "" {
-		var err error
-		loc, err = time.LoadLocation(in.Timezone)
-		if err != nil {
-			return "", fmt.Errorf("unknown timezone %q: %w", in.Timezone, err)
-		}
+	in.Timezone = defaults.TimezoneOrDefault(in.Timezone)
+	loc, err := time.LoadLocation(in.Timezone)
+	if err != nil {
+		return "", fmt.Errorf("unknown timezone %q: %w", in.Timezone, err)
 	}
 
 	now := time.Now().In(loc)

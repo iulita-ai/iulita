@@ -26,11 +26,12 @@ Use this tool to get weather information for any location.
 - User wants to know if they need an umbrella, jacket, etc.
 
 ## Input
-- **location** (optional string): city name or address — or the exact `"lat, lon"` coordinates of a place the user shared in the current message (e.g., a Telegram map pin; pass the coordinate string as-is even if no city was named). Otherwise pass ONLY if the user explicitly names a city (e.g., "weather in Paris", "погода в Москве"). If the user just says "weather" or "погода" without a city and shared no location — leave empty. The skill handles location resolution itself (asks the user interactively).
+- **location** (optional string): known city or address, or the exact `"lat, lon"` coordinates the user shared in this conversation (e.g., a Telegram map pin). If no city is known, leave empty: the application defaults to **Иркутск (Irkutsk, Russia)** without automatic IP geolocation.
 - **days** (optional integer): number of forecast days (1-16). Default is 1 (today only). Use 2 for today+tomorrow, 7 for a week.
 
 ## Important
-- Do NOT fill in the location from facts/insights/context. The skill reads those itself and presents them as options to the user.
+- Explicit user instructions and known preferences take precedence over the fallback. Never guess another city from language, server IP or earlier assistant guesses.
+- The fallback is not a detected location or a change to the user's profile. Name the city in the forecast so the user can correct it.
 - EXCEPTION: coordinates the user shared in this message OR in a recent previous message (a "[Location]: lat, lon" or "[Place]: … (lat, lon)" marker in the conversation) are not memory context — pass the coordinate string as the location parameter directly.
 - Never call weather twice in one turn. One call is enough.
 

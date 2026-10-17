@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/iulita-ai/iulita/internal/defaults"
 	"github.com/iulita-ai/iulita/internal/skill"
 	"github.com/iulita-ai/iulita/internal/skill/interact"
 	"github.com/iulita-ai/iulita/internal/storage"
@@ -18,8 +19,11 @@ func resolveLocation(ctx context.Context, store storage.Repository, registry Ski
 
 	// Search facts and insights for location hints.
 	var memoryLocation string
-	if userID != "" {
+	if userID != "" && store != nil {
 		memoryLocation = findLocationInStorage(ctx, store, userID)
+	}
+	if memoryLocation == "" {
+		return defaults.City, nil
 	}
 
 	// Build options for the user.
@@ -37,8 +41,11 @@ func resolveLocation(ctx context.Context, store storage.Repository, registry Ski
 
 	answer, err := asker.Ask(ctx, "Where should I show the weather?", options)
 	if err != nil {
-		// If prompting failed (no prompter, timeout), try geolocating.
-		return geolocateCity(ctx, registry)
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		// No confirmed city: use the application fallback, never server IP.
+		return defaults.City, nil
 	}
 
 	switch answer {

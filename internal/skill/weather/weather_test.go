@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/iulita-ai/iulita/internal/channel"
+	"github.com/iulita-ai/iulita/internal/skill"
 	"github.com/iulita-ai/iulita/internal/skill/interact"
 )
 
@@ -107,41 +108,39 @@ func TestWeatherSkill_MultiDay(t *testing.T) {
 	}
 }
 
-func TestWeatherSkill_NoLocation_WithPrompt(t *testing.T) {
+func TestWeatherSkill_NoKnownLocationUsesCodeDefault(t *testing.T) {
 	geoSrv := fakeOpenMeteoServer(t)
 	defer geoSrv.Close()
 
 	client := &http.Client{
-		Transport: &weatherRewriter{openMeteoURL: geoSrv.URL},
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if r.URL.Host == "geocoding-api.open-meteo.com" && r.URL.Query().Get("name") != "Иркутск" {
+				t.Fatalf("unexpected default city: %s", r.URL)
+			}
+			if r.URL.Host != "geocoding-api.open-meteo.com" && r.URL.Host != "api.open-meteo.com" {
+				t.Fatalf("unexpected outbound lookup: %s", r.URL.Host)
+			}
+			return (&weatherRewriter{openMeteoURL: geoSrv.URL}).RoundTrip(r)
+		}),
 	}
 	s := New(nil, nil, client)
 
-	// Inject a mock asker that returns "Paris".
+	// No confirmed city: do not prompt, read a profile or infer server IP.
 	asker := &mockAsker{answer: "Paris"}
-	ctx := interact.WithPrompter(context.Background(), asker)
+	ctx := skill.WithUserID(interact.WithPrompter(context.Background(), asker), "owner")
 
 	result, err := s.Execute(ctx, json.RawMessage(`{}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// The result should contain something (Paris gets geocoded to our mock).
 	if result == "" {
 		t.Error("expected non-empty result")
 	}
 }
 
-func TestWeatherSkill_NoLocation_PromptFails(t *testing.T) {
-	s := New(nil, nil, nil)
+type roundTripFunc func(*http.Request) (*http.Response, error)
 
-	// NoopAsker will return ErrNoPrompter, and no geo skill.
-	result, err := s.Execute(context.Background(), json.RawMessage(`{}`))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !strings.Contains(result, "Unable to determine location") {
-		t.Errorf("expected error message, got:\n%s", result)
-	}
-}
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 func TestWeatherSkill_InvalidJSON(t *testing.T) {
 	s := New(nil, nil, nil)

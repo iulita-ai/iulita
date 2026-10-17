@@ -548,7 +548,7 @@ func GenerateDefaultConfig(paths *Paths) (string, error) {
 
 	b.WriteString("[app]\n")
 	b.WriteString(fmt.Sprintf("system_prompt = %q\n", cfg.App.SystemPrompt))
-	b.WriteString(fmt.Sprintf("# default_timezone = %q\n", ""))
+	fmt.Fprintf(&b, "# default_timezone = %q\n", cfg.App.DefaultTimezone)
 	b.WriteString(fmt.Sprintf("auto_link_summary = %v\n", cfg.App.AutoLinkSummary))
 	b.WriteString(fmt.Sprintf("max_links = %d\n", cfg.App.MaxLinks))
 	b.WriteString("\n")

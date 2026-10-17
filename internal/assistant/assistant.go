@@ -13,6 +13,7 @@ import (
 
 	"github.com/iulita-ai/iulita/internal/agent"
 	"github.com/iulita-ai/iulita/internal/channel"
+	"github.com/iulita-ai/iulita/internal/defaults"
 	"github.com/iulita-ai/iulita/internal/domain"
 	"github.com/iulita-ai/iulita/internal/eventbus"
 	"github.com/iulita-ai/iulita/internal/i18n"
@@ -103,6 +104,7 @@ func New(provider llm.Provider, store storage.Repository, registry *skill.Regist
 func (a *Assistant) staticSystemPrompt() string {
 	var b strings.Builder
 	b.WriteString(a.systemPrompt)
+	b.WriteString("\n\n" + defaults.LocationPrompt)
 
 	// Skill system prompts from manifests (both internal and text-only skills).
 	for _, sp := range a.registry.SystemPrompts() {
@@ -1007,19 +1009,22 @@ func sanitizeFTSQuery(text string) string {
 }
 
 // resolveCurrentTime returns a human-readable timestamp in the user's timezone.
-// It checks tech_facts for a stored timezone, falls back to the configured default, then UTC.
+// It prefers an explicit user timezone, then saved preferences, then the configured
+// default. Missing defaults fall back to Asia/Irkutsk without modifying profiles.
 func (a *Assistant) resolveCurrentTime(ctx context.Context, chatID, userID string) string {
 	tz := a.defaultTimezone
+	userTimezone := false
 
 	// Try user model timezone first (for resolved users).
 	if userID != "" {
-		if u, err := a.store.GetUser(ctx, userID); err == nil && u != nil && u.Timezone != "" && u.Timezone != "UTC" {
+		if u, err := a.store.GetUser(ctx, userID); err == nil && u != nil && u.Timezone != "" {
 			tz = u.Timezone
+			userTimezone = true
 		}
 	}
 
 	// Try to find a user-specific timezone from tech facts.
-	if tz == a.defaultTimezone {
+	if !userTimezone {
 		var techFacts []domain.TechFact
 		if userID != "" {
 			techFacts, _ = a.store.GetTechFactsByCategoryAndUser(ctx, userID, "preferences")
@@ -1035,13 +1040,11 @@ func (a *Assistant) resolveCurrentTime(ctx context.Context, chatID, userID strin
 		}
 	}
 
-	loc := time.UTC
-	if tz != "" {
-		if parsed, err := time.LoadLocation(tz); err == nil {
-			loc = parsed
-		} else {
-			a.logger.Warn("invalid timezone, falling back to UTC", zap.String("timezone", tz), zap.Error(err))
-		}
+	tz = defaults.TimezoneOrDefault(tz)
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		a.logger.Warn("invalid timezone, using application fallback", zap.String("timezone", tz), zap.Error(err))
+		loc = time.FixedZone(defaults.Timezone, 8*60*60)
 	}
 
 	now := time.Now().In(loc)

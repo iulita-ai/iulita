@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/iulita-ai/iulita/internal/defaults"
 	"github.com/iulita-ai/iulita/internal/llm"
 	"github.com/iulita-ai/iulita/internal/mobile/conversations"
 	"github.com/iulita-ai/iulita/internal/mobile/engine"
@@ -27,7 +28,7 @@ type Lookup interface {
 
 // Tools reuses the configured HTTP/proxy/search clients of these built-ins.
 // None reads legacy account memory, credentials or a phone observation. Weather
-// requires an explicit location to avoid legacy memory/IP location resolution.
+// uses an explicit location or the code fallback, never memory/IP resolution.
 func Tools(registry Lookup) []engine.Tool {
 	if registry == nil {
 		return nil
@@ -38,7 +39,7 @@ func Tools(registry Lookup) []engine.Tool {
 		if !ok || s.Name() != name || !builtin(s) {
 			continue
 		}
-		revision := "public-information-v1"
+		revision := "public-information-v2"
 		if bindings, ok := registry.(interface {
 			NativeBinding(skill.Skill) (string, bool)
 		}); ok {
@@ -51,8 +52,8 @@ func Tools(registry Lookup) []engine.Tool {
 		schema := bytes.Clone(s.InputSchema())
 		description := s.Description()
 		if name == "weather" {
-			schema = json.RawMessage(`{"type":"object","properties":{"location":{"type":"string","description":"City or coordinates explicitly supplied by the user. Ask the user if unknown; never use server IP or phone data without consent."},"days":{"type":"integer","minimum":1,"maximum":16,"description":"Forecast days starting today; use at least 2 for tomorrow."}},"required":["location"],"additionalProperties":false}`)
-			description = "Get current weather and forecasts from online weather services for an explicitly supplied city or coordinates. If the location is unknown, ask the user which city."
+			schema = json.RawMessage(`{"type":"object","properties":{"location":{"type":"string","description":"Known city or explicitly shared coordinates. Omit if unknown: defaults to Иркутск (Irkutsk, Russia). Never infer another city from language, server IP or prior assistant guesses; never use phone data without consent."},"days":{"type":"integer","minimum":1,"maximum":16,"description":"Forecast days starting today; use at least 2 for tomorrow."}},"additionalProperties":false}`)
+			description = "Get current weather and forecasts from online weather services. If no city is known, omit location to use the application fallback Иркутск (Irkutsk, Russia). Explicit cities or shared coordinates take precedence."
 		}
 		tools = append(tools, engine.Tool{
 			Definition: llm.ToolDefinition{Name: name, Description: description, InputSchema: schema},
@@ -64,7 +65,7 @@ func Tools(registry Lookup) []engine.Tool {
 					return "", engine.Rejection{}
 				}
 				if len(input) > 8<<10 || !validInput(name, input) {
-					return `{"status":"invalid_input","message":"Supply valid arguments. Weather needs a city or explicitly shared coordinates; ask the user if unknown."}`, nil
+					return `{"status":"invalid_input","message":"Supply valid arguments. For weather, omit location if unknown to use the application fallback Иркутск."}`, nil
 				}
 				parent := ctx
 				ctx, cancel := context.WithTimeout(ctx, 35*time.Second)
@@ -86,7 +87,7 @@ func Tools(registry Lookup) []engine.Tool {
 					if json.Unmarshal(input, &v) != nil {
 						return "", engine.Rejection{}
 					}
-					out, err = forecast.Forecast(ctx, v.Location, v.Days)
+					out, err = forecast.Forecast(ctx, defaults.CityOrDefault(v.Location), v.Days)
 				} else {
 					out, err = s.Execute(ctx, input)
 				}
@@ -128,7 +129,7 @@ func validInput(name string, input json.RawMessage) bool {
 			Location string `json:"location"`
 			Days     int    `json:"days"`
 		}
-		return decode(input, &v) && strings.TrimSpace(v.Location) != "" && len(v.Location) <= 500 && v.Days >= 0 && v.Days <= 16
+		return decode(input, &v) && len(v.Location) <= 500 && v.Days >= 0 && v.Days <= 16
 	case "websearch":
 		var v struct {
 			Query string `json:"query"`

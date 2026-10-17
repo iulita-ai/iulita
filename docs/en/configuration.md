@@ -18,6 +18,8 @@ Configuration is loaded in order, with later layers overriding earlier ones:
 
 `DefaultConfig()` provides a working configuration with no external files. All model IDs, timeouts, memory settings, and feature flags have sensible defaults. The system works out of the box with just an API key.
 
+When no city or timezone is known, chat assistants use **Irkutsk, Russia** and **`Asia/Irkutsk` (UTC+08:00)** as application fallbacks. Weather without a location, `datetime` without a timezone, and reminders without a timezone use these defaults. Explicit locations, timezones (including `UTC`) and RFC3339 date offsets take precedence. This does not change account profiles or detect the user's physical location; mobile weather never falls back to server IP geolocation. `app.default_timezone` configures the legacy assistant's fallback clock.
+
 ### Layer 2: TOML File
 
 Optional. Located at `~/.config/iulita/config.toml` (or `$IULITA_HOME/config.toml`).
@@ -102,6 +104,7 @@ Runtime-editable configuration stored in the `config_overrides` SQLite table. Ma
 | Key | Default | Description |
 |-----|---------|-------------|
 | `app.system_prompt` | (built-in) | Base system prompt for the assistant |
+| `app.default_timezone` | `Asia/Irkutsk` | Fallback clock timezone when no user timezone is known |
 | `claude.context_window` | 200000 | Token budget for context |
 | `claude.request_timeout` | 120s | Per-message timeout |
 

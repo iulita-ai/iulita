@@ -1,11 +1,14 @@
 package config
 
+import "github.com/iulita-ai/iulita/internal/defaults"
+
 // DefaultConfig returns a Config with sensible defaults for local installation.
 // No config file needed — the app works out of the box with just an API key.
 func DefaultConfig(paths *Paths) *Config {
 	return &Config{
 		App: AppConfig{
 			SystemPrompt:    "You are Iulita, a helpful personal AI assistant. Be concise and helpful.",
+			DefaultTimezone: defaults.Timezone,
 			AutoLinkSummary: false,
 			MaxLinks:        3,
 		},

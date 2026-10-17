@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/iulita-ai/iulita/internal/channel"
+	"github.com/iulita-ai/iulita/internal/defaults"
 	"github.com/iulita-ai/iulita/internal/skill"
 	"github.com/iulita-ai/iulita/internal/skill/interact"
 	"github.com/iulita-ai/iulita/internal/storage"
@@ -20,7 +21,7 @@ type SkillLookup interface {
 	Get(name string) (skill.Skill, bool)
 }
 
-// Skill provides weather forecasts with interactive location resolution.
+// Skill provides weather forecasts with a deterministic fallback city.
 type Skill struct {
 	store      storage.Repository
 	httpClient *http.Client
@@ -45,7 +46,7 @@ func (s *Skill) Name() string { return "weather" }
 
 func (s *Skill) Description() string {
 	return "Get current weather and forecasts for any location. " +
-		"If no location is specified, asks the user or auto-detects via IP geolocation."
+		"If no location is known, defaults to Иркутск (Irkutsk, Russia), without IP geolocation."
 }
 
 func (s *Skill) InputSchema() json.RawMessage {
@@ -54,7 +55,7 @@ func (s *Skill) InputSchema() json.RawMessage {
 	"properties": {
 		"location": {
 			"type": "string",
-			"description": "City name or address — or the exact \"lat, lon\" coordinates of a place the user shared in this message or in a recent previous message (pass those as-is even if no city was named). Otherwise pass ONLY if the user explicitly mentioned a specific city; if the user just says 'weather' or 'погода' without a city and shared no location, leave this empty — the skill will ask the user interactively."
+			"description": "Known city or address, or exact lat, lon coordinates explicitly shared by the user. If no city is known, omit location: the tool defaults to Иркутск (Irkutsk, Russia). Never guess another city from language, server IP or earlier assistant guesses."
 		},
 		"days": {
 			"type": "integer",
@@ -93,19 +94,12 @@ func (s *Skill) Execute(ctx context.Context, raw json.RawMessage) (string, error
 	if days > 16 {
 		days = 16
 	}
-
-	// Resolve location if not provided.
 	if location == "" {
-		asker := interact.PrompterFrom(ctx)
-		resolved, err := resolveLocation(ctx, s.store, s.registry, asker)
+		resolved, err := resolveLocation(ctx, s.store, s.registry, interact.PrompterFrom(ctx))
 		if err != nil {
-			return fmt.Sprintf("Unable to determine location: %s. Please specify a city name.", err), nil
+			return "", err
 		}
-		location = resolved
-	}
-
-	if location == "" {
-		return "Please specify a location for the weather forecast.", nil
+		location = defaults.CityOrDefault(resolved)
 	}
 
 	result, err := s.Forecast(ctx, location, days)

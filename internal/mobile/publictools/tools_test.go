@@ -82,17 +82,18 @@ func TestAllowlistDisablementValidationAndRedaction(t *testing.T) {
 	}
 }
 
-func TestWeatherNeedsExplicitLocationAndUsesConfiguredHTTPClient(t *testing.T) {
+func TestWeatherDefaultAndExplicitLocationUseConfiguredHTTPClient(t *testing.T) {
 	var requests int
+	expectedCity := "Иркутск"
 	client := &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
 		requests++
 		var body string
 		switch r.URL.Host {
 		case "geocoding-api.open-meteo.com":
-			if r.URL.Query().Get("name") != "Paris" {
+			if r.URL.Query().Get("name") != expectedCity {
 				t.Fatal("wrong city", r.URL.Query())
 			}
-			body = `{"results":[{"name":"Paris","country":"France","latitude":48.85,"longitude":2.35}]}`
+			body = `{"results":[{"name":"` + expectedCity + `","latitude":48.85,"longitude":2.35}]}`
 		case "api.open-meteo.com":
 			if r.URL.Query().Get("forecast_days") != "2" {
 				t.Fatal("tomorrow omitted")
@@ -103,20 +104,25 @@ func TestWeatherNeedsExplicitLocationAndUsesConfiguredHTTPClient(t *testing.T) {
 		}
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header), Request: r}, nil
 	})}
-	// Nil storage/registry intentionally panic if legacy memory/IP resolution
-	// is accidentally reintroduced into mobile weather.
+	// Nil storage/registry ensure the fallback needs neither account memory nor IP.
 	s := weather.New(nil, nil, client)
 	tool := Tools(lookup{"weather": s})[0]
-	for _, raw := range []string{`{}`, `{"location":" "}`, `{"location":"Paris","days":17}`} {
-		if _, err := tool.Execute(context.Background(), conversations.Fence{}, json.RawMessage(raw)); err != nil {
-			t.Fatal(err)
+	for _, raw := range []string{`{"days":2}`, `{"location":" ","days":2}`} {
+		out, err := tool.Execute(context.Background(), conversations.Fence{}, json.RawMessage(raw))
+		if err != nil || !strings.Contains(out, "Иркутск") {
+			t.Fatal("fallback city", out, err)
 		}
 	}
-	if requests != 0 {
-		t.Fatal("missing location used server IP or a memory default")
+	if requests != 4 {
+		t.Fatal("unexpected fallback requests", requests)
 	}
-	out, err := tool.Execute(context.Background(), conversations.Fence{}, json.RawMessage(`{"location":"Paris","days":2}`))
-	if err != nil || requests != 2 || !strings.Contains(out, "Paris") || !strings.Contains(out, "Oct 17") {
+	out, err := tool.Execute(context.Background(), conversations.Fence{}, json.RawMessage(`{"location":"Paris","days":17}`))
+	if err != nil || !strings.Contains(out, "invalid_input") || requests != 4 {
+		t.Fatal("invalid days dispatched", out, err, requests)
+	}
+	expectedCity = "Paris"
+	out, err = tool.Execute(context.Background(), conversations.Fence{}, json.RawMessage(`{"location":"Paris","days":2}`))
+	if err != nil || requests != 6 || !strings.Contains(out, "Paris") || !strings.Contains(out, "Oct 17") {
 		t.Fatal("no actual tomorrow forecast", out, err, requests)
 	}
 }

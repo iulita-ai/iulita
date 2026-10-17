@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/iulita-ai/iulita/internal/defaults"
 )
 
 // ErrReminderRevoked permanently cancels a schedule after verified revocation.
@@ -35,11 +36,10 @@ type Reminder struct {
 	ConversationID string `json:"conversation_id"`
 }
 
-// ReminderTime parses a reminder date using its explicit IANA timezone.
+// ReminderTime parses a reminder date using its explicit IANA timezone, or the
+// application fallback when absent. An RFC3339 offset always takes precedence.
 func ReminderTime(in ReminderInput) (time.Time, error) {
-	if in.Timezone == "" {
-		in.Timezone = "UTC"
-	}
+	in.Timezone = defaults.TimezoneOrDefault(in.Timezone)
 	loc, err := time.LoadLocation(in.Timezone)
 	if err != nil {
 		return time.Time{}, ErrInvalid

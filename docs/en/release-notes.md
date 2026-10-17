@@ -1,9 +1,19 @@
 # Release guide
 
-This guide summarizes the public releases from v0.38.0 through v0.50.0. Follow the linked release for its
+This guide summarizes the public releases from v0.38.0 through v0.50.1. Follow the linked release for its
 exact changelog. A source feature is not automatically available in an older
 container or binary.
 
+
+## v0.50.1: explicit city and timezone fallbacks
+
+[v0.50.1](https://github.com/iulita-ai/iulita/releases/tag/v0.50.1) uses Irkutsk,
+Russia and `Asia/Irkutsk` (UTC+08:00) when a chat's city or timezone is unknown.
+The defaults are implemented in weather, date/time and reminder tools, and shared
+assistant instructions. Explicit locations, timezones (including `UTC`) and
+RFC3339 offsets take precedence. Account profiles and OAuth grants are unchanged;
+mobile weather never infers a city from server IP. The legacy clock now respects
+explicit `UTC` profiles. No Android release is included.
 
 ## v0.50.0: account assistant services in mobile chats
 

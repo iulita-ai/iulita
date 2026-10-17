@@ -1,9 +1,9 @@
 [app]
 system_prompt = "You are Iulita, a helpful personal AI assistant. Be concise and helpful."
-# Default IANA timezone for date/time injection (e.g. "Europe/Helsinki", "Asia/Tokyo").
-# Can be overridden per-user via tech_facts "preferences.timezone".
-# If empty, falls back to UTC.
-default_timezone = ""
+# Fallback IANA timezone for date/time injection. A known user timezone takes
+# precedence (including UTC), followed by saved timezone preferences.
+# If empty, falls back to Asia/Irkutsk.
+default_timezone = "Asia/Irkutsk" # Fallback when no user timezone is known.
 # Auto-fetch and summarize URLs found in messages
 auto_link_summary = false
 # Max URLs to fetch per message

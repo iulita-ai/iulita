@@ -531,6 +531,7 @@ func structToMap(cfg *Config) map[string]interface{} {
 
 	// App
 	m["app.system_prompt"] = cfg.App.SystemPrompt
+	m["app.default_timezone"] = cfg.App.DefaultTimezone
 	m["app.auto_link_summary"] = cfg.App.AutoLinkSummary
 	m["app.max_links"] = cfg.App.MaxLinks
 
