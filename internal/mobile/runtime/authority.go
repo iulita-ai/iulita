@@ -2,7 +2,10 @@ package runtime
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 
+	"github.com/iulita-ai/iulita/internal/auth"
 	"github.com/iulita-ai/iulita/internal/mobile/browseroauth"
 	"github.com/iulita-ai/iulita/internal/mobile/engine"
 	"github.com/iulita-ai/iulita/internal/mobile/oauthstore"
@@ -13,7 +16,13 @@ import (
 // guard while a conversation transaction may already hold the account DB.
 func verifyExecutionAuthority(ctx context.Context, accounts browseroauth.Accounts, store *oauthstore.Store, authority engine.Authority) error {
 	account, err := accounts.Lookup(ctx, authority.OwnerID)
-	if err != nil || account.ID != authority.OwnerID {
+	if errors.Is(err, auth.ErrUserNotFound) || errors.Is(err, sql.ErrNoRows) {
+		return oauthstore.ErrInvalid
+	}
+	if err != nil {
+		return err
+	}
+	if account.ID != authority.OwnerID {
 		return oauthstore.ErrInvalid
 	}
 	available := !account.Disabled && !account.MustChangePassword && account.CredentialVersion != ""

@@ -1,8 +1,36 @@
 # Release guide
 
-This guide summarizes the public releases from v0.38.0 through v0.49.6. Follow the linked release for its
+This guide summarizes the public releases from v0.38.0 through v0.50.0. Follow the linked release for its
 exact changelog. A source feature is not automatically available in an older
 container or binary.
+
+
+## v0.50.0: account assistant services in mobile chats
+
+[v0.50.0](https://github.com/iulita-ai/iulita/releases/tag/v0.50.0) shares saved
+account facts and instructions with Telegram while preserving each mobile chat's
+history. A live catalog adds owner-bound Google, Slack, Craft and Todoist tools,
+one-time durable chat reminders, typed questions/confirmations and strict HTTP
+requests with owned file retrieval. Service actions require explicit OAuth scopes
+and configured owner connections; native registrations can be restricted to one
+account. Existing registrations and grants are never silently widened.
+
+Security fixes invalidate queued Slack work after reconnect, count persisted HTTP
+files in owner quotas, preserve reminders during temporary storage failures and
+prevent a full account from starving other deliveries. HTTP mutation approval
+shows each resolved destination and bounded redacted inputs before dispatch.
+Native reminder lists support continuation after the first ten entries.
+
+This is a backend release. Compatible prompt/file UI, new-client PKCE consent and
+external service connections remain separate requirements. It does not publish
+Android or enable arbitrary plugins, recurring jobs or phone UI automation.
+See the [mobile API guide](mobile-api.md).
+
+## v0.49.7: internet tools for native chats
+
+[v0.49.7](https://github.com/iulita-ai/iulita/releases/tag/v0.49.7) connects native
+chats to the configured weather, date/time, web search and page-reading tools.
+They work independently of phone permissions and retain SSRF/proxy protections.
 
 ## v0.49.6: photos and explicit account facts in mobile chats
 

@@ -87,7 +87,9 @@ enum PromptState { PROMPT_STATE_UNSPECIFIED = 0; PROMPT_STATE_OPEN = 1; PROMPT_S
 enum Decision { DECISION_UNSPECIFIED = 0; DECISION_APPROVE = 1; DECISION_REJECT = 2; }
 message PromptBinding { string conversation_id = 1; string turn_id = 2; string prompt_id = 3; uint64 history_generation = 4; }
 message Choice { string choice_id = 1; string label = 2; }
-message ChoicePrompt { string question = 1; repeated Choice choices = 2; }
+message ChoicePrompt {
+  bool allow_text = 3; // Typed response only; never security approval.
+  string question = 1; repeated Choice choices = 2; }
 message SecurityConfirmation {
   string operation_id = 1; string nonce = 2; bytes fingerprint_sha256 = 3;
   string safe_preview = 4; uint64 max_bytes = 5; google.protobuf.Timestamp expires_at = 6;
@@ -97,7 +99,9 @@ message Prompt {
   PromptBinding binding = 1; PromptState state = 2; google.protobuf.Timestamp expires_at = 3;
   oneof body { ChoicePrompt choice = 4; SecurityConfirmation confirmation = 5; }
 }
-message RespondToPromptRequest { ClientContext client = 1; Operation operation = 2; PromptBinding binding = 3; string choice_id = 4; }
+message RespondToPromptRequest { ClientContext client = 1; Operation operation = 2; PromptBinding binding = 3; string choice_id = 4;
+  string text_response = 5; // Only when allow_text is true; mutually exclusive with choice_id.
+}
 message RespondToConfirmationRequest {
   ClientContext client = 1; Operation operation = 2; PromptBinding binding = 3;
   string security_operation_id = 4; string nonce = 5; bytes fingerprint_sha256 = 6;

@@ -44,6 +44,124 @@ location the assistant asks for one; it does not resolve location from legacy
 memory, the server IP or private phone observations. Tool availability does not
 grant access to other legacy integrations, shell commands or arbitrary phone UI.
 
+## Account assistant tools (v0.50.0)
+
+Version 0.50.0 adds a live skill catalog shared by the legacy
+assistant and native chat execution. `GetChatCapabilities` reports the tools and
+actions permitted for the authenticated caller in a particular owned chat;
+admission and dispatch independently recheck availability. Registry replacement
+or a server restart invalidates queued tool bindings instead of silently using
+newly configured credentials. Already running work is never replayed.
+
+In `ACCOUNT` mode, native chats can search and update saved account facts with
+`remember`, `recall` and `forget`, and use account-wide `directives`. Telegram
+reads the same saved knowledge and instructions. Clearing a chat removes its
+history and photos, not account facts or instructions. `session_search` searches
+only previous messages in the current chat and generation, including in account
+mode. Isolated chats and service principals cannot inherit account integrations.
+No phone observation enters this memory automatically.
+
+Owner-bound Google Mail, Calendar, Contacts and Tasks adapters require optional
+`assistant:services:read` / `assistant:services:write` scopes. A native runtime can
+opt in with an explicit `assistant_scopes` list in its settings. The existing
+registration is compared exactly: changing the list never widens it at startup
+or during `mobile-init`. Prepare a distinct native client registration/ID and a
+new browser consent flow when adopting new scopes. Existing access and refresh
+grants keep their original scopes; CLI and service ceilings are unchanged.
+
+An operator may restrict a secondary native registration to one enabled password
+account by setting `owner_id` in `mobile-client register --registration …`.
+Unassigned native registrations preserve their existing multi-account behavior.
+The restriction is checked at browser consent, token/refresh and live access;
+no client secret is issued for a native PKCE client. Keep the primary registration
+unchanged. A compatible client must select the new client ID/scopes and complete
+a new browser consent before using integrations. Before rolling back to a
+version without this owner restriction, disable the secondary registration.
+
+Google calls use only the authenticated owner's stored connection. Environment,
+configuration-file and ADC credentials cannot substitute a global account.
+Mutating Google Tasks actions, fact deletion and instruction changes require an
+expiring typed confirmation bound to exact arguments, a nonce and a live OAuth
+actor before dispatch. Ordinary chat text cannot approve an action. Native phone
+permissions, grants and leases remain separate from this confirmation policy.
+The extra native public-information tool is `exchange_rate`.
+
+The backend also connects Slack search/post, Craft search/read/write/tasks,
+Todoist actions, one-time native reminders, strict HTTP requests and typed
+clarifications. These additive contracts do not imply Android UI
+support, a published app or parity for arbitrary plugins/admin commands,
+documents/voice, recurring scheduled jobs or conversation compression.
+
+### Connection ownership and interaction
+
+Slack search uses the account that connected the stored personal Slack token;
+only that account can read it. Native bot posting needs an explicit
+`skills.slack_oauth.native_owner_id`. Craft and Todoist use their existing server
+connections only for the account explicitly assigned with
+`skills.craft.native_owner_id` / `skills.todoist.native_owner_id`. Configure these
+deployment-owned account UUIDs in TOML or with
+`IULITA_SKILLS_CRAFT_NATIVE_OWNER_ID`, `IULITA_SKILLS_TODOIST_NATIVE_OWNER_ID`,
+`IULITA_SKILLS_SLACK_OAUTH_NATIVE_OWNER_ID`, then restart. Empty assignments disable
+native use. Administrator status alone does not assign a connection. Credential
+rotation/reassignment invalidates pinned bindings and cancels in-flight native
+lookups. Existing legacy clients keep their own behavior.
+
+Service reads need `assistant:services:read`; writes need
+`assistant:services:write`. Mutating Craft/Todoist actions need exact argument
+approval. Native Slack posts always confirm the final channel/text, including
+when the bot uses auto mode, and pin approval to the concrete bot route. Existing
+channel allowlists, secret checks and guardrails still apply. An ambiguous
+dispatch is never automatically repeated. `GetChatCapabilities.internal_confirmations`
+identifies tools whose exact per-step/draft approval happens inside their executor.
+
+`ask_user` and the native `PromptAsker` bridge support choices and free text.
+`ChoicePrompt.allow_text` controls whether `RespondToPrompt.text_response` is
+allowed; send exactly one of it or `choice_id`. Neither can approve a security
+confirmation. Typed confirmations bind the nonce, fingerprint, operation and
+bounded byte grant, and require the initiating device and OAuth family. Generic
+action confirmations also recheck the approving authority through dispatch.
+Waits expire and follow turn cancellation/revocation; native execution has a
+10-minute absolute turn budget. The client must implement the additive prompt
+fields before offering these interactions.
+
+### Reminders and HTTP files
+
+The native `reminders` adapter creates, lists and cancels one-time reminders. It
+commits local changes and their tool result together. Lists return up to ten
+pending account reminders ordered by ID. When `more=true`, pass `next_after_id`
+as `after_id` to retrieve the next page. Temporary storage errors retain pending
+intent; delivery backoff prevents a full account from blocking other owners. Delivery
+uses the initiating owned conversation/generation and original OAuth family,
+with current account/device/realm checks. Family expiry/revocation, password
+change, cancelled origin turns, archive or clear prevent delivery. No bearer
+credential is stored. A message and its delivered marker commit atomically, so
+restart or a duplicate scheduler tick cannot duplicate it. No connected phone
+Control/WatchEvents stream is required: an offline client reads the saved message
+later. This is durable chat delivery, not an Android push-notification service.
+
+`http_request` reuses the common configured-proxy-only HTTP engine, SSRF rules,
+credential/origin grants, redaction, chains, quotas and bounded downloads. A
+mutating method additionally needs the write scope. Safe per-step confirmations
+use typed native prompts; granted bytes cannot exceed the requested amount.
+Each mutating step is confirmed after resolving its destination. Its bounded
+preview includes query, body, headers and artifact inputs with secret redaction.
+An intent too large or opaque to review fails before dispatch.
+Native prompts issue one-shot decisions only; existing owner standing grants
+remain subject to the common HTTP policy. Large inline results retain valid
+structured outcomes/artifact references while shrinking previews.
+
+`ChatExtrasService.ListHTTPArtifacts`, `ReadHTTPArtifact` and
+`DeleteHTTPArtifact` serve ordinary HTTP files, separately from phone/Vision
+artifacts. Lists contain up to 200 recent files for the chat (the API does not expose
+a continuation cursor). Persisted files and active downloads both count toward
+the owner quota, including after restart. Reads require the
+current owner/generation and bounded ranges (at most 64 KiB). Deletion is
+resource-idempotent. Native files are inaccessible through legacy dashboard
+artifact routes and from other chats, including another chat of the same owner.
+Clear immediately invalidates access; private filesystem bodies expire through
+the configured HTTP artifact TTL (24 hours by default). These files do not use
+chat-photo retention or telemetry storage.
+
 ## Prepare a server
 
 Use the existing account database and an initialized model configuration. Set up

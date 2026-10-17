@@ -19,11 +19,15 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ChatExtrasService_ListChatProfiles_FullMethodName = "/iulita.mobile.v1.ChatExtrasService/ListChatProfiles"
-	ChatExtrasService_SendPhotos_FullMethodName       = "/iulita.mobile.v1.ChatExtrasService/SendPhotos"
-	ChatExtrasService_ListChatPhotos_FullMethodName   = "/iulita.mobile.v1.ChatExtrasService/ListChatPhotos"
-	ChatExtrasService_GetChatPhoto_FullMethodName     = "/iulita.mobile.v1.ChatExtrasService/GetChatPhoto"
-	ChatExtrasService_SaveAnswerFact_FullMethodName   = "/iulita.mobile.v1.ChatExtrasService/SaveAnswerFact"
+	ChatExtrasService_ListHTTPArtifacts_FullMethodName   = "/iulita.mobile.v1.ChatExtrasService/ListHTTPArtifacts"
+	ChatExtrasService_ReadHTTPArtifact_FullMethodName    = "/iulita.mobile.v1.ChatExtrasService/ReadHTTPArtifact"
+	ChatExtrasService_DeleteHTTPArtifact_FullMethodName  = "/iulita.mobile.v1.ChatExtrasService/DeleteHTTPArtifact"
+	ChatExtrasService_GetChatCapabilities_FullMethodName = "/iulita.mobile.v1.ChatExtrasService/GetChatCapabilities"
+	ChatExtrasService_ListChatProfiles_FullMethodName    = "/iulita.mobile.v1.ChatExtrasService/ListChatProfiles"
+	ChatExtrasService_SendPhotos_FullMethodName          = "/iulita.mobile.v1.ChatExtrasService/SendPhotos"
+	ChatExtrasService_ListChatPhotos_FullMethodName      = "/iulita.mobile.v1.ChatExtrasService/ListChatPhotos"
+	ChatExtrasService_GetChatPhoto_FullMethodName        = "/iulita.mobile.v1.ChatExtrasService/GetChatPhoto"
+	ChatExtrasService_SaveAnswerFact_FullMethodName      = "/iulita.mobile.v1.ChatExtrasService/SaveAnswerFact"
 )
 
 // ChatExtrasServiceClient is the client API for ChatExtrasService service.
@@ -32,6 +36,12 @@ const (
 //
 // Explicit gallery inputs, independent of phone observation/UI permissions.
 type ChatExtrasServiceClient interface {
+	// Ordinary HTTP attachments only. Phone/Vision artifacts use their separate service.
+	ListHTTPArtifacts(ctx context.Context, in *ListHTTPArtifactsRequest, opts ...grpc.CallOption) (*ListHTTPArtifactsResponse, error)
+	ReadHTTPArtifact(ctx context.Context, in *ReadHTTPArtifactRequest, opts ...grpc.CallOption) (*HTTPArtifactChunk, error)
+	DeleteHTTPArtifact(ctx context.Context, in *DeleteHTTPArtifactRequest, opts ...grpc.CallOption) (*HTTPArtifactDeleted, error)
+	// Current owner/conversation authority, using the same policy as admission.
+	GetChatCapabilities(ctx context.Context, in *GetChatCapabilitiesRequest, opts ...grpc.CallOption) (*GetChatCapabilitiesResponse, error)
 	ListChatProfiles(ctx context.Context, in *ListChatProfilesRequest, opts ...grpc.CallOption) (*ListChatProfilesResponse, error)
 	SendPhotos(ctx context.Context, in *SendPhotosRequest, opts ...grpc.CallOption) (*Turn, error)
 	ListChatPhotos(ctx context.Context, in *ListChatPhotosRequest, opts ...grpc.CallOption) (*ListChatPhotosResponse, error)
@@ -46,6 +56,46 @@ type chatExtrasServiceClient struct {
 
 func NewChatExtrasServiceClient(cc grpc.ClientConnInterface) ChatExtrasServiceClient {
 	return &chatExtrasServiceClient{cc}
+}
+
+func (c *chatExtrasServiceClient) ListHTTPArtifacts(ctx context.Context, in *ListHTTPArtifactsRequest, opts ...grpc.CallOption) (*ListHTTPArtifactsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListHTTPArtifactsResponse)
+	err := c.cc.Invoke(ctx, ChatExtrasService_ListHTTPArtifacts_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *chatExtrasServiceClient) ReadHTTPArtifact(ctx context.Context, in *ReadHTTPArtifactRequest, opts ...grpc.CallOption) (*HTTPArtifactChunk, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HTTPArtifactChunk)
+	err := c.cc.Invoke(ctx, ChatExtrasService_ReadHTTPArtifact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *chatExtrasServiceClient) DeleteHTTPArtifact(ctx context.Context, in *DeleteHTTPArtifactRequest, opts ...grpc.CallOption) (*HTTPArtifactDeleted, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HTTPArtifactDeleted)
+	err := c.cc.Invoke(ctx, ChatExtrasService_DeleteHTTPArtifact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *chatExtrasServiceClient) GetChatCapabilities(ctx context.Context, in *GetChatCapabilitiesRequest, opts ...grpc.CallOption) (*GetChatCapabilitiesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetChatCapabilitiesResponse)
+	err := c.cc.Invoke(ctx, ChatExtrasService_GetChatCapabilities_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *chatExtrasServiceClient) ListChatProfiles(ctx context.Context, in *ListChatProfilesRequest, opts ...grpc.CallOption) (*ListChatProfilesResponse, error) {
@@ -104,6 +154,12 @@ func (c *chatExtrasServiceClient) SaveAnswerFact(ctx context.Context, in *SaveAn
 //
 // Explicit gallery inputs, independent of phone observation/UI permissions.
 type ChatExtrasServiceServer interface {
+	// Ordinary HTTP attachments only. Phone/Vision artifacts use their separate service.
+	ListHTTPArtifacts(context.Context, *ListHTTPArtifactsRequest) (*ListHTTPArtifactsResponse, error)
+	ReadHTTPArtifact(context.Context, *ReadHTTPArtifactRequest) (*HTTPArtifactChunk, error)
+	DeleteHTTPArtifact(context.Context, *DeleteHTTPArtifactRequest) (*HTTPArtifactDeleted, error)
+	// Current owner/conversation authority, using the same policy as admission.
+	GetChatCapabilities(context.Context, *GetChatCapabilitiesRequest) (*GetChatCapabilitiesResponse, error)
 	ListChatProfiles(context.Context, *ListChatProfilesRequest) (*ListChatProfilesResponse, error)
 	SendPhotos(context.Context, *SendPhotosRequest) (*Turn, error)
 	ListChatPhotos(context.Context, *ListChatPhotosRequest) (*ListChatPhotosResponse, error)
@@ -120,6 +176,18 @@ type ChatExtrasServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedChatExtrasServiceServer struct{}
 
+func (UnimplementedChatExtrasServiceServer) ListHTTPArtifacts(context.Context, *ListHTTPArtifactsRequest) (*ListHTTPArtifactsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListHTTPArtifacts not implemented")
+}
+func (UnimplementedChatExtrasServiceServer) ReadHTTPArtifact(context.Context, *ReadHTTPArtifactRequest) (*HTTPArtifactChunk, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReadHTTPArtifact not implemented")
+}
+func (UnimplementedChatExtrasServiceServer) DeleteHTTPArtifact(context.Context, *DeleteHTTPArtifactRequest) (*HTTPArtifactDeleted, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteHTTPArtifact not implemented")
+}
+func (UnimplementedChatExtrasServiceServer) GetChatCapabilities(context.Context, *GetChatCapabilitiesRequest) (*GetChatCapabilitiesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetChatCapabilities not implemented")
+}
 func (UnimplementedChatExtrasServiceServer) ListChatProfiles(context.Context, *ListChatProfilesRequest) (*ListChatProfilesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListChatProfiles not implemented")
 }
@@ -154,6 +222,78 @@ func RegisterChatExtrasServiceServer(s grpc.ServiceRegistrar, srv ChatExtrasServ
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&ChatExtrasService_ServiceDesc, srv)
+}
+
+func _ChatExtrasService_ListHTTPArtifacts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListHTTPArtifactsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChatExtrasServiceServer).ListHTTPArtifacts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChatExtrasService_ListHTTPArtifacts_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChatExtrasServiceServer).ListHTTPArtifacts(ctx, req.(*ListHTTPArtifactsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ChatExtrasService_ReadHTTPArtifact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadHTTPArtifactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChatExtrasServiceServer).ReadHTTPArtifact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChatExtrasService_ReadHTTPArtifact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChatExtrasServiceServer).ReadHTTPArtifact(ctx, req.(*ReadHTTPArtifactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ChatExtrasService_DeleteHTTPArtifact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteHTTPArtifactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChatExtrasServiceServer).DeleteHTTPArtifact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChatExtrasService_DeleteHTTPArtifact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChatExtrasServiceServer).DeleteHTTPArtifact(ctx, req.(*DeleteHTTPArtifactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ChatExtrasService_GetChatCapabilities_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetChatCapabilitiesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChatExtrasServiceServer).GetChatCapabilities(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChatExtrasService_GetChatCapabilities_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChatExtrasServiceServer).GetChatCapabilities(ctx, req.(*GetChatCapabilitiesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _ChatExtrasService_ListChatProfiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -253,6 +393,22 @@ var ChatExtrasService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "iulita.mobile.v1.ChatExtrasService",
 	HandlerType: (*ChatExtrasServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ListHTTPArtifacts",
+			Handler:    _ChatExtrasService_ListHTTPArtifacts_Handler,
+		},
+		{
+			MethodName: "ReadHTTPArtifact",
+			Handler:    _ChatExtrasService_ReadHTTPArtifact_Handler,
+		},
+		{
+			MethodName: "DeleteHTTPArtifact",
+			Handler:    _ChatExtrasService_DeleteHTTPArtifact_Handler,
+		},
+		{
+			MethodName: "GetChatCapabilities",
+			Handler:    _ChatExtrasService_GetChatCapabilities_Handler,
+		},
 		{
 			MethodName: "ListChatProfiles",
 			Handler:    _ChatExtrasService_ListChatProfiles_Handler,

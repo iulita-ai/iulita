@@ -39,8 +39,8 @@ func TestEveryRPCDeclaresPolicyAndCredentialStage(t *testing.T) {
 		}
 		return true
 	})
-	if count != 38 {
-		t.Fatalf("review new or missing RPC policies: got %d, want 38", count)
+	if count != 42 {
+		t.Fatalf("review new or missing RPC policies: got %d, want 42", count)
 	}
 	for method, scope := range map[string]string{
 		mobilev1.DeviceTelemetryService_UploadBatch_FullMethodName: "devices:sync",
@@ -52,11 +52,15 @@ func TestEveryRPCDeclaresPolicyAndCredentialStage(t *testing.T) {
 		}
 	}
 	for method, scope := range map[string]string{
-		mobilev1.ChatExtrasService_ListChatProfiles_FullMethodName: "chats:read",
-		mobilev1.ChatExtrasService_ListChatPhotos_FullMethodName:   "chats:read",
-		mobilev1.ChatExtrasService_GetChatPhoto_FullMethodName:     "chats:read",
-		mobilev1.ChatExtrasService_SendPhotos_FullMethodName:       "chats:write",
-		mobilev1.ChatExtrasService_SaveAnswerFact_FullMethodName:   "chats:write",
+		mobilev1.ChatExtrasService_ListHTTPArtifacts_FullMethodName:   "chats:read",
+		mobilev1.ChatExtrasService_ReadHTTPArtifact_FullMethodName:    "chats:read",
+		mobilev1.ChatExtrasService_DeleteHTTPArtifact_FullMethodName:  "chats:write",
+		mobilev1.ChatExtrasService_GetChatCapabilities_FullMethodName: "chats:read",
+		mobilev1.ChatExtrasService_ListChatProfiles_FullMethodName:    "chats:read",
+		mobilev1.ChatExtrasService_ListChatPhotos_FullMethodName:      "chats:read",
+		mobilev1.ChatExtrasService_GetChatPhoto_FullMethodName:        "chats:read",
+		mobilev1.ChatExtrasService_SendPhotos_FullMethodName:          "chats:write",
+		mobilev1.ChatExtrasService_SaveAnswerFact_FullMethodName:      "chats:write",
 	} {
 		p, err := MethodPolicy(method)
 		if err != nil || p.Feature != mobilev1.Feature_FEATURE_CHAT || p.Stage != mobilev1.TokenStage_TOKEN_STAGE_ACTIVE || p.Binding != mobilev1.ResourceBinding_RESOURCE_BINDING_OWNER || !p.Idempotent || len(p.Scopes) != 1 || p.Scopes[0] != scope {

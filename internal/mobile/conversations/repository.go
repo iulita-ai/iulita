@@ -266,7 +266,8 @@ func (r *Repository) Clear(ctx context.Context, owner, id string, generation uin
 		// Keep dedup/effect tombstones, but erase copied knowledge and prompts.
 		for _, q := range []string{
 			`UPDATE mobile_turns SET policy_snapshot='{}' WHERE owner_id=? AND conversation_id=?`,
-			`UPDATE mobile_prompts SET body='{}',nonce_hash=NULL,fingerprint=NULL WHERE owner_id=? AND conversation_id=?`,
+			`UPDATE mobile_reminders SET state='cancelled',title='',authority='{}' WHERE owner_id=? AND conversation_id=?`,
+			`UPDATE mobile_prompts SET body='{}',nonce_hash=NULL,fingerprint=NULL,decision='',actor_device='' WHERE owner_id=? AND conversation_id=?`,
 			`UPDATE mobile_tool_operations SET outcome='' WHERE owner_id=? AND conversation_id=?`,
 			`UPDATE mobile_operations SET response=X'',redacted=1 WHERE owner_id=? AND conversation_id=?`,
 		} {

@@ -3,7 +3,9 @@ package browseroauth
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 
 	"github.com/iulita-ai/iulita/internal/auth"
@@ -50,8 +52,11 @@ func (a PasswordAccounts) Authenticate(ctx context.Context, username, password s
 // Lookup looks up current account security state.
 func (a PasswordAccounts) Lookup(ctx context.Context, id string) (Account, error) {
 	u, err := a.Users.GetUser(ctx, id)
-	if err != nil || u == nil {
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && u == nil) {
 		return Account{}, auth.ErrUserNotFound
+	}
+	if err != nil {
+		return Account{}, err
 	}
 	return account(u), nil
 }

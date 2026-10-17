@@ -45,7 +45,7 @@ func ManageClients(ctx context.Context, settings Settings, operation ClientOpera
 		}
 		return nil, store.ChangeOAuthClient(ctx, operation.ClientID, "", true)
 	case "register":
-		if operation.Registration.Kind == "service" {
+		if operation.Registration.Kind == "service" || (operation.Registration.Kind == "native" && operation.Registration.OwnerID != "") {
 			accounts, openErr := sqlitedb.Open(ctx, settings.AccountDB, false)
 			if openErr != nil {
 				return nil, openErr
@@ -54,7 +54,7 @@ func ManageClients(ctx context.Context, settings Settings, operation ClientOpera
 			checkErr := accounts.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE id=? AND disabled=0 AND must_change_pass=0 AND password_hash<>''`, operation.Registration.OwnerID).Scan(&count)
 			accounts.Close() //nolint:errcheck,gosec // Preserve account validation error.
 			if checkErr != nil || count != 1 {
-				return nil, errors.New("service owner must be an available password account")
+				return nil, errors.New("client owner must be an available password account")
 			}
 		}
 	case "rotate-secret":

@@ -23,11 +23,8 @@ import (
 // errNotOwner is returned when a non-owner user tries to invoke the skill.
 var errNotOwner = errors.New("slack search restricted to owner")
 
-// SearchSkill is an on-demand LLM tool that searches and reads the OWNER's Slack
-// workspace via their personal user token (read-only). It is single-owner:
-// regardless of which iulita user is chatting, it resolves THE connected Slack
-// account (GetAnySlackAccount) — it never uses skill.UserIDFrom(ctx), because the
-// caller's chat identity has no relationship to the Slack owner.
+// SearchSkill searches the connected owner's Slack workspace with a personal
+// read-only token. The real Iulita caller must own that single connection.
 //
 // Read-only invariant: this skill only calls search.messages,
 // conversations.history, and conversations.replies (see search_api.go). It must
@@ -165,6 +162,10 @@ func (s *SearchSkill) Execute(ctx context.Context, raw json.RawMessage) (string,
 		}
 	}
 
+	return s.executeResolved(ctx, in, api)
+}
+
+func (s *SearchSkill) executeResolved(ctx context.Context, in searchInput, api searchAPI) (string, error) {
 	limit := clampLimit(in.Limit)
 	switch in.Mode {
 	case "search":

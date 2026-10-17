@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -32,10 +33,13 @@ type auditSink interface {
 
 // PostSkill is the slack_post tool.
 type PostSkill struct {
-	poster ChannelPoster // nil until SetChannelPoster (deferred wiring after channelmgr exists)
-	audit  auditSink
-	bus    *eventbus.Bus // nil-safe; observability
-	logger *zap.Logger
+	nativeMu    sync.RWMutex
+	nativeOwner string
+	nativeEpoch uint64
+	poster      ChannelPoster // nil until SetChannelPoster (deferred wiring after channelmgr exists)
+	audit       auditSink
+	bus         *eventbus.Bus // nil-safe; observability
+	logger      *zap.Logger
 }
 
 // NewPostSkill constructs the skill. poster is wired later via SetChannelPoster.

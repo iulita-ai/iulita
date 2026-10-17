@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"sort"
 
 	v1 "github.com/iulita-ai/iulita/api/gen/go/iulita/mobile/v1"
 	"github.com/iulita-ai/iulita/internal/mobile/conversations"
@@ -10,6 +11,56 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
+
+// GetChatCapabilities never substitutes account/admin credentials for the
+// caller's scopes. Availability can shrink after this advisory read; admission
+// and dispatch independently recheck live policy.
+func (s *Server) GetChatCapabilities(ctx context.Context, in *v1.GetChatCapabilitiesRequest) (*v1.GetChatCapabilitiesResponse, error) {
+	p := auth(ctx)
+	a := s.config.OAuth.Authority(p.Claims)
+	c, err := s.config.Chats.Get(ctx, p.Claims.Subject, in.ConversationId)
+	if err != nil {
+		return nil, err
+	}
+	tools, err := s.config.Engine.Capabilities(engine.WithAuthority(ctx, a), p.Claims.Subject, c)
+	if err != nil {
+		return nil, err
+	}
+	out := &v1.GetChatCapabilitiesResponse{ConversationVersion: c.Version, MemoryMode: v1.MemoryMode_MEMORY_MODE_ISOLATED}
+	if c.Settings.MemoryMode == "account" {
+		out.MemoryMode = v1.MemoryMode_MEMORY_MODE_ACCOUNT
+	}
+	for i := range tools {
+		t := tools[i]
+		item := &v1.ChatToolCapability{InternalConfirmations: t.InternalConfirmations, Name: t.Definition.Name, Description: t.Definition.Description, PolicyRevision: t.Revision}
+		if len(t.Actions) == 0 {
+			item.Actions = append(item.Actions, &v1.ChatActionCapability{Effect: t.Effect})
+		}
+		for name, action := range t.Actions {
+			allowed := true
+			for _, scope := range action.Scopes {
+				found := false
+				for _, granted := range a.Scopes {
+					if scope == granted {
+						found = true
+						break
+					}
+				}
+				if !found {
+					allowed = false
+					break
+				}
+			}
+			if allowed {
+				item.Actions = append(item.Actions, &v1.ChatActionCapability{Action: name, Effect: action.Effect, ConfirmationRequired: action.Confirmation})
+			}
+		}
+		sort.Slice(item.Actions, func(i, j int) bool { return item.Actions[i].Action < item.Actions[j].Action })
+		out.Tools = append(out.Tools, item)
+	}
+	sort.Slice(out.Tools, func(i, j int) bool { return out.Tools[i].Name < out.Tools[j].Name })
+	return out, nil
+}
 
 // ListChatProfiles implements the authenticated owned chat extension RPC.
 func (s *Server) ListChatProfiles(ctx context.Context, in *v1.ListChatProfilesRequest) (*v1.ListChatProfilesResponse, error) {

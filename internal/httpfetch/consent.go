@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"time"
 
 	"go.uber.org/zap"
@@ -254,37 +253,6 @@ func (e *Engine) saveStandingGrant(ctx context.Context, scope Scope, origin Orig
 			zap.Error(err), zap.String("standing", standing))
 	}
 	_ = actor
-}
-
-// mutationPreview renders the safe description of all remaining mutating
-// steps for a single chain-wide confirmation.
-func (e *Engine) mutationPreview(state *runState, idx, total int) string {
-	lines := make([]string, 0, total)
-	if idx < 0 {
-		idx = 0
-	}
-	for i := idx; i < len(state.steps) && i < total; i++ {
-		st := state.steps[i]
-		method, err := validateMethod(st.Method)
-		if err != nil || isSafeMethod(method) {
-			continue
-		}
-		target := st.URL
-		if st.URLFrom != nil {
-			target = "(resolved from step " + st.URLFrom.Step + ")"
-		} else if u, perr := url.Parse(st.URL); perr == nil {
-			target = u.Scheme + "://" + u.Host + u.EscapedPath()
-		}
-		lines = append(lines, fmt.Sprintf("• %s %s", method, target))
-	}
-	if len(lines) == 0 {
-		return "Perform the requested HTTP mutation."
-	}
-	out := "Approve the following HTTP operations (data comes from this request's plan):\n"
-	for _, l := range lines {
-		out += l + "\n"
-	}
-	return out
 }
 
 // acquireTransfer takes a network-transfer permit before the request is

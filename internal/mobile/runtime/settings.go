@@ -17,6 +17,8 @@ import (
 
 // Settings contains persistent-store or runtime configuration.
 type Settings struct {
+	// Explicit registration opt-in. Existing registrations are never widened at startup.
+	AssistantScopes     []string           `json:"assistant_scopes,omitempty"`
 	Scenarios           []devices.Scenario `json:"scenarios,omitempty"`
 	Issuer              string             `json:"issuer"`
 	Audience            string             `json:"audience"`
@@ -55,6 +57,14 @@ func ReadSettings(path string) (Settings, error) {
 // Validate checks configuration dependencies and required values.
 func (s Settings) Validate() error {
 	fail := errors.New("invalid mobile runtime settings")
+	seen := map[string]bool{}
+	for _, scope := range s.AssistantScopes {
+		if seen[scope] || (scope != "assistant:services:read" && scope != "assistant:services:write") {
+			return fail
+		}
+		seen[scope] = true
+	}
+
 	u, err := url.Parse(s.Issuer)
 	if err != nil || u.Scheme != "https" || u.Host == "" || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.User != nil || s.Audience == "" {
 		return fail

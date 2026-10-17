@@ -296,3 +296,20 @@ func TestDownloadStoresOpaqueGzipBytes(t *testing.T) {
 		t.Fatalf("artifact = %+v", st.Artifact)
 	}
 }
+
+type reducedByteConfirmer struct{ cap int64 }
+
+func (c reducedByteConfirmer) Confirm(_ context.Context, a Confirmation, expect Actor) (Decision, error) {
+	return Decision{Approved: true, Actor: expect, MaxBytes: c.cap}, nil
+}
+func TestDeclaredDownloadRespectsReducedUserByteGrant(t *testing.T) {
+	p := newFakeProxy(cannedResponse{status: 200, headers: map[string]string{"Content-Type": "application/octet-stream", "Content-Length": "200"}, body: strings.Repeat("x", 200)})
+	proxy := httptest.NewServer(http.HandlerFunc(p.handler))
+	defer proxy.Close()
+	store := newMemArtifactStore()
+	e := newDownloadEngine(t, proxy.URL, reducedByteConfirmer{150}, store)
+	result := runPlan(t, e, downloadPlanFmt)
+	if result.Outcome != OutcomeQuotaExceeded || store.commits.Load() != 0 {
+		t.Fatal("declared download exceeded the user grant", result.Outcome, store.commits.Load())
+	}
+}

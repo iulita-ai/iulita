@@ -18,6 +18,9 @@ func (s *Store) ValidateIn(ctx context.Context, tx *sql.Tx, token string) (*Clai
 	if c.PrincipalType == "service" {
 		return nil, ErrInvalid
 	}
+	if ownerErr := checkClientOwnerIn(ctx, tx, c.ClientID, c.Subject); ownerErr != nil {
+		return nil, ownerErr
+	}
 	sig := token[strings.LastIndexByte(token, '.')+1:]
 	var data []byte
 	var generation uint64

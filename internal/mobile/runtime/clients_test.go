@@ -132,3 +132,45 @@ func TestAsyncServiceAuthorityRefreshesAccountWithoutAnotherRPC(t *testing.T) {
 		t.Fatal("late service completion retained stale account epoch")
 	}
 }
+
+func TestOfflineNativeOwnerRegistrationKeepsPrimaryUnchanged(t *testing.T) {
+	settings, accounts, _, _ := runtimeFixture(t)
+	ctx := context.Background()
+	if err := Initialize(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := accounts.GetUserByUsername(ctx, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	registration := oauthstore.ClientRegistration{ClientID: "admin-native", Name: "Admin native", Kind: "native", OwnerID: owner.ID, RedirectURIs: []string{settings.RedirectURI}, Scopes: append(append([]string(nil), scopes...), "assistant:services:read", "assistant:services:write")}
+	if _, err = ManageClients(ctx, settings, ClientOperation{Action: "register", Registration: registration}); err != nil {
+		t.Fatal(err)
+	}
+	registrations, err := ManageClients(ctx, settings, ClientOperation{Action: "list"})
+	if err != nil || len(registrations) != 2 {
+		t.Fatal(registrations, err)
+	}
+	for _, r := range registrations {
+		if r.ClientID == settings.ClientID && (r.OwnerID != "" || len(r.Scopes) != 8) {
+			t.Fatal("primary widened", r)
+		}
+		if r.ClientID == registration.ClientID && (r.OwnerID != owner.ID || len(r.Scopes) != 10) {
+			t.Fatal("secondary policy", r)
+		}
+	}
+	registration.ClientID = "missing-native-owner"
+	registration.OwnerID = "00000000-0000-4000-8000-000000000001"
+	if _, err = ManageClients(ctx, settings, ClientOperation{Action: "register", Registration: registration}); err == nil {
+		t.Fatal("missing native owner registered")
+	}
+	owner.Disabled = true
+	if err = accounts.UpdateUser(ctx, owner); err != nil {
+		t.Fatal(err)
+	}
+	registration.ClientID = "disabled-native-owner"
+	registration.OwnerID = owner.ID
+	if _, err = ManageClients(ctx, settings, ClientOperation{Action: "register", Registration: registration}); err == nil {
+		t.Fatal("disabled native owner registered")
+	}
+}

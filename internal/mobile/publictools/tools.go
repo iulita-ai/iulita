@@ -38,6 +38,16 @@ func Tools(registry Lookup) []engine.Tool {
 		if !ok || s.Name() != name || !builtin(s) {
 			continue
 		}
+		revision := "public-information-v1"
+		if bindings, ok := registry.(interface {
+			NativeBinding(skill.Skill) (string, bool)
+		}); ok {
+			binding, valid := bindings.NativeBinding(s)
+			if !valid {
+				continue
+			}
+			revision += ":" + binding
+		}
 		schema := bytes.Clone(s.InputSchema())
 		description := s.Description()
 		if name == "weather" {
@@ -46,7 +56,7 @@ func Tools(registry Lookup) []engine.Tool {
 		}
 		tools = append(tools, engine.Tool{
 			Definition: llm.ToolDefinition{Name: name, Description: description, InputSchema: schema},
-			Revision:   "public-information-v1", Effect: "read", Isolated: true,
+			Revision:   revision, Effect: "read", Isolated: true,
 			RequiredScopes: []string{"chats:write"},
 			Execute: func(ctx context.Context, _ conversations.Fence, input json.RawMessage) (string, error) {
 				current, enabled := registry.Get(name)

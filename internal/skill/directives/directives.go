@@ -56,6 +56,40 @@ func (s *Skill) Execute(ctx context.Context, raw json.RawMessage) (string, error
 	}
 
 	chatID := skill.ChatIDFrom(ctx)
+	if owner := skill.UserIDFrom(ctx); owner != "" {
+		if accountStore, ok := s.store.(storage.AccountDirectives); ok {
+			user, lookupErr := s.store.GetUser(ctx, owner)
+			if lookupErr != nil {
+				return "", lookupErr
+			}
+			if user != nil {
+				switch in.Action {
+				case "get":
+					value, err := accountStore.ReadAccountDirective(ctx, owner)
+					if err != nil {
+						return "", err
+					}
+					if value == "" {
+						return "No account directive set.", nil
+					}
+					return "Current account directive:\n" + value, nil
+				case "set":
+					if in.Content == "" {
+						return "", fmt.Errorf("content is required for set")
+					}
+					if err := accountStore.WriteAccountDirective(ctx, owner, in.Content); err != nil {
+						return "", err
+					}
+					return "Account directive saved for future messages across channels.", nil
+				case "clear":
+					if err := accountStore.WriteAccountDirective(ctx, owner, ""); err != nil {
+						return "", err
+					}
+					return "Account directive cleared.", nil
+				}
+			}
+		}
+	}
 	if chatID == "" {
 		return "", fmt.Errorf("chat ID not available in context")
 	}

@@ -320,6 +320,9 @@ func (r *Repository) Complete(ctx context.Context, f Fence, text, state string) 
 			return err
 		}
 	}
+	if _, err = tx.ExecContext(ctx, `UPDATE mobile_prompts SET state='invalidated' WHERE owner_id=? AND turn_id=? AND state='open'`, f.OwnerID, f.TurnID); err != nil {
+		return err
+	}
 	if _, err = tx.ExecContext(ctx, `UPDATE mobile_turns SET state=? WHERE owner_id=? AND conversation_id=? AND id=?`, state, f.OwnerID, f.ConversationID, f.TurnID); err != nil {
 		return err
 	}

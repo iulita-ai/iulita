@@ -22,6 +22,7 @@ func CheckProtocolVersion(version uint32) error {
 }
 
 var mobileScopes = map[string]bool{
+	"assistant:services:read": true, "assistant:services:write": true,
 	"chats:read": true, "chats:write": true, "devices:read": true,
 	"phone:data": true, "phone:ui": true, "devices:receive": true, "devices:sync": true, "devices:manage": true,
 }

@@ -4,12 +4,17 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+
+	"github.com/google/uuid"
 )
 
 // Registry holds all registered skills and tracks which are disabled.
 // By default all registered skills are enabled; individual skills can be disabled at runtime.
 type Registry struct {
 	mu            sync.RWMutex
+	instance      string
+	bindingEpoch  uint64
+	bindings      map[string]uint64
 	skills        map[string]Skill
 	manifests     map[string]*Manifest // keyed by manifest Name
 	skillManifest map[string]string    // skill name → manifest name
@@ -21,7 +26,7 @@ type Registry struct {
 
 // NewRegistry creates a registry where all skills are enabled by default.
 func NewRegistry() *Registry {
-	return &Registry{
+	return &Registry{instance: uuid.NewString(), bindings: make(map[string]uint64),
 		skills:        make(map[string]Skill),
 		manifests:     make(map[string]*Manifest),
 		skillManifest: make(map[string]string),
@@ -71,6 +76,8 @@ func (r *Registry) Capabilities() []string {
 func (r *Registry) Register(s Skill) {
 	r.mu.Lock()
 	r.skills[s.Name()] = s
+	r.bindingEpoch++
+	r.bindings[s.Name()] = r.bindingEpoch
 	r.builtins[s.Name()] = true
 	r.mu.Unlock()
 }
@@ -81,6 +88,8 @@ func (r *Registry) Register(s Skill) {
 func (r *Registry) RegisterWithManifest(s Skill, m *Manifest) {
 	r.mu.Lock()
 	r.skills[s.Name()] = s
+	r.bindingEpoch++
+	r.bindings[s.Name()] = r.bindingEpoch
 	r.builtins[s.Name()] = true
 	if m != nil {
 		r.manifests[m.Name] = m
@@ -103,6 +112,8 @@ func (r *Registry) RegisterExternalWithManifest(s Skill, m *Manifest) {
 		return // protect built-in skills from being overwritten
 	}
 	r.skills[s.Name()] = s
+	r.bindingEpoch++
+	r.bindings[s.Name()] = r.bindingEpoch
 	if m != nil {
 		r.manifests[m.Name] = m
 		r.skillManifest[s.Name()] = m.Name
@@ -118,6 +129,9 @@ func (r *Registry) RegisterExternalWithManifest(s Skill, m *Manifest) {
 func (r *Registry) RegisterInGroup(s Skill, manifestName string) {
 	r.mu.Lock()
 	r.skills[s.Name()] = s
+	r.bindingEpoch++
+	r.bindings[s.Name()] = r.bindingEpoch
+	r.builtins[s.Name()] = true
 	if manifestName != "" {
 		r.skillManifest[s.Name()] = manifestName
 	}

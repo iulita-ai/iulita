@@ -8,6 +8,12 @@ option java_multiple_files = true;
 
 // Explicit gallery inputs, independent of phone observation/UI permissions.
 service ChatExtrasService {
+  // Ordinary HTTP attachments only. Phone/Vision artifacts use their separate service.
+  rpc ListHTTPArtifacts(ListHTTPArtifactsRequest) returns (ListHTTPArtifactsResponse) { option (rpc_policy) = { feature: FEATURE_CHAT stage: TOKEN_STAGE_ACTIVE scopes: "chats:read" binding: RESOURCE_BINDING_OWNER idempotent: true }; }
+  rpc ReadHTTPArtifact(ReadHTTPArtifactRequest) returns (HTTPArtifactChunk) { option (rpc_policy) = { feature: FEATURE_CHAT stage: TOKEN_STAGE_ACTIVE scopes: "chats:read" binding: RESOURCE_BINDING_OWNER idempotent: true }; }
+  rpc DeleteHTTPArtifact(DeleteHTTPArtifactRequest) returns (HTTPArtifactDeleted) { option (rpc_policy) = { feature: FEATURE_CHAT stage: TOKEN_STAGE_ACTIVE scopes: "chats:write" binding: RESOURCE_BINDING_OWNER idempotent: true }; }
+  // Current owner/conversation authority, using the same policy as admission.
+  rpc GetChatCapabilities(GetChatCapabilitiesRequest) returns (GetChatCapabilitiesResponse) { option (rpc_policy) = { feature: FEATURE_CHAT stage: TOKEN_STAGE_ACTIVE scopes: "chats:read" binding: RESOURCE_BINDING_OWNER idempotent: true }; }
   rpc ListChatProfiles(ListChatProfilesRequest) returns (ListChatProfilesResponse) { option (rpc_policy) = { feature: FEATURE_CHAT stage: TOKEN_STAGE_ACTIVE scopes: "chats:read" binding: RESOURCE_BINDING_OWNER idempotent: true }; }
   rpc SendPhotos(SendPhotosRequest) returns (Turn) { option (rpc_policy) = { feature: FEATURE_CHAT stage: TOKEN_STAGE_ACTIVE scopes: "chats:write" binding: RESOURCE_BINDING_OWNER idempotent: true }; }
   rpc ListChatPhotos(ListChatPhotosRequest) returns (ListChatPhotosResponse) { option (rpc_policy) = { feature: FEATURE_CHAT stage: TOKEN_STAGE_ACTIVE scopes: "chats:read" binding: RESOURCE_BINDING_OWNER idempotent: true }; }
@@ -38,3 +44,23 @@ message SaveAnswerFactRequest {
   string text = 6; bool confirm_account_export = 7;
 }
 message SavedAnswerFact { int64 fact_id = 1; }
+message GetChatCapabilitiesRequest { ClientContext client = 1; string conversation_id = 2; }
+message ChatActionCapability { string action = 1; string effect = 2; bool confirmation_required = 3; }
+message ChatToolCapability {
+  string name = 1; string description = 2; string policy_revision = 3;
+  repeated ChatActionCapability actions = 4;
+ bool internal_confirmations = 5; // Dynamic per-step/exact-draft confirmations, independent of generic action confirmation.
+}
+message GetChatCapabilitiesResponse {
+  MemoryMode memory_mode = 1;
+  repeated ChatToolCapability tools = 2;
+  uint64 conversation_version = 3; // Settings snapshot used for this advisory response.
+}
+
+message HTTPArtifactInfo { string artifact_id=1; string filename=2; string mime=3; uint64 size=4; string sha256=5; }
+message ListHTTPArtifactsRequest { ClientContext client=1; string conversation_id=2; uint64 history_generation=3; }
+message ListHTTPArtifactsResponse { repeated HTTPArtifactInfo artifacts=1; }
+message ReadHTTPArtifactRequest { ClientContext client=1; string conversation_id=2; uint64 history_generation=3; string artifact_id=4; uint64 offset=5; uint32 max_bytes=6; }
+message HTTPArtifactChunk { HTTPArtifactInfo info=1; uint64 offset=2; bytes chunk=3; bool eof=4; }
+message DeleteHTTPArtifactRequest { reserved 2; ClientContext client=1; string conversation_id=3; uint64 history_generation=4; string artifact_id=5; }
+message HTTPArtifactDeleted {}

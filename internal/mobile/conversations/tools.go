@@ -82,6 +82,15 @@ func (r *Repository) FinishTool(ctx context.Context, f Fence, id, state, outcome
 	if checkErr3 := r.fence(ctx, tx, f); checkErr3 != nil {
 		return checkErr3
 	}
+	// Native local mutations atomically commit the result with their effect.
+	// Accept only that exact terminal result, never overwrite another outcome.
+	var oldState, oldOutcome string
+	if checkErr := tx.QueryRowContext(ctx, `SELECT state,outcome FROM mobile_tool_operations WHERE owner_id=? AND turn_id=? AND id=? AND processing_epoch=?`, f.OwnerID, f.TurnID, id, f.ProcessingEpoch).Scan(&oldState, &oldOutcome); checkErr != nil {
+		return checkErr
+	}
+	if state == "succeeded" && oldState == state && oldOutcome == outcome {
+		return tx.Commit()
+	}
 	res, err := tx.ExecContext(ctx, `UPDATE mobile_tool_operations SET state=?,outcome=? WHERE owner_id=? AND turn_id=? AND id=? AND state='started' AND processing_epoch=?`, state, outcome, f.OwnerID, f.TurnID, id, f.ProcessingEpoch)
 	if err != nil {
 		return err
@@ -89,6 +98,31 @@ func (r *Repository) FinishTool(ctx context.Context, f Fence, id, state, outcome
 	n, operationErr2 := res.RowsAffected()
 	if operationErr2 != nil {
 		return operationErr2
+	}
+	if n != 1 {
+		return ErrConflict
+	}
+	return tx.Commit()
+}
+
+// RejectPreparedTool closes a denied pre-dispatch operation without recording a
+// dispatched mutation. Repeated model calls cannot reopen its prompt.
+func (r *Repository) RejectPreparedTool(ctx context.Context, f Fence, id string) error {
+	tx, err := r.begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // Preserve operation result.
+	if fenceErr := r.fence(ctx, tx, f); fenceErr != nil {
+		return fenceErr
+	}
+	res, err := tx.ExecContext(ctx, `UPDATE mobile_tool_operations SET state='failed' WHERE owner_id=? AND turn_id=? AND id=? AND state='prepared' AND processing_epoch=?`, f.OwnerID, f.TurnID, id, f.ProcessingEpoch)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
 	}
 	if n != 1 {
 		return ErrConflict

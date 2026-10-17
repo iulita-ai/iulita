@@ -14,7 +14,6 @@ import (
 	googleoauth "golang.org/x/oauth2/google"
 	googlecalendar "google.golang.org/api/calendar/v3"
 	"google.golang.org/api/gmail/v1"
-	"google.golang.org/api/option"
 	"google.golang.org/api/people/v1"
 	"google.golang.org/api/tasks/v1"
 
@@ -233,6 +232,9 @@ func (s *persistingTokenSource) Token() (*oauth2.Token, error) {
 // resolveTokenSource walks the full credential priority chain:
 // env token → env file → config file → DB account → ADC.
 func (c *Client) resolveTokenSource(ctx context.Context, userID, accountAlias string) (oauth2.TokenSource, error) {
+	if owner, scoped := ctx.Value(accountPrincipalKey{}).(string); scoped {
+		return c.ownedTokenSource(ctx, owner, userID, accountAlias)
+	}
 	// Try global credential sources first (steps 1-3 and 5).
 	result, err := ResolveCredentials(
 		ctx, userID, accountAlias,
@@ -271,7 +273,7 @@ func (c *Client) GetGmailService(ctx context.Context, userID, accountAlias strin
 	if err != nil {
 		return nil, err
 	}
-	return gmail.NewService(ctx, option.WithTokenSource(ts))
+	return gmail.NewService(ctx, apiOptions(ctx, ts)...)
 }
 
 // GetCalendarService creates a Calendar API service.
@@ -280,7 +282,7 @@ func (c *Client) GetCalendarService(ctx context.Context, userID, accountAlias st
 	if err != nil {
 		return nil, err
 	}
-	return googlecalendar.NewService(ctx, option.WithTokenSource(ts))
+	return googlecalendar.NewService(ctx, apiOptions(ctx, ts)...)
 }
 
 // GetPeopleService creates a People API service.
@@ -289,7 +291,7 @@ func (c *Client) GetPeopleService(ctx context.Context, userID, accountAlias stri
 	if err != nil {
 		return nil, err
 	}
-	return people.NewService(ctx, option.WithTokenSource(ts))
+	return people.NewService(ctx, apiOptions(ctx, ts)...)
 }
 
 // GetTasksService creates a Tasks API service.
@@ -298,7 +300,7 @@ func (c *Client) GetTasksService(ctx context.Context, userID, accountAlias strin
 	if err != nil {
 		return nil, err
 	}
-	return tasks.NewService(ctx, option.WithTokenSource(ts))
+	return tasks.NewService(ctx, apiOptions(ctx, ts)...)
 }
 
 // HasAccounts checks if a user has any connected Google accounts.

@@ -22,6 +22,8 @@ import (
 
 	"github.com/iulita-ai/iulita/internal/channel"
 	"github.com/iulita-ai/iulita/internal/config"
+	"github.com/iulita-ai/iulita/internal/httpartifact"
+	"github.com/iulita-ai/iulita/internal/httpfetch"
 	"github.com/iulita-ai/iulita/internal/llm"
 	"github.com/iulita-ai/iulita/internal/mobile/browseroauth"
 	"github.com/iulita-ai/iulita/internal/mobile/conversations"
@@ -39,21 +41,26 @@ var scopes = []string{"chats:read", "chats:write", "devices:read", "devices:mana
 
 // Runtime owns the mobile execution lifecycle and its fencing state.
 type Runtime struct {
-	settings Settings
-	lock     *oauthstore.RealmLock
-	oauth    *oauthstore.Store
-	chats    *conversations.Repository
-	devices  *devices.Store
-	content  *ephemeral.Store
-	engine   *engine.Engine
-	grpc     *transport.Server
-	http     *http.Server
-	ready    atomic.Bool
-	close    sync.Once
+	settings         Settings
+	remindersEnabled bool
+	lock             *oauthstore.RealmLock
+	oauth            *oauthstore.Store
+	chats            *conversations.Repository
+	devices          *devices.Store
+	content          *ephemeral.Store
+	engine           *engine.Engine
+	grpc             *transport.Server
+	http             *http.Server
+	ready            atomic.Bool
+	close            sync.Once
+}
+
+func registrationScopes(s Settings) []string {
+	return append(append([]string(nil), scopes...), s.AssistantScopes...)
 }
 
 func registered(s Settings) fosite.DefaultClient {
-	return fosite.DefaultClient{ID: s.ClientID, Public: true, RedirectURIs: []string{s.RedirectURI}, GrantTypes: []string{"authorization_code", "refresh_token"}, ResponseTypes: []string{"code"}, Scopes: scopes, Audience: []string{s.Audience}}
+	return fosite.DefaultClient{ID: s.ClientID, Public: true, RedirectURIs: []string{s.RedirectURI}, GrantTypes: []string{"authorization_code", "refresh_token"}, ResponseTypes: []string{"code"}, Scopes: registrationScopes(s), Audience: []string{s.Audience}}
 }
 
 // Initialize is an explicit offline bootstrap command, never startup recovery.
@@ -118,6 +125,15 @@ func New(ctx context.Context, s Settings, features config.MobileConfig, accounts
 // NewWithTools adds explicitly reviewed tools, without importing the legacy
 // assistant's memory, event bus, automatic retries or unrestricted registry.
 func NewWithTools(ctx context.Context, s Settings, features config.MobileConfig, accounts browseroauth.Accounts, models llm.ProfileInvoker, system, version string, publicTools []engine.Tool, origins ...devices.OriginResolver) (result *Runtime, err error) {
+	return newWithCatalog(ctx, s, features, accounts, models, system, version, publicTools, nil, origins...)
+}
+
+// NewWithCatalog uses a live shared-registry adapter, with immutable admission snapshots.
+func NewWithCatalog(ctx context.Context, s Settings, features config.MobileConfig, accounts browseroauth.Accounts, models llm.ProfileInvoker, system, version string, catalog engine.CatalogFactory, origins ...devices.OriginResolver) (*Runtime, error) {
+	return newWithCatalog(ctx, s, features, accounts, models, system, version, nil, catalog, origins...)
+}
+
+func newWithCatalog(ctx context.Context, s Settings, features config.MobileConfig, accounts browseroauth.Accounts, models llm.ProfileInvoker, system, version string, publicTools []engine.Tool, catalog engine.CatalogFactory, origins ...devices.OriginResolver) (result *Runtime, err error) {
 	if checkErr1 := s.Validate(); checkErr1 != nil {
 		return nil, checkErr1
 	}
@@ -128,7 +144,7 @@ func NewWithTools(ctx context.Context, s Settings, features config.MobileConfig,
 		return nil, errors.New("no mobile backend requested")
 	}
 	clock := serverclock.New()
-	r := &Runtime{settings: s}
+	r := &Runtime{settings: s, remindersEnabled: features.ChatEnabled}
 	defer func() {
 		if err != nil {
 			r.Close()
@@ -213,6 +229,9 @@ func NewWithTools(ctx context.Context, s Settings, features config.MobileConfig,
 	if err != nil {
 		return nil, err
 	}
+	if catalog != nil {
+		r.engine.Catalog = catalog(r.engine)
+	}
 	r.engine.Profiles = func() []llm.AvailableProfile { return models.AcquireProfileSnapshot().AvailableProfiles() }
 	r.engine.VerifyAuthority = func(ctx context.Context, authority engine.Authority) error {
 		return verifyExecutionAuthority(ctx, accounts, r.oauth, authority)
@@ -224,7 +243,7 @@ func NewWithTools(ctx context.Context, s Settings, features config.MobileConfig,
 	if err != nil {
 		return nil, err
 	}
-	browser, err := browseroauth.New(browseroauth.Config{Clock: clock, Store: r.oauth, Accounts: accounts, Scopes: scopes})
+	browser, err := browseroauth.New(browseroauth.Config{Clock: clock, Store: r.oauth, Accounts: accounts, Scopes: append(append([]string(nil), scopes...), "assistant:services:read", "assistant:services:write")})
 	if err != nil {
 		return nil, err
 	}
@@ -301,6 +320,9 @@ func (r *Runtime) Run(ctx context.Context) error {
 	start(func() error { return r.grpc.Serve(grpcListener) })
 	start(func() error { return r.http.ServeTLS(httpListener, "", "") })
 	start(func() error { return r.engine.Run(root) })
+	if r.remindersEnabled {
+		start(func() error { r.engine.RunReminders(root); return nil })
+	}
 	start(func() error { return r.oauth.RunMaintenance(root) })
 	start(func() error { r.content.Run(root); return nil })
 	if r.devices != nil {
@@ -359,4 +381,23 @@ func (r *Runtime) HandleExternal(ctx context.Context, msg channel.IncomingMessag
 		return "", false, nil
 	}
 	return r.devices.HandleExternal(ctx, r.engine, msg)
+}
+
+// SetHTTPArtifacts binds normal attachments to live owned chat generations.
+// Call once before Run. Without this wiring native artifacts are inaccessible.
+func (r *Runtime) SetHTTPArtifacts(store *httpartifact.Store) {
+	if store == nil {
+		return
+	}
+	store.SetNativeGuard(func(ctx context.Context, scope httpfetch.Scope) error {
+		c, err := r.engine.Repo.Get(ctx, scope.UserID, scope.NativeConversation)
+		if err != nil {
+			return err
+		}
+		if c.Generation != scope.NativeGeneration {
+			return conversations.ErrConflict
+		}
+		return nil
+	})
+	r.grpc.SetHTTPArtifacts(store)
 }

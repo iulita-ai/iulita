@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -23,6 +24,7 @@ type Fetcher interface {
 // Engine is the shared strict HTTP executor. One instance per process,
 // created by host wiring; per-run state lives in runState.
 type Engine struct {
+	enabled   atomic.Bool
 	transport *http.Transport
 	client    *http.Client
 	limits    Limits
@@ -106,6 +108,7 @@ func NewEngine(cfg EngineConfig) (*Engine, *ProxyError) {
 		writerSlots:       make(chan struct{}, limits.MaxDownloadWriters),
 		pendingSlots:      make(chan struct{}, limits.MaxPendingGlobal),
 	}
+	e.enabled.Store(cfg.Policy.Enabled)
 	if e.metrics == nil {
 		e.metrics = noopMetrics{}
 	}
@@ -119,11 +122,11 @@ func (e *Engine) ProxyStatus() (available bool, scheme string) {
 }
 
 // Enabled reports the runtime feature state (checked again per step).
-func (e *Engine) Enabled() bool { return e.policy.Enabled }
+func (e *Engine) Enabled() bool { return e.enabled.Load() }
 
 // SetEnabled toggles the feature; in-flight requests are canceled via their
 // contexts, and new steps fail closed.
-func (e *Engine) SetEnabled(v bool) { e.policy.Enabled = v }
+func (e *Engine) SetEnabled(v bool) { e.enabled.Store(v) }
 
 // Limits exposes the effective limits (read-only use).
 func (e *Engine) Limits() Limits { return e.limits }
@@ -155,7 +158,7 @@ func (f *Factory) SetEnabled(v bool) {
 }
 
 // Enabled mirrors the runtime feature state.
-func (f *Factory) Enabled() bool { return f != nil && f.engine != nil && f.engine.policy.Enabled }
+func (f *Factory) Enabled() bool { return f != nil && f.engine != nil && f.engine.Enabled() }
 
 // ForCaller validates the caller and returns a scoped Fetcher. The fetcher
 // re-checks policy on every step, so a mid-run disable stops the chain.
@@ -163,7 +166,7 @@ func (f *Factory) ForCaller(ctx context.Context, caller Caller) (Fetcher, error)
 	if f.engine == nil {
 		return nil, fmt.Errorf("http engine not initialized")
 	}
-	if !f.engine.policy.Enabled {
+	if !f.engine.Enabled() {
 		return nil, fmt.Errorf("http feature disabled")
 	}
 	switch caller.Kind {
@@ -186,11 +189,9 @@ type runState struct {
 	opID          string
 	fingerprint   string
 	currentStep   string
-	steps         []Request
 	vars          map[string]varValue
 	jar           *cookieJar
 	internal      map[string]*stepInternal // step id → final response metadata
-	mutGrant      *Decision                // plan-fingerprint mutation grant
 	insecureOK    map[string]bool          // origin approved for plaintext secrets
 	egressOK      map[string]bool          // "srcOrigin→dstOrigin" approved
 	chainUsed     time.Duration            // non-download active budget spent
@@ -217,7 +218,7 @@ func (e *Engine) Run(ctx context.Context, plan Plan) (RunResult, error) {
 	opID := NewOperationID()
 	result := RunResult{Version: 1, OperationID: opID, ExternalContent: true}
 
-	if !e.policy.Enabled {
+	if !e.Enabled() {
 		result.Outcome = OutcomePolicyDenied
 		result.Error = &ErrorInfo{Outcome: OutcomePolicyDenied, Code: "http_disabled", Message: "HTTP tool is disabled"}
 		return result, nil
@@ -242,7 +243,6 @@ func (e *Engine) Run(ctx context.Context, plan Plan) (RunResult, error) {
 	state := &runState{
 		opID:          opID,
 		fingerprint:   Fingerprint(plan),
-		steps:         steps,
 		vars:          make(map[string]varValue),
 		internal:      make(map[string]*stepInternal),
 		insecureOK:    make(map[string]bool),
@@ -259,7 +259,7 @@ func (e *Engine) Run(ctx context.Context, plan Plan) (RunResult, error) {
 	stopReason := ""
 	for i := range steps {
 		step := steps[i]
-		sr := e.runStep(wallCtx, step, state, scope, i, len(steps))
+		sr := e.runStep(wallCtx, step, state, scope)
 		result.Steps = append(result.Steps, sr)
 
 		if sr.Outcome == OutcomeCompleted || sr.Outcome == OutcomeHTTPError {

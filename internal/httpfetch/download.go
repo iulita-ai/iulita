@@ -45,6 +45,7 @@ func (e *Engine) downloadResponse(ctx context.Context, step Request, state *runS
 
 	threshold := e.limits.ConsentThresholdBytes
 	hardCap := e.limits.MaxDownloadBytes
+	grantedLimit := hardCap
 
 	// Pre-read consent for a declared larger size; over the hard cap the
 	// download is refused without asking (it can never be allowed).
@@ -56,8 +57,15 @@ func (e *Engine) downloadResponse(ctx context.Context, step Request, state *runS
 		filename := e.downloadName(step, resp)
 		preview := fmt.Sprintf("Download %s from %s — declared size %s. Continue?",
 			filename, origin, humanBytes(info.bytesDeclared))
-		if _, ferr := e.askConsent(ctx, state, scope, ConfirmLargeDownload, preview, hardCap); ferr != nil {
+		decision, ferr := e.askConsent(ctx, state, scope, ConfirmLargeDownload, preview, hardCap)
+		if ferr != nil {
 			return nil, info, ferr
+		}
+		if decision.MaxBytes > 0 && decision.MaxBytes < grantedLimit {
+			grantedLimit = decision.MaxBytes
+		}
+		if info.bytesDeclared > grantedLimit {
+			return fail(OutcomeQuotaExceeded, "download_limit", "declared size exceeds the approved byte limit")
 		}
 	}
 
@@ -68,7 +76,7 @@ func (e *Engine) downloadResponse(ctx context.Context, step Request, state *runS
 		ContentEnc:  firstHeaderValue(resp.Header, "Content-Encoding"),
 		Sensitive:   true, // response bodies are sensitive by default
 		OwnerUserID: scope.UserID,
-		ChatID:      scope.ChatID,
+		ChatID:      scope.ArtifactBinding(),
 		MaxBytes:    hardCap,
 	}
 	w, err := e.artifacts.Begin(ctx, spec)
@@ -90,7 +98,7 @@ func (e *Engine) downloadResponse(ctx context.Context, step Request, state *runS
 	defer cancel()
 
 	asked := info.bytesDeclared > threshold
-	limit := hardCap
+	limit := grantedLimit
 
 	hasher := sha256.New()
 	var total int64

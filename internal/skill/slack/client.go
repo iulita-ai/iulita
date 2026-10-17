@@ -249,6 +249,13 @@ func (c *Client) EncryptionEnabled() bool {
 // A zero TokenExpiry means the token does not expire (rotation off) and is
 // returned as-is — it must NOT be treated as already-expired.
 func (c *Client) GetUserToken(ctx context.Context, ownerUserID string) (string, error) {
+	return c.userToken(ctx, ownerUserID, "")
+}
+
+// userToken pins native reads to a connection identity, independent of routine
+// rotating access-token refresh. The account and credential come from the same
+// loaded row, so a reconnect cannot substitute another workspace at dispatch.
+func (c *Client) userToken(ctx context.Context, ownerUserID, revision string) (string, error) {
 	// The lock is intentionally held across the network refresh + DB write so a
 	// burst of callers cannot double-spend a rotating refresh token (Slack rejects
 	// reuse). For a single-owner token this serialization is not a throughput
@@ -262,6 +269,9 @@ func (c *Client) GetUserToken(ctx context.Context, ownerUserID string) (string, 
 	}
 	if account == nil {
 		return "", ErrNoSlackAccount
+	}
+	if revision != "" && (account.UserID != ownerUserID || nativeRevision(account) != revision) {
+		return "", errNativeConnectionChanged
 	}
 
 	accessToken, err := c.DecryptToken(account.EncryptedAccessToken)

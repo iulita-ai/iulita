@@ -46,6 +46,9 @@ func (s *Store) ValidateAuthorityIn(ctx context.Context, tx *sql.Tx, a Authority
 	if a.Issuer != s.Issuer() || a.OwnerID != owner || !canonicalID(a.FamilyID) || !canonicalID(a.DeviceID) {
 		return ErrInvalid
 	}
+	if err := checkClientOwnerIn(ctx, tx, a.ClientID, owner); err != nil {
+		return err
+	}
 	var consent []byte
 	var authTime int64
 	err := tx.QueryRowContext(ctx, `SELECT f.consent_scopes,f.auth_time FROM oauth_families f JOIN oauth_owners o ON o.id=f.owner_id JOIN oauth_devices d ON d.id=f.device_id AND d.owner_id=f.owner_id JOIN oauth_realm r ON r.id=? WHERE f.id=? AND f.owner_id=? AND f.device_id=? AND f.client_id=? AND f.stage='active' AND f.revoked=0 AND f.expires_at>? AND f.owner_epoch=o.epoch AND f.device_epoch=d.epoch AND d.revoked=0 AND d.activated=1 AND f.signing_epoch=r.signing_epoch AND f.owner_epoch=? AND f.device_epoch=? AND f.signing_epoch=?`, s.realm.id, a.FamilyID, owner, a.DeviceID, a.ClientID, time.Now().Unix(), a.OwnerEpoch, a.DeviceEpoch, a.SigningEpoch).Scan(&consent, &authTime)

@@ -90,6 +90,8 @@ func New(path string) (*Store, error) {
 }
 
 func (s *Store) RunMigrations(ctx context.Context) error {
+	// Account-wide preferences have their own owner key, independent of any
+	// channel source. Created below, after the normal users table migration.
 	models := []struct {
 		model any
 		name  string
@@ -146,6 +148,10 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("creating %s table: %w", m.name, err)
 		}
+	}
+
+	if _, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS account_directives(user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,content TEXT NOT NULL,updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)`); err != nil {
+		return fmt.Errorf("creating account directives: %w", err)
 	}
 
 	// Add new columns to insights table (tolerates "duplicate column" errors).

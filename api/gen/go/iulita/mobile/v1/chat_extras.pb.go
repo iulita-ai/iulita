@@ -749,6 +749,690 @@ func (x *SavedAnswerFact) GetFactId() int64 {
 	return 0
 }
 
+type GetChatCapabilitiesRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Client         *ClientContext         `protobuf:"bytes,1,opt,name=client,proto3" json:"client,omitempty"`
+	ConversationId string                 `protobuf:"bytes,2,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *GetChatCapabilitiesRequest) Reset() {
+	*x = GetChatCapabilitiesRequest{}
+	mi := &file_iulita_mobile_v1_chat_extras_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetChatCapabilitiesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetChatCapabilitiesRequest) ProtoMessage() {}
+
+func (x *GetChatCapabilitiesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_iulita_mobile_v1_chat_extras_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetChatCapabilitiesRequest.ProtoReflect.Descriptor instead.
+func (*GetChatCapabilitiesRequest) Descriptor() ([]byte, []int) {
+	return file_iulita_mobile_v1_chat_extras_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *GetChatCapabilitiesRequest) GetClient() *ClientContext {
+	if x != nil {
+		return x.Client
+	}
+	return nil
+}
+
+func (x *GetChatCapabilitiesRequest) GetConversationId() string {
+	if x != nil {
+		return x.ConversationId
+	}
+	return ""
+}
+
+type ChatActionCapability struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	Action               string                 `protobuf:"bytes,1,opt,name=action,proto3" json:"action,omitempty"`
+	Effect               string                 `protobuf:"bytes,2,opt,name=effect,proto3" json:"effect,omitempty"`
+	ConfirmationRequired bool                   `protobuf:"varint,3,opt,name=confirmation_required,json=confirmationRequired,proto3" json:"confirmation_required,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *ChatActionCapability) Reset() {
+	*x = ChatActionCapability{}
+	mi := &file_iulita_mobile_v1_chat_extras_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChatActionCapability) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChatActionCapability) ProtoMessage() {}
+
+func (x *ChatActionCapability) ProtoReflect() protoreflect.Message {
+	mi := &file_iulita_mobile_v1_chat_extras_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChatActionCapability.ProtoReflect.Descriptor instead.
+func (*ChatActionCapability) Descriptor() ([]byte, []int) {
+	return file_iulita_mobile_v1_chat_extras_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ChatActionCapability) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *ChatActionCapability) GetEffect() string {
+	if x != nil {
+		return x.Effect
+	}
+	return ""
+}
+
+func (x *ChatActionCapability) GetConfirmationRequired() bool {
+	if x != nil {
+		return x.ConfirmationRequired
+	}
+	return false
+}
+
+type ChatToolCapability struct {
+	state                 protoimpl.MessageState  `protogen:"open.v1"`
+	Name                  string                  `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Description           string                  `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
+	PolicyRevision        string                  `protobuf:"bytes,3,opt,name=policy_revision,json=policyRevision,proto3" json:"policy_revision,omitempty"`
+	Actions               []*ChatActionCapability `protobuf:"bytes,4,rep,name=actions,proto3" json:"actions,omitempty"`
+	InternalConfirmations bool                    `protobuf:"varint,5,opt,name=internal_confirmations,json=internalConfirmations,proto3" json:"internal_confirmations,omitempty"` // Dynamic per-step/exact-draft confirmations, independent of generic action confirmation.
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *ChatToolCapability) Reset() {
+	*x = ChatToolCapability{}
+	mi := &file_iulita_mobile_v1_chat_extras_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChatToolCapability) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChatToolCapability) ProtoMessage() {}
+
+func (x *ChatToolCapability) ProtoReflect() protoreflect.Message {
+	mi := &file_iulita_mobile_v1_chat_extras_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChatToolCapability.ProtoReflect.Descriptor instead.
+func (*ChatToolCapability) Descriptor() ([]byte, []int) {
+	return file_iulita_mobile_v1_chat_extras_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *ChatToolCapability) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ChatToolCapability) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *ChatToolCapability) GetPolicyRevision() string {
+	if x != nil {
+		return x.PolicyRevision
+	}
+	return ""
+}
+
+func (x *ChatToolCapability) GetActions() []*ChatActionCapability {
+	if x != nil {
+		return x.Actions
+	}
+	return nil
+}
+
+func (x *ChatToolCapability) GetInternalConfirmations() bool {
+	if x != nil {
+		return x.InternalConfirmations
+	}
+	return false
+}
+
+type GetChatCapabilitiesResponse struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	MemoryMode          MemoryMode             `protobuf:"varint,1,opt,name=memory_mode,json=memoryMode,proto3,enum=iulita.mobile.v1.MemoryMode" json:"memory_mode,omitempty"`
+	Tools               []*ChatToolCapability  `protobuf:"bytes,2,rep,name=tools,proto3" json:"tools,omitempty"`
+	ConversationVersion uint64                 `protobuf:"varint,3,opt,name=conversation_version,json=conversationVersion,proto3" json:"conversation_version,omitempty"` // Settings snapshot used for this advisory response.
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *GetChatCapabilitiesResponse) Reset() {
+	*x = GetChatCapabilitiesResponse{}
+	mi := &file_iulita_mobile_v1_chat_extras_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetChatCapabilitiesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetChatCapabilitiesResponse) ProtoMessage() {}
+
+func (x *GetChatCapabilitiesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_iulita_mobile_v1_chat_extras_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetChatCapabilitiesResponse.ProtoReflect.Descriptor instead.
+func (*GetChatCapabilitiesResponse) Descriptor() ([]byte, []int) {
+	return file_iulita_mobile_v1_chat_extras_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *GetChatCapabilitiesResponse) GetMemoryMode() MemoryMode {
+	if x != nil {
+		return x.MemoryMode
+	}
+	return MemoryMode_MEMORY_MODE_UNSPECIFIED
+}
+
+func (x *GetChatCapabilitiesResponse) GetTools() []*ChatToolCapability {
+	if x != nil {
+		return x.Tools
+	}
+	return nil
+}
+
+func (x *GetChatCapabilitiesResponse) GetConversationVersion() uint64 {
+	if x != nil {
+		return x.ConversationVersion
+	}
+	return 0
+}
+
+type HTTPArtifactInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ArtifactId    string                 `protobuf:"bytes,1,opt,name=artifact_id,json=artifactId,proto3" json:"artifact_id,omitempty"`
+	Filename      string                 `protobuf:"bytes,2,opt,name=filename,proto3" json:"filename,omitempty"`
+	Mime          string                 `protobuf:"bytes,3,opt,name=mime,proto3" json:"mime,omitempty"`
+	Size          uint64                 `protobuf:"varint,4,opt,name=size,proto3" json:"size,omitempty"`
+	Sha256        string                 `protobuf:"bytes,5,opt,name=sha256,proto3" json:"sha256,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HTTPArtifactInfo) Reset() {
+	*x = HTTPArtifactInfo{}
+	mi := &file_iulita_mobile_v1_chat_extras_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HTTPArtifactInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HTTPArtifactInfo) ProtoMessage() {}
+
+func (x *HTTPArtifactInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_iulita_mobile_v1_chat_extras_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HTTPArtifactInfo.ProtoReflect.Descriptor instead.
+func (*HTTPArtifactInfo) Descriptor() ([]byte, []int) {
+	return file_iulita_mobile_v1_chat_extras_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *HTTPArtifactInfo) GetArtifactId() string {
+	if x != nil {
+		return x.ArtifactId
+	}
+	return ""
+}
+
+func (x *HTTPArtifactInfo) GetFilename() string {
+	if x != nil {
+		return x.Filename
+	}
+	return ""
+}
+
+func (x *HTTPArtifactInfo) GetMime() string {
+	if x != nil {
+		return x.Mime
+	}
+	return ""
+}
+
+func (x *HTTPArtifactInfo) GetSize() uint64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+func (x *HTTPArtifactInfo) GetSha256() string {
+	if x != nil {
+		return x.Sha256
+	}
+	return ""
+}
+
+type ListHTTPArtifactsRequest struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Client            *ClientContext         `protobuf:"bytes,1,opt,name=client,proto3" json:"client,omitempty"`
+	ConversationId    string                 `protobuf:"bytes,2,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	HistoryGeneration uint64                 `protobuf:"varint,3,opt,name=history_generation,json=historyGeneration,proto3" json:"history_generation,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *ListHTTPArtifactsRequest) Reset() {
+	*x = ListHTTPArtifactsRequest{}
+	mi := &file_iulita_mobile_v1_chat_extras_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListHTTPArtifactsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListHTTPArtifactsRequest) ProtoMessage() {}
+
+func (x *ListHTTPArtifactsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_iulita_mobile_v1_chat_extras_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListHTTPArtifactsRequest.ProtoReflect.Descriptor instead.
+func (*ListHTTPArtifactsRequest) Descriptor() ([]byte, []int) {
+	return file_iulita_mobile_v1_chat_extras_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *ListHTTPArtifactsRequest) GetClient() *ClientContext {
+	if x != nil {
+		return x.Client
+	}
+	return nil
+}
+
+func (x *ListHTTPArtifactsRequest) GetConversationId() string {
+	if x != nil {
+		return x.ConversationId
+	}
+	return ""
+}
+
+func (x *ListHTTPArtifactsRequest) GetHistoryGeneration() uint64 {
+	if x != nil {
+		return x.HistoryGeneration
+	}
+	return 0
+}
+
+type ListHTTPArtifactsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Artifacts     []*HTTPArtifactInfo    `protobuf:"bytes,1,rep,name=artifacts,proto3" json:"artifacts,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListHTTPArtifactsResponse) Reset() {
+	*x = ListHTTPArtifactsResponse{}
+	mi := &file_iulita_mobile_v1_chat_extras_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListHTTPArtifactsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListHTTPArtifactsResponse) ProtoMessage() {}
+
+func (x *ListHTTPArtifactsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_iulita_mobile_v1_chat_extras_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListHTTPArtifactsResponse.ProtoReflect.Descriptor instead.
+func (*ListHTTPArtifactsResponse) Descriptor() ([]byte, []int) {
+	return file_iulita_mobile_v1_chat_extras_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ListHTTPArtifactsResponse) GetArtifacts() []*HTTPArtifactInfo {
+	if x != nil {
+		return x.Artifacts
+	}
+	return nil
+}
+
+type ReadHTTPArtifactRequest struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Client            *ClientContext         `protobuf:"bytes,1,opt,name=client,proto3" json:"client,omitempty"`
+	ConversationId    string                 `protobuf:"bytes,2,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	HistoryGeneration uint64                 `protobuf:"varint,3,opt,name=history_generation,json=historyGeneration,proto3" json:"history_generation,omitempty"`
+	ArtifactId        string                 `protobuf:"bytes,4,opt,name=artifact_id,json=artifactId,proto3" json:"artifact_id,omitempty"`
+	Offset            uint64                 `protobuf:"varint,5,opt,name=offset,proto3" json:"offset,omitempty"`
+	MaxBytes          uint32                 `protobuf:"varint,6,opt,name=max_bytes,json=maxBytes,proto3" json:"max_bytes,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *ReadHTTPArtifactRequest) Reset() {
+	*x = ReadHTTPArtifactRequest{}
+	mi := &file_iulita_mobile_v1_chat_extras_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadHTTPArtifactRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadHTTPArtifactRequest) ProtoMessage() {}
+
+func (x *ReadHTTPArtifactRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_iulita_mobile_v1_chat_extras_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadHTTPArtifactRequest.ProtoReflect.Descriptor instead.
+func (*ReadHTTPArtifactRequest) Descriptor() ([]byte, []int) {
+	return file_iulita_mobile_v1_chat_extras_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ReadHTTPArtifactRequest) GetClient() *ClientContext {
+	if x != nil {
+		return x.Client
+	}
+	return nil
+}
+
+func (x *ReadHTTPArtifactRequest) GetConversationId() string {
+	if x != nil {
+		return x.ConversationId
+	}
+	return ""
+}
+
+func (x *ReadHTTPArtifactRequest) GetHistoryGeneration() uint64 {
+	if x != nil {
+		return x.HistoryGeneration
+	}
+	return 0
+}
+
+func (x *ReadHTTPArtifactRequest) GetArtifactId() string {
+	if x != nil {
+		return x.ArtifactId
+	}
+	return ""
+}
+
+func (x *ReadHTTPArtifactRequest) GetOffset() uint64 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
+func (x *ReadHTTPArtifactRequest) GetMaxBytes() uint32 {
+	if x != nil {
+		return x.MaxBytes
+	}
+	return 0
+}
+
+type HTTPArtifactChunk struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Info          *HTTPArtifactInfo      `protobuf:"bytes,1,opt,name=info,proto3" json:"info,omitempty"`
+	Offset        uint64                 `protobuf:"varint,2,opt,name=offset,proto3" json:"offset,omitempty"`
+	Chunk         []byte                 `protobuf:"bytes,3,opt,name=chunk,proto3" json:"chunk,omitempty"`
+	Eof           bool                   `protobuf:"varint,4,opt,name=eof,proto3" json:"eof,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HTTPArtifactChunk) Reset() {
+	*x = HTTPArtifactChunk{}
+	mi := &file_iulita_mobile_v1_chat_extras_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HTTPArtifactChunk) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HTTPArtifactChunk) ProtoMessage() {}
+
+func (x *HTTPArtifactChunk) ProtoReflect() protoreflect.Message {
+	mi := &file_iulita_mobile_v1_chat_extras_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HTTPArtifactChunk.ProtoReflect.Descriptor instead.
+func (*HTTPArtifactChunk) Descriptor() ([]byte, []int) {
+	return file_iulita_mobile_v1_chat_extras_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *HTTPArtifactChunk) GetInfo() *HTTPArtifactInfo {
+	if x != nil {
+		return x.Info
+	}
+	return nil
+}
+
+func (x *HTTPArtifactChunk) GetOffset() uint64 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
+func (x *HTTPArtifactChunk) GetChunk() []byte {
+	if x != nil {
+		return x.Chunk
+	}
+	return nil
+}
+
+func (x *HTTPArtifactChunk) GetEof() bool {
+	if x != nil {
+		return x.Eof
+	}
+	return false
+}
+
+type DeleteHTTPArtifactRequest struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Client            *ClientContext         `protobuf:"bytes,1,opt,name=client,proto3" json:"client,omitempty"`
+	ConversationId    string                 `protobuf:"bytes,3,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	HistoryGeneration uint64                 `protobuf:"varint,4,opt,name=history_generation,json=historyGeneration,proto3" json:"history_generation,omitempty"`
+	ArtifactId        string                 `protobuf:"bytes,5,opt,name=artifact_id,json=artifactId,proto3" json:"artifact_id,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *DeleteHTTPArtifactRequest) Reset() {
+	*x = DeleteHTTPArtifactRequest{}
+	mi := &file_iulita_mobile_v1_chat_extras_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteHTTPArtifactRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteHTTPArtifactRequest) ProtoMessage() {}
+
+func (x *DeleteHTTPArtifactRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_iulita_mobile_v1_chat_extras_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteHTTPArtifactRequest.ProtoReflect.Descriptor instead.
+func (*DeleteHTTPArtifactRequest) Descriptor() ([]byte, []int) {
+	return file_iulita_mobile_v1_chat_extras_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *DeleteHTTPArtifactRequest) GetClient() *ClientContext {
+	if x != nil {
+		return x.Client
+	}
+	return nil
+}
+
+func (x *DeleteHTTPArtifactRequest) GetConversationId() string {
+	if x != nil {
+		return x.ConversationId
+	}
+	return ""
+}
+
+func (x *DeleteHTTPArtifactRequest) GetHistoryGeneration() uint64 {
+	if x != nil {
+		return x.HistoryGeneration
+	}
+	return 0
+}
+
+func (x *DeleteHTTPArtifactRequest) GetArtifactId() string {
+	if x != nil {
+		return x.ArtifactId
+	}
+	return ""
+}
+
+type HTTPArtifactDeleted struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HTTPArtifactDeleted) Reset() {
+	*x = HTTPArtifactDeleted{}
+	mi := &file_iulita_mobile_v1_chat_extras_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HTTPArtifactDeleted) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HTTPArtifactDeleted) ProtoMessage() {}
+
+func (x *HTTPArtifactDeleted) ProtoReflect() protoreflect.Message {
+	mi := &file_iulita_mobile_v1_chat_extras_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HTTPArtifactDeleted.ProtoReflect.Descriptor instead.
+func (*HTTPArtifactDeleted) Descriptor() ([]byte, []int) {
+	return file_iulita_mobile_v1_chat_extras_proto_rawDescGZIP(), []int{22}
+}
+
 var File_iulita_mobile_v1_chat_extras_proto protoreflect.FileDescriptor
 
 const file_iulita_mobile_v1_chat_extras_proto_rawDesc = "" +
@@ -807,8 +1491,66 @@ const file_iulita_mobile_v1_chat_extras_proto_rawDesc = "" +
 	"\x04text\x18\x06 \x01(\tR\x04text\x124\n" +
 	"\x16confirm_account_export\x18\a \x01(\bR\x14confirmAccountExport\"*\n" +
 	"\x0fSavedAnswerFact\x12\x17\n" +
-	"\afact_id\x18\x01 \x01(\x03R\x06factId2\xe5\x04\n" +
-	"\x11ChatExtrasService\x12\x83\x01\n" +
+	"\afact_id\x18\x01 \x01(\x03R\x06factId\"~\n" +
+	"\x1aGetChatCapabilitiesRequest\x127\n" +
+	"\x06client\x18\x01 \x01(\v2\x1f.iulita.mobile.v1.ClientContextR\x06client\x12'\n" +
+	"\x0fconversation_id\x18\x02 \x01(\tR\x0econversationId\"{\n" +
+	"\x14ChatActionCapability\x12\x16\n" +
+	"\x06action\x18\x01 \x01(\tR\x06action\x12\x16\n" +
+	"\x06effect\x18\x02 \x01(\tR\x06effect\x123\n" +
+	"\x15confirmation_required\x18\x03 \x01(\bR\x14confirmationRequired\"\xec\x01\n" +
+	"\x12ChatToolCapability\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
+	"\vdescription\x18\x02 \x01(\tR\vdescription\x12'\n" +
+	"\x0fpolicy_revision\x18\x03 \x01(\tR\x0epolicyRevision\x12@\n" +
+	"\aactions\x18\x04 \x03(\v2&.iulita.mobile.v1.ChatActionCapabilityR\aactions\x125\n" +
+	"\x16internal_confirmations\x18\x05 \x01(\bR\x15internalConfirmations\"\xcb\x01\n" +
+	"\x1bGetChatCapabilitiesResponse\x12=\n" +
+	"\vmemory_mode\x18\x01 \x01(\x0e2\x1c.iulita.mobile.v1.MemoryModeR\n" +
+	"memoryMode\x12:\n" +
+	"\x05tools\x18\x02 \x03(\v2$.iulita.mobile.v1.ChatToolCapabilityR\x05tools\x121\n" +
+	"\x14conversation_version\x18\x03 \x01(\x04R\x13conversationVersion\"\x8f\x01\n" +
+	"\x10HTTPArtifactInfo\x12\x1f\n" +
+	"\vartifact_id\x18\x01 \x01(\tR\n" +
+	"artifactId\x12\x1a\n" +
+	"\bfilename\x18\x02 \x01(\tR\bfilename\x12\x12\n" +
+	"\x04mime\x18\x03 \x01(\tR\x04mime\x12\x12\n" +
+	"\x04size\x18\x04 \x01(\x04R\x04size\x12\x16\n" +
+	"\x06sha256\x18\x05 \x01(\tR\x06sha256\"\xab\x01\n" +
+	"\x18ListHTTPArtifactsRequest\x127\n" +
+	"\x06client\x18\x01 \x01(\v2\x1f.iulita.mobile.v1.ClientContextR\x06client\x12'\n" +
+	"\x0fconversation_id\x18\x02 \x01(\tR\x0econversationId\x12-\n" +
+	"\x12history_generation\x18\x03 \x01(\x04R\x11historyGeneration\"]\n" +
+	"\x19ListHTTPArtifactsResponse\x12@\n" +
+	"\tartifacts\x18\x01 \x03(\v2\".iulita.mobile.v1.HTTPArtifactInfoR\tartifacts\"\x80\x02\n" +
+	"\x17ReadHTTPArtifactRequest\x127\n" +
+	"\x06client\x18\x01 \x01(\v2\x1f.iulita.mobile.v1.ClientContextR\x06client\x12'\n" +
+	"\x0fconversation_id\x18\x02 \x01(\tR\x0econversationId\x12-\n" +
+	"\x12history_generation\x18\x03 \x01(\x04R\x11historyGeneration\x12\x1f\n" +
+	"\vartifact_id\x18\x04 \x01(\tR\n" +
+	"artifactId\x12\x16\n" +
+	"\x06offset\x18\x05 \x01(\x04R\x06offset\x12\x1b\n" +
+	"\tmax_bytes\x18\x06 \x01(\rR\bmaxBytes\"\x8b\x01\n" +
+	"\x11HTTPArtifactChunk\x126\n" +
+	"\x04info\x18\x01 \x01(\v2\".iulita.mobile.v1.HTTPArtifactInfoR\x04info\x12\x16\n" +
+	"\x06offset\x18\x02 \x01(\x04R\x06offset\x12\x14\n" +
+	"\x05chunk\x18\x03 \x01(\fR\x05chunk\x12\x10\n" +
+	"\x03eof\x18\x04 \x01(\bR\x03eof\"\xd3\x01\n" +
+	"\x19DeleteHTTPArtifactRequest\x127\n" +
+	"\x06client\x18\x01 \x01(\v2\x1f.iulita.mobile.v1.ClientContextR\x06client\x12'\n" +
+	"\x0fconversation_id\x18\x03 \x01(\tR\x0econversationId\x12-\n" +
+	"\x12history_generation\x18\x04 \x01(\x04R\x11historyGeneration\x12\x1f\n" +
+	"\vartifact_id\x18\x05 \x01(\tR\n" +
+	"artifactIdJ\x04\b\x02\x10\x03\"\x15\n" +
+	"\x13HTTPArtifactDeleted2\x81\t\n" +
+	"\x11ChatExtrasService\x12\x86\x01\n" +
+	"\x11ListHTTPArtifacts\x12*.iulita.mobile.v1.ListHTTPArtifactsRequest\x1a+.iulita.mobile.v1.ListHTTPArtifactsResponse\"\x18\xca\xf3\x18\x14\b\x02\x10\x03\x1a\n" +
+	"chats:read \x010\x01\x12|\n" +
+	"\x10ReadHTTPArtifact\x12).iulita.mobile.v1.ReadHTTPArtifactRequest\x1a#.iulita.mobile.v1.HTTPArtifactChunk\"\x18\xca\xf3\x18\x14\b\x02\x10\x03\x1a\n" +
+	"chats:read \x010\x01\x12\x83\x01\n" +
+	"\x12DeleteHTTPArtifact\x12+.iulita.mobile.v1.DeleteHTTPArtifactRequest\x1a%.iulita.mobile.v1.HTTPArtifactDeleted\"\x19\xca\xf3\x18\x15\b\x02\x10\x03\x1a\vchats:write \x010\x01\x12\x8c\x01\n" +
+	"\x13GetChatCapabilities\x12,.iulita.mobile.v1.GetChatCapabilitiesRequest\x1a-.iulita.mobile.v1.GetChatCapabilitiesResponse\"\x18\xca\xf3\x18\x14\b\x02\x10\x03\x1a\n" +
+	"chats:read \x010\x01\x12\x83\x01\n" +
 	"\x10ListChatProfiles\x12).iulita.mobile.v1.ListChatProfilesRequest\x1a*.iulita.mobile.v1.ListChatProfilesResponse\"\x18\xca\xf3\x18\x14\b\x02\x10\x03\x1a\n" +
 	"chats:read \x010\x01\x12d\n" +
 	"\n" +
@@ -832,51 +1574,80 @@ func file_iulita_mobile_v1_chat_extras_proto_rawDescGZIP() []byte {
 	return file_iulita_mobile_v1_chat_extras_proto_rawDescData
 }
 
-var file_iulita_mobile_v1_chat_extras_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_iulita_mobile_v1_chat_extras_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_iulita_mobile_v1_chat_extras_proto_goTypes = []any{
-	(*ChatProfile)(nil),              // 0: iulita.mobile.v1.ChatProfile
-	(*ListChatProfilesRequest)(nil),  // 1: iulita.mobile.v1.ListChatProfilesRequest
-	(*ListChatProfilesResponse)(nil), // 2: iulita.mobile.v1.ListChatProfilesResponse
-	(*PhotoInput)(nil),               // 3: iulita.mobile.v1.PhotoInput
-	(*SendPhotosRequest)(nil),        // 4: iulita.mobile.v1.SendPhotosRequest
-	(*ChatPhotoInfo)(nil),            // 5: iulita.mobile.v1.ChatPhotoInfo
-	(*ListChatPhotosRequest)(nil),    // 6: iulita.mobile.v1.ListChatPhotosRequest
-	(*ListChatPhotosResponse)(nil),   // 7: iulita.mobile.v1.ListChatPhotosResponse
-	(*GetChatPhotoRequest)(nil),      // 8: iulita.mobile.v1.GetChatPhotoRequest
-	(*ChatPhoto)(nil),                // 9: iulita.mobile.v1.ChatPhoto
-	(*SaveAnswerFactRequest)(nil),    // 10: iulita.mobile.v1.SaveAnswerFactRequest
-	(*SavedAnswerFact)(nil),          // 11: iulita.mobile.v1.SavedAnswerFact
-	(*ClientContext)(nil),            // 12: iulita.mobile.v1.ClientContext
-	(*Operation)(nil),                // 13: iulita.mobile.v1.Operation
-	(*Turn)(nil),                     // 14: iulita.mobile.v1.Turn
+	(*ChatProfile)(nil),                 // 0: iulita.mobile.v1.ChatProfile
+	(*ListChatProfilesRequest)(nil),     // 1: iulita.mobile.v1.ListChatProfilesRequest
+	(*ListChatProfilesResponse)(nil),    // 2: iulita.mobile.v1.ListChatProfilesResponse
+	(*PhotoInput)(nil),                  // 3: iulita.mobile.v1.PhotoInput
+	(*SendPhotosRequest)(nil),           // 4: iulita.mobile.v1.SendPhotosRequest
+	(*ChatPhotoInfo)(nil),               // 5: iulita.mobile.v1.ChatPhotoInfo
+	(*ListChatPhotosRequest)(nil),       // 6: iulita.mobile.v1.ListChatPhotosRequest
+	(*ListChatPhotosResponse)(nil),      // 7: iulita.mobile.v1.ListChatPhotosResponse
+	(*GetChatPhotoRequest)(nil),         // 8: iulita.mobile.v1.GetChatPhotoRequest
+	(*ChatPhoto)(nil),                   // 9: iulita.mobile.v1.ChatPhoto
+	(*SaveAnswerFactRequest)(nil),       // 10: iulita.mobile.v1.SaveAnswerFactRequest
+	(*SavedAnswerFact)(nil),             // 11: iulita.mobile.v1.SavedAnswerFact
+	(*GetChatCapabilitiesRequest)(nil),  // 12: iulita.mobile.v1.GetChatCapabilitiesRequest
+	(*ChatActionCapability)(nil),        // 13: iulita.mobile.v1.ChatActionCapability
+	(*ChatToolCapability)(nil),          // 14: iulita.mobile.v1.ChatToolCapability
+	(*GetChatCapabilitiesResponse)(nil), // 15: iulita.mobile.v1.GetChatCapabilitiesResponse
+	(*HTTPArtifactInfo)(nil),            // 16: iulita.mobile.v1.HTTPArtifactInfo
+	(*ListHTTPArtifactsRequest)(nil),    // 17: iulita.mobile.v1.ListHTTPArtifactsRequest
+	(*ListHTTPArtifactsResponse)(nil),   // 18: iulita.mobile.v1.ListHTTPArtifactsResponse
+	(*ReadHTTPArtifactRequest)(nil),     // 19: iulita.mobile.v1.ReadHTTPArtifactRequest
+	(*HTTPArtifactChunk)(nil),           // 20: iulita.mobile.v1.HTTPArtifactChunk
+	(*DeleteHTTPArtifactRequest)(nil),   // 21: iulita.mobile.v1.DeleteHTTPArtifactRequest
+	(*HTTPArtifactDeleted)(nil),         // 22: iulita.mobile.v1.HTTPArtifactDeleted
+	(*ClientContext)(nil),               // 23: iulita.mobile.v1.ClientContext
+	(*Operation)(nil),                   // 24: iulita.mobile.v1.Operation
+	(MemoryMode)(0),                     // 25: iulita.mobile.v1.MemoryMode
+	(*Turn)(nil),                        // 26: iulita.mobile.v1.Turn
 }
 var file_iulita_mobile_v1_chat_extras_proto_depIdxs = []int32{
-	12, // 0: iulita.mobile.v1.ListChatProfilesRequest.client:type_name -> iulita.mobile.v1.ClientContext
+	23, // 0: iulita.mobile.v1.ListChatProfilesRequest.client:type_name -> iulita.mobile.v1.ClientContext
 	0,  // 1: iulita.mobile.v1.ListChatProfilesResponse.profiles:type_name -> iulita.mobile.v1.ChatProfile
-	12, // 2: iulita.mobile.v1.SendPhotosRequest.client:type_name -> iulita.mobile.v1.ClientContext
-	13, // 3: iulita.mobile.v1.SendPhotosRequest.operation:type_name -> iulita.mobile.v1.Operation
+	23, // 2: iulita.mobile.v1.SendPhotosRequest.client:type_name -> iulita.mobile.v1.ClientContext
+	24, // 3: iulita.mobile.v1.SendPhotosRequest.operation:type_name -> iulita.mobile.v1.Operation
 	3,  // 4: iulita.mobile.v1.SendPhotosRequest.photos:type_name -> iulita.mobile.v1.PhotoInput
-	12, // 5: iulita.mobile.v1.ListChatPhotosRequest.client:type_name -> iulita.mobile.v1.ClientContext
+	23, // 5: iulita.mobile.v1.ListChatPhotosRequest.client:type_name -> iulita.mobile.v1.ClientContext
 	5,  // 6: iulita.mobile.v1.ListChatPhotosResponse.photos:type_name -> iulita.mobile.v1.ChatPhotoInfo
-	12, // 7: iulita.mobile.v1.GetChatPhotoRequest.client:type_name -> iulita.mobile.v1.ClientContext
+	23, // 7: iulita.mobile.v1.GetChatPhotoRequest.client:type_name -> iulita.mobile.v1.ClientContext
 	5,  // 8: iulita.mobile.v1.ChatPhoto.info:type_name -> iulita.mobile.v1.ChatPhotoInfo
-	12, // 9: iulita.mobile.v1.SaveAnswerFactRequest.client:type_name -> iulita.mobile.v1.ClientContext
-	13, // 10: iulita.mobile.v1.SaveAnswerFactRequest.operation:type_name -> iulita.mobile.v1.Operation
-	1,  // 11: iulita.mobile.v1.ChatExtrasService.ListChatProfiles:input_type -> iulita.mobile.v1.ListChatProfilesRequest
-	4,  // 12: iulita.mobile.v1.ChatExtrasService.SendPhotos:input_type -> iulita.mobile.v1.SendPhotosRequest
-	6,  // 13: iulita.mobile.v1.ChatExtrasService.ListChatPhotos:input_type -> iulita.mobile.v1.ListChatPhotosRequest
-	8,  // 14: iulita.mobile.v1.ChatExtrasService.GetChatPhoto:input_type -> iulita.mobile.v1.GetChatPhotoRequest
-	10, // 15: iulita.mobile.v1.ChatExtrasService.SaveAnswerFact:input_type -> iulita.mobile.v1.SaveAnswerFactRequest
-	2,  // 16: iulita.mobile.v1.ChatExtrasService.ListChatProfiles:output_type -> iulita.mobile.v1.ListChatProfilesResponse
-	14, // 17: iulita.mobile.v1.ChatExtrasService.SendPhotos:output_type -> iulita.mobile.v1.Turn
-	7,  // 18: iulita.mobile.v1.ChatExtrasService.ListChatPhotos:output_type -> iulita.mobile.v1.ListChatPhotosResponse
-	9,  // 19: iulita.mobile.v1.ChatExtrasService.GetChatPhoto:output_type -> iulita.mobile.v1.ChatPhoto
-	11, // 20: iulita.mobile.v1.ChatExtrasService.SaveAnswerFact:output_type -> iulita.mobile.v1.SavedAnswerFact
-	16, // [16:21] is the sub-list for method output_type
-	11, // [11:16] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	23, // 9: iulita.mobile.v1.SaveAnswerFactRequest.client:type_name -> iulita.mobile.v1.ClientContext
+	24, // 10: iulita.mobile.v1.SaveAnswerFactRequest.operation:type_name -> iulita.mobile.v1.Operation
+	23, // 11: iulita.mobile.v1.GetChatCapabilitiesRequest.client:type_name -> iulita.mobile.v1.ClientContext
+	13, // 12: iulita.mobile.v1.ChatToolCapability.actions:type_name -> iulita.mobile.v1.ChatActionCapability
+	25, // 13: iulita.mobile.v1.GetChatCapabilitiesResponse.memory_mode:type_name -> iulita.mobile.v1.MemoryMode
+	14, // 14: iulita.mobile.v1.GetChatCapabilitiesResponse.tools:type_name -> iulita.mobile.v1.ChatToolCapability
+	23, // 15: iulita.mobile.v1.ListHTTPArtifactsRequest.client:type_name -> iulita.mobile.v1.ClientContext
+	16, // 16: iulita.mobile.v1.ListHTTPArtifactsResponse.artifacts:type_name -> iulita.mobile.v1.HTTPArtifactInfo
+	23, // 17: iulita.mobile.v1.ReadHTTPArtifactRequest.client:type_name -> iulita.mobile.v1.ClientContext
+	16, // 18: iulita.mobile.v1.HTTPArtifactChunk.info:type_name -> iulita.mobile.v1.HTTPArtifactInfo
+	23, // 19: iulita.mobile.v1.DeleteHTTPArtifactRequest.client:type_name -> iulita.mobile.v1.ClientContext
+	17, // 20: iulita.mobile.v1.ChatExtrasService.ListHTTPArtifacts:input_type -> iulita.mobile.v1.ListHTTPArtifactsRequest
+	19, // 21: iulita.mobile.v1.ChatExtrasService.ReadHTTPArtifact:input_type -> iulita.mobile.v1.ReadHTTPArtifactRequest
+	21, // 22: iulita.mobile.v1.ChatExtrasService.DeleteHTTPArtifact:input_type -> iulita.mobile.v1.DeleteHTTPArtifactRequest
+	12, // 23: iulita.mobile.v1.ChatExtrasService.GetChatCapabilities:input_type -> iulita.mobile.v1.GetChatCapabilitiesRequest
+	1,  // 24: iulita.mobile.v1.ChatExtrasService.ListChatProfiles:input_type -> iulita.mobile.v1.ListChatProfilesRequest
+	4,  // 25: iulita.mobile.v1.ChatExtrasService.SendPhotos:input_type -> iulita.mobile.v1.SendPhotosRequest
+	6,  // 26: iulita.mobile.v1.ChatExtrasService.ListChatPhotos:input_type -> iulita.mobile.v1.ListChatPhotosRequest
+	8,  // 27: iulita.mobile.v1.ChatExtrasService.GetChatPhoto:input_type -> iulita.mobile.v1.GetChatPhotoRequest
+	10, // 28: iulita.mobile.v1.ChatExtrasService.SaveAnswerFact:input_type -> iulita.mobile.v1.SaveAnswerFactRequest
+	18, // 29: iulita.mobile.v1.ChatExtrasService.ListHTTPArtifacts:output_type -> iulita.mobile.v1.ListHTTPArtifactsResponse
+	20, // 30: iulita.mobile.v1.ChatExtrasService.ReadHTTPArtifact:output_type -> iulita.mobile.v1.HTTPArtifactChunk
+	22, // 31: iulita.mobile.v1.ChatExtrasService.DeleteHTTPArtifact:output_type -> iulita.mobile.v1.HTTPArtifactDeleted
+	15, // 32: iulita.mobile.v1.ChatExtrasService.GetChatCapabilities:output_type -> iulita.mobile.v1.GetChatCapabilitiesResponse
+	2,  // 33: iulita.mobile.v1.ChatExtrasService.ListChatProfiles:output_type -> iulita.mobile.v1.ListChatProfilesResponse
+	26, // 34: iulita.mobile.v1.ChatExtrasService.SendPhotos:output_type -> iulita.mobile.v1.Turn
+	7,  // 35: iulita.mobile.v1.ChatExtrasService.ListChatPhotos:output_type -> iulita.mobile.v1.ListChatPhotosResponse
+	9,  // 36: iulita.mobile.v1.ChatExtrasService.GetChatPhoto:output_type -> iulita.mobile.v1.ChatPhoto
+	11, // 37: iulita.mobile.v1.ChatExtrasService.SaveAnswerFact:output_type -> iulita.mobile.v1.SavedAnswerFact
+	29, // [29:38] is the sub-list for method output_type
+	20, // [20:29] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	20, // [20:20] is the sub-list for extension extendee
+	0,  // [0:20] is the sub-list for field type_name
 }
 
 func init() { file_iulita_mobile_v1_chat_extras_proto_init() }
@@ -892,7 +1663,7 @@ func file_iulita_mobile_v1_chat_extras_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_iulita_mobile_v1_chat_extras_proto_rawDesc), len(file_iulita_mobile_v1_chat_extras_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

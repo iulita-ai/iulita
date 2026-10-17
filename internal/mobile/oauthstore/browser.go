@@ -200,6 +200,9 @@ func (s *Store) LoginBrowserFlow(ctx context.Context, cookie, id, csrf, owner st
 		if operationErr2 != nil {
 			return operationErr2
 		}
+		if ownerErr := checkClientOwnerIn(ctx, q, f.Request.ClientID, owner); ownerErr != nil {
+			return ownerErr
+		}
 		// Rebind concurrent tabs as well: the cookie proves browser binding only,
 		// never an authenticated owner. Each flow retains its own login and CSRF.
 		if _, stepErr3 = q.ExecContext(ctx, `UPDATE oauth_browser_flows SET browser_hash=? WHERE browser_hash=? AND expires_at>?`, s.realm.digest("browser.cookie", rotated), s.realm.digest("browser.cookie", cookie), time.Now().Unix()); stepErr3 != nil {
@@ -223,12 +226,15 @@ func (s *Store) AuthorizeBrowserFlow(ctx context.Context, cookie, id, csrf strin
 		if err != nil || !equalHash(f.CredentialStamp, stamp) || f.AuthTime.Before(time.Now().Add(-5*time.Minute)) {
 			return ErrBrowserFlow
 		}
-		if checkErr5 := fn(ctx, f); checkErr5 != nil {
-			return checkErr5
-		}
 		q, operationErr3 := s.transaction(ctx)
 		if operationErr3 != nil {
 			return operationErr3
+		}
+		if ownerErr := checkClientOwnerIn(ctx, q, f.Request.ClientID, f.OwnerID); ownerErr != nil {
+			return ownerErr
+		}
+		if checkErr5 := fn(ctx, f); checkErr5 != nil {
+			return checkErr5
 		}
 		res, err := q.ExecContext(ctx, `UPDATE oauth_browser_flows SET phase='consumed' WHERE id=? AND phase='consent'`, id)
 		if err != nil {
@@ -282,6 +288,9 @@ func (s *Store) PrepareAuthorization(ctx context.Context, f BrowserFlow) (*Sessi
 	a := f.Request
 	if f.Phase != "consent" || !canonicalID(f.OwnerID) || !ValidSecret(a.KeyThumbprint) {
 		return nil, ErrInvalid
+	}
+	if ownerErr := checkClientOwnerIn(ctx, q, a.ClientID, f.OwnerID); ownerErr != nil {
+		return nil, ownerErr
 	}
 	client, err := s.GetClient(ctx, a.ClientID)
 	if err != nil {

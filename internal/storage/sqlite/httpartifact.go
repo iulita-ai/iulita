@@ -86,6 +86,17 @@ func (s *Store) SumHTTPArtifactBytes(ctx context.Context) (int64, error) {
 	return sum.Int64, err
 }
 
+// SumHTTPArtifactBytesByOwner includes every persisted ready/partial byte,
+// independently of the bounded history listing and artifact transport.
+func (s *Store) SumHTTPArtifactBytesByOwner(ctx context.Context, owner string) (int64, error) {
+	var sum sql.NullInt64
+	err := s.db.NewSelect().Model((*domain.HTTPArtifact)(nil)).
+		ColumnExpr("COALESCE(SUM(size), 0)").
+		Where("owner_user_id = ?", owner).
+		Where("state IN ('partial', 'ready')").Scan(ctx, &sum)
+	return sum.Int64, err
+}
+
 // SaveHTTPStandingGrant persists a standing mutation approval.
 func (s *Store) SaveHTTPStandingGrant(ctx context.Context, g *domain.HTTPStandingGrant) error {
 	_, err := s.db.NewInsert().Model(g).Exec(ctx)
@@ -135,4 +146,12 @@ func (s *Store) DeleteExpiredHTTPStandingGrants(ctx context.Context) error {
 		Where("expires_at < ? OR revoked_at IS NOT NULL", time.Now().Add(-24*time.Hour)).
 		Exec(ctx)
 	return err
+}
+
+// ListHTTPArtifactsByBinding applies native origin filtering before the list
+// bound, so activity in other chats cannot hide this chat's attachments.
+func (s *Store) ListHTTPArtifactsByBinding(ctx context.Context, owner, binding string) ([]domain.HTTPArtifact, error) {
+	var out []domain.HTTPArtifact
+	err := s.db.NewSelect().Model(&out).Where("owner_user_id = ? AND chat_id = ?", owner, binding).Order("created_at DESC").Limit(200).Scan(ctx)
+	return out, err
 }

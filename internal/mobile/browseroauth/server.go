@@ -466,7 +466,7 @@ func (s *Server) fail(w http.ResponseWriter, status int, message string) {
 	}
 }
 func scopeLabels(scope string) []string {
-	labels := map[string]string{"chats:read": "Читать ваши чаты", "chats:write": "Отправлять сообщения в ваши чаты", "devices:read": "Просматривать ваши устройства", "devices:manage": "Управлять привязкой ваших устройств", "devices:receive": "Получать задачи для телефона", "devices:sync": "Синхронизировать состояние задач", "phone:data": "Передавать выбранные данные телефона", "phone:ui": "Управлять разрешёнными приложениями"}
+	labels := map[string]string{"assistant:services:read": "Читать данные подключённых сервисов аккаунта", "assistant:services:write": "Изменять данные подключённых сервисов после подтверждения", "chats:read": "Читать ваши чаты", "chats:write": "Отправлять сообщения в ваши чаты", "devices:read": "Просматривать ваши устройства", "devices:manage": "Управлять привязкой ваших устройств", "devices:receive": "Получать задачи для телефона", "devices:sync": "Синхронизировать состояние задач", "phone:data": "Передавать выбранные данные телефона", "phone:ui": "Управлять разрешёнными приложениями"}
 	out := make([]string, 0, len(strings.Fields(scope)))
 	for _, s := range strings.Fields(scope) {
 		v := labels[s]

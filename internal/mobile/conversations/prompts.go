@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 )
@@ -27,6 +28,10 @@ type ApprovalAuthority struct {
 
 // Prompt records an expiring choice or action-confirmation request.
 type Prompt struct {
+	ExpectedFamily                                                                                                 string
+	AllowText                                                                                                      bool
+	ExpectedDevice                                                                                                 string
+	MaxBytes, GrantedMaxBytes                                                                                      int64
 	ID, OwnerID, ConversationID, TurnID, Kind, OperationID, Question, Preview, Nonce, State, Decision, ActorDevice string
 	Generation, ProcessingEpoch                                                                                    uint64
 	Choices                                                                                                        []Choice
@@ -38,7 +43,7 @@ type Prompt struct {
 }
 
 func approvalPermits(p Prompt, a ApprovalAuthority) bool {
-	if a.OwnerID != p.OwnerID || !validID(a.DeviceID) || !validID(a.FamilyID) {
+	if a.PrincipalType == "service" || a.OwnerID != p.OwnerID || !validID(a.DeviceID) || !validID(a.FamilyID) {
 		return false
 	}
 	for _, required := range p.RequiredScopes {
@@ -66,14 +71,14 @@ func (r *Repository) promptNonce(p Prompt) string {
 
 // OpenPrompt persists an expiring prompt under the current execution fence.
 func (r *Repository) OpenPrompt(ctx context.Context, f Fence, p Prompt) (Prompt, error) {
-	if (p.Kind != "choice" && p.Kind != "confirmation") || len(p.Question) > 4096 || len(p.Preview) > 4096 || p.ExpiresAt.Before(time.Now()) || p.ExpiresAt.After(time.Now().Add(10*time.Minute)) || len(p.Choices) > 20 {
+	if !utf8.ValidString(p.Question+p.Preview) || (p.Kind != "choice" && p.Kind != "confirmation") || len(p.Question) > 4096 || len(p.Preview) > 4096 || p.ExpiresAt.Before(time.Now()) || p.ExpiresAt.After(time.Now().Add(10*time.Minute)) || len(p.Choices) > 20 {
 		return p, ErrInvalid
 	}
-	if p.Kind == "confirmation" && (!validID(p.OperationID) || len(p.Fingerprint) != 32) {
+	if p.MaxBytes < 0 || (p.Kind == "confirmation" && (!validID(p.OperationID) || len(p.Fingerprint) != 32 || p.AllowText)) {
 		return p, ErrInvalid
 	}
 	if p.Kind == "choice" {
-		if len(p.Choices) == 0 {
+		if len(p.Choices) == 0 && !p.AllowText {
 			return p, ErrInvalid
 		}
 		seen := map[string]bool{}
@@ -103,6 +108,7 @@ func (r *Repository) OpenPrompt(ctx context.Context, f Fence, p Prompt) (Prompt,
 	p.Decision = ""
 	p.ActorDevice = ""
 	p.Approver = nil
+	p.GrantedMaxBytes = 0
 	nonce := r.promptNonce(p)
 	hash := sha256.Sum256([]byte(nonce))
 	body, err := json.Marshal(p)
@@ -206,7 +212,12 @@ func (r *Repository) prompts(ctx context.Context, tx *repoTx, owner, conversatio
 // Decide is out of band, CAS, and takes a server-verified device actor. Free text
 // in SendMessage is never interpreted as a confirmation or native approval.
 func (r *Repository) Decide(ctx context.Context, owner, device, conversation, turn, id string, generation uint64, decision, operation, nonce string, fingerprint []byte, authority ...ApprovalAuthority) (Prompt, error) {
-	if !validID(device) {
+	return r.DecideGranted(ctx, owner, device, conversation, turn, id, generation, decision, operation, nonce, fingerprint, 0, authority...)
+}
+
+// DecideGranted also binds a bounded byte grant to an HTTP confirmation.
+func (r *Repository) DecideGranted(ctx context.Context, owner, device, conversation, turn, id string, generation uint64, decision, operation, nonce string, fingerprint []byte, granted int64, authority ...ApprovalAuthority) (Prompt, error) {
+	if !validID(device) || !utf8.ValidString(decision) || len(decision) > 4096 {
 		return Prompt{}, ErrInvalid
 	}
 	tx, err := r.begin(ctx)
@@ -232,6 +243,16 @@ func (r *Repository) Decide(ctx context.Context, owner, device, conversation, tu
 	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM mobile_turns WHERE owner_id=? AND conversation_id=? AND id=? AND generation=? AND processing_epoch=? AND state='awaiting_prompt' AND cancellation_requested=0`, owner, conversation, turn, generation, p.ProcessingEpoch).Scan(&live); err != nil || live != 1 {
 		return p, ErrFenced
 	}
+	if p.ExpectedFamily != "" && (len(authority) != 1 || authority[0].FamilyID != p.ExpectedFamily) {
+		return p, ErrApproval
+	}
+	if p.ExpectedDevice != "" && p.ExpectedDevice != device {
+		return p, ErrApproval
+	}
+	if granted < 0 || granted > p.MaxBytes || (p.Kind != "confirmation" && granted != 0) || (decision == "deny" && granted != 0) || (decision == "approve" && p.MaxBytes > 0 && granted == 0) {
+		return p, ErrInvalid
+	}
+	p.GrantedMaxBytes = granted
 	state := "answered"
 	if p.Kind == "confirmation" {
 		hash := sha256.Sum256([]byte(nonce))
@@ -257,7 +278,7 @@ func (r *Repository) Decide(ctx context.Context, owner, device, conversation, tu
 			}
 		}
 	} else {
-		found := false
+		found := p.AllowText && decision != "" && len(decision) <= 4096
 		for _, c := range p.Choices {
 			if c.ID == decision {
 				found = true
@@ -266,6 +287,13 @@ func (r *Repository) Decide(ctx context.Context, owner, device, conversation, tu
 		if !found || operation != "" || nonce != "" || len(fingerprint) > 0 {
 			return p, ErrInvalid
 		}
+	}
+	if p.Kind == "choice" && len(authority) == 1 {
+		a := authority[0]
+		if !approvalPermits(p, a) {
+			return p, ErrApproval
+		}
+		p.Approver = &a
 	}
 	snapshotCopy := p
 	snapshotCopy.Nonce = ""

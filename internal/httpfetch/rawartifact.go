@@ -99,7 +99,7 @@ func (e *Engine) storeRawArtifact(ctx context.Context, step Request, sr *StepRes
 		MIME:        "application/json",
 		Sensitive:   true,
 		OwnerUserID: scope.UserID,
-		ChatID:      scope.ChatID,
+		ChatID:      scope.ArtifactBinding(),
 		MaxBytes:    e.limits.MaxUploadBytes,
 	}
 	w, err := e.artifacts.Begin(ctx, spec)

@@ -32,6 +32,7 @@ type Repo interface {
 	DeleteHTTPArtifact(ctx context.Context, id string) error
 	DeleteExpiredHTTPArtifacts(ctx context.Context, before time.Time) ([]domain.HTTPArtifact, error)
 	SumHTTPArtifactBytes(ctx context.Context) (ready int64, err error)
+	SumHTTPArtifactBytesByOwner(ctx context.Context, owner string) (int64, error)
 }
 
 // Limits bound the store; mirrors the engine's artifact limits.
@@ -53,11 +54,12 @@ var ErrNotFound = errors.New("artifact not found")
 // Single-writer deployment assumption (initial deployment; multi-replica
 // needs a shared object store and coordinated quotas).
 type Store struct {
-	root    string
-	repo    Repo
-	limits  Limits
-	bootGen string
-	log     *zap.Logger
+	nativeGuard func(context.Context, httpfetch.Scope) error
+	root        string
+	repo        Repo
+	limits      Limits
+	bootGen     string
+	log         *zap.Logger
 
 	mu             sync.Mutex
 	reservedGlobal int64
@@ -98,6 +100,12 @@ func (s *Store) Root() string { return s.root }
 // Begin reserves quota and opens a new partial artifact. The reservation is
 // held until Commit or Abort.
 func (s *Store) Begin(ctx context.Context, spec httpfetch.ArtifactSpec) (httpfetch.ArtifactWriter, error) {
+	if strings.HasPrefix(spec.ChatID, httpfetch.NativeArtifactPrefix) {
+		scope, ok := httpfetch.ScopeFrom(ctx)
+		if !ok || scope.UserID != spec.OwnerUserID || scope.ArtifactBinding() != spec.ChatID || s.nativeGuard == nil || s.nativeGuard(ctx, scope) != nil {
+			return nil, ErrNotFound
+		}
+	}
 	if spec.OwnerUserID == "" {
 		return nil, fmt.Errorf("artifact owner required")
 	}
@@ -148,7 +156,7 @@ func (s *Store) Open(ctx context.Context, ownerUserID, id string) (httpfetch.Art
 	if err != nil || meta == nil {
 		return nil, ErrNotFound
 	}
-	if meta.OwnerUserID != ownerUserID {
+	if meta.OwnerUserID != ownerUserID || !s.canRead(ctx, meta) {
 		return nil, ErrNotFound // foreign artifacts are indistinguishable from missing
 	}
 	if meta.State != domain.HTTPArtifactReady {
@@ -172,7 +180,7 @@ func (s *Store) Open(ctx context.Context, ownerUserID, id string) (httpfetch.Art
 // Get returns metadata for the owner (or nil when foreign/missing).
 func (s *Store) Get(ctx context.Context, ownerUserID, id string) (*domain.HTTPArtifact, error) {
 	meta, err := s.repo.GetHTTPArtifact(ctx, id)
-	if err != nil || meta == nil || meta.OwnerUserID != ownerUserID {
+	if err != nil || meta == nil || meta.OwnerUserID != ownerUserID || !s.canRead(ctx, meta) {
 		return nil, ErrNotFound
 	}
 	return meta, nil
@@ -180,7 +188,30 @@ func (s *Store) Get(ctx context.Context, ownerUserID, id string) (*domain.HTTPAr
 
 // List returns the owner's ready artifacts.
 func (s *Store) List(ctx context.Context, ownerUserID string) ([]domain.HTTPArtifact, error) {
-	return s.repo.ListHTTPArtifactsByOwner(ctx, ownerUserID)
+	var items []domain.HTTPArtifact
+	var err error
+	if scope, ok := httpfetch.ScopeFrom(ctx); ok && scope.NativeConversation != "" {
+		if repo, ok := s.repo.(interface {
+			ListHTTPArtifactsByBinding(context.Context, string, string) ([]domain.HTTPArtifact, error)
+		}); ok {
+			items, err = repo.ListHTTPArtifactsByBinding(ctx, ownerUserID, scope.ArtifactBinding())
+		} else {
+			items, err = s.repo.ListHTTPArtifactsByOwner(ctx, ownerUserID)
+		}
+	} else {
+		items, err = s.repo.ListHTTPArtifactsByOwner(ctx, ownerUserID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out []domain.HTTPArtifact
+	for n := range items {
+		item := &items[n]
+		if s.canRead(ctx, item) {
+			out = append(out, *item)
+		}
+	}
+	return out, nil
 }
 
 // Delete removes an owner's artifact (idempotent).
@@ -208,7 +239,11 @@ func (s *Store) reserve(ctx context.Context, owner string, bytes int64) error {
 	if used+s.reservedGlobal+bytes > s.limits.QuotaGlobal {
 		return fmt.Errorf("%w: global quota", ErrQuotaExceeded)
 	}
-	if s.reservedByUser[owner]+bytes > s.limits.QuotaUser {
+	ownerUsed, err := s.repo.SumHTTPArtifactBytesByOwner(ctx, owner)
+	if err != nil {
+		return fmt.Errorf("owner quota check: %w", err)
+	}
+	if ownerUsed+s.reservedByUser[owner]+bytes > s.limits.QuotaUser {
 		return fmt.Errorf("%w: user quota", ErrQuotaExceeded)
 	}
 	// Disk free reserve: fail closed when the stat is unavailable.
@@ -383,3 +418,21 @@ func newArtifactID() string {
 }
 
 func ptrTime(t time.Time) *time.Time { return &t }
+
+// SetNativeGuard is startup-only wiring. Native artifacts fail closed without it.
+func (s *Store) SetNativeGuard(guard func(context.Context, httpfetch.Scope) error) {
+	s.nativeGuard = guard
+}
+func (s *Store) canRead(ctx context.Context, m *domain.HTTPArtifact) bool {
+	if !m.ExpiresAt.IsZero() && !m.ExpiresAt.After(time.Now()) {
+		return false
+	}
+	if !strings.HasPrefix(m.ChatID, httpfetch.NativeArtifactPrefix) {
+		return true
+	}
+	scope, ok := httpfetch.ScopeFrom(ctx)
+	return ok && scope.NativeConversation != "" && scope.NativeGeneration > 0 && scope.UserID == m.OwnerUserID && scope.ArtifactBinding() == m.ChatID && s.nativeGuard != nil && s.nativeGuard(ctx, scope) == nil
+}
+
+// Seek positions the bounded delivery reader within its stored file.
+func (r *reader) Seek(offset int64, whence int) (int64, error) { return r.f.Seek(offset, whence) }

@@ -44,12 +44,17 @@ type Caller struct {
 // Scope is the trusted execution scope derived from context values: domain
 // user ID, chat, channel instance, caller, and mode. No scope → fail closed
 // for credentials, artifacts, and interactive consent.
+// NativeArtifactPrefix separates native attachments from legacy dashboard artifacts.
+const NativeArtifactPrefix = "native-http:"
+
 type Scope struct {
-	UserID          string
-	ChatID          string
-	ChannelInstance string
-	Caller          Caller
-	Mode            ExecMode
+	NativeConversation string
+	NativeGeneration   uint64
+	UserID             string
+	ChatID             string
+	ChannelInstance    string
+	Caller             Caller
+	Mode               ExecMode
 }
 
 type ctxScopeKey struct{}
@@ -63,6 +68,14 @@ func WithScope(ctx context.Context, scope Scope) context.Context {
 func ScopeFrom(ctx context.Context) (Scope, bool) {
 	s, ok := ctx.Value(ctxScopeKey{}).(Scope)
 	return s, ok
+}
+
+// ArtifactBinding is metadata only; it is never a legacy channel route.
+func (s Scope) ArtifactBinding() string {
+	if s.NativeConversation != "" {
+		return fmt.Sprintf("%s%s:%d", NativeArtifactPrefix, s.NativeConversation, s.NativeGeneration)
+	}
+	return s.ChatID
 }
 
 // Interactive reports whether a human is reachable for confirmations.

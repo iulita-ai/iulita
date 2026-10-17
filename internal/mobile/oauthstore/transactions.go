@@ -190,6 +190,13 @@ func (s *Store) TokenRequest(ctx context.Context, grantType, raw, clientID, redi
 		if operationErr1 != nil {
 			return operationErr1
 		}
+		family, familyErr := s.familyIn(ctx, req.GetID())
+		if familyErr != nil || family.ClientID != clientID {
+			return fosite.ErrInvalidGrant
+		}
+		if checkErr := checkClientOwnerIn(ctx, root.tx, clientID, family.OwnerID); checkErr != nil {
+			return checkErr
+		}
 		root.verifiedFamily = req.GetID()
 		root.verifiedClient = req.GetClient().GetID()
 		err = fn(ctx)

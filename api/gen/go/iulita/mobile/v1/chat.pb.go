@@ -1705,6 +1705,7 @@ func (x *Choice) GetLabel() string {
 
 type ChoicePrompt struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	AllowText     bool                   `protobuf:"varint,3,opt,name=allow_text,json=allowText,proto3" json:"allow_text,omitempty"` // Typed response only; never security approval.
 	Question      string                 `protobuf:"bytes,1,opt,name=question,proto3" json:"question,omitempty"`
 	Choices       []*Choice              `protobuf:"bytes,2,rep,name=choices,proto3" json:"choices,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -1739,6 +1740,13 @@ func (x *ChoicePrompt) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ChoicePrompt.ProtoReflect.Descriptor instead.
 func (*ChoicePrompt) Descriptor() ([]byte, []int) {
 	return file_iulita_mobile_v1_chat_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ChoicePrompt) GetAllowText() bool {
+	if x != nil {
+		return x.AllowText
+	}
+	return false
 }
 
 func (x *ChoicePrompt) GetQuestion() string {
@@ -1951,6 +1959,7 @@ type RespondToPromptRequest struct {
 	Operation     *Operation             `protobuf:"bytes,2,opt,name=operation,proto3" json:"operation,omitempty"`
 	Binding       *PromptBinding         `protobuf:"bytes,3,opt,name=binding,proto3" json:"binding,omitempty"`
 	ChoiceId      string                 `protobuf:"bytes,4,opt,name=choice_id,json=choiceId,proto3" json:"choice_id,omitempty"`
+	TextResponse  string                 `protobuf:"bytes,5,opt,name=text_response,json=textResponse,proto3" json:"text_response,omitempty"` // Only when allow_text is true; mutually exclusive with choice_id.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2009,6 +2018,13 @@ func (x *RespondToPromptRequest) GetBinding() *PromptBinding {
 func (x *RespondToPromptRequest) GetChoiceId() string {
 	if x != nil {
 		return x.ChoiceId
+	}
+	return ""
+}
+
+func (x *RespondToPromptRequest) GetTextResponse() string {
+	if x != nil {
+		return x.TextResponse
 	}
 	return ""
 }
@@ -3199,8 +3215,10 @@ const file_iulita_mobile_v1_chat_proto_rawDesc = "" +
 	"\x12history_generation\x18\x04 \x01(\x04R\x11historyGeneration\";\n" +
 	"\x06Choice\x12\x1b\n" +
 	"\tchoice_id\x18\x01 \x01(\tR\bchoiceId\x12\x14\n" +
-	"\x05label\x18\x02 \x01(\tR\x05label\"^\n" +
-	"\fChoicePrompt\x12\x1a\n" +
+	"\x05label\x18\x02 \x01(\tR\x05label\"}\n" +
+	"\fChoicePrompt\x12\x1d\n" +
+	"\n" +
+	"allow_text\x18\x03 \x01(\bR\tallowText\x12\x1a\n" +
 	"\bquestion\x18\x01 \x01(\tR\bquestion\x122\n" +
 	"\achoices\x18\x02 \x03(\v2\x18.iulita.mobile.v1.ChoiceR\achoices\"\xf9\x01\n" +
 	"\x14SecurityConfirmation\x12!\n" +
@@ -3218,12 +3236,13 @@ const file_iulita_mobile_v1_chat_proto_rawDesc = "" +
 	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x128\n" +
 	"\x06choice\x18\x04 \x01(\v2\x1e.iulita.mobile.v1.ChoicePromptH\x00R\x06choice\x12L\n" +
 	"\fconfirmation\x18\x05 \x01(\v2&.iulita.mobile.v1.SecurityConfirmationH\x00R\fconfirmationB\x06\n" +
-	"\x04body\"\xe4\x01\n" +
+	"\x04body\"\x89\x02\n" +
 	"\x16RespondToPromptRequest\x127\n" +
 	"\x06client\x18\x01 \x01(\v2\x1f.iulita.mobile.v1.ClientContextR\x06client\x129\n" +
 	"\toperation\x18\x02 \x01(\v2\x1b.iulita.mobile.v1.OperationR\toperation\x129\n" +
 	"\abinding\x18\x03 \x01(\v2\x1f.iulita.mobile.v1.PromptBindingR\abinding\x12\x1b\n" +
-	"\tchoice_id\x18\x04 \x01(\tR\bchoiceId\"\xaa\x03\n" +
+	"\tchoice_id\x18\x04 \x01(\tR\bchoiceId\x12#\n" +
+	"\rtext_response\x18\x05 \x01(\tR\ftextResponse\"\xaa\x03\n" +
 	"\x1cRespondToConfirmationRequest\x127\n" +
 	"\x06client\x18\x01 \x01(\v2\x1f.iulita.mobile.v1.ClientContextR\x06client\x129\n" +
 	"\toperation\x18\x02 \x01(\v2\x1b.iulita.mobile.v1.OperationR\toperation\x129\n" +

@@ -4,6 +4,12 @@ import "fmt"
 
 func mobileEnvironmentKey(name string) (string, bool) {
 	switch name {
+	case "IULITA_SKILLS_CRAFT_NATIVE_OWNER_ID":
+		return "skills.craft.native_owner_id", true
+	case "IULITA_SKILLS_TODOIST_NATIVE_OWNER_ID":
+		return "skills.todoist.native_owner_id", true
+	case "IULITA_SKILLS_SLACK_OAUTH_NATIVE_OWNER_ID":
+		return "skills.slack_oauth.native_owner_id", true
 	case "IULITA_MOBILE_CHAT_ENABLED":
 		return "mobile.chat_enabled", true
 	case "IULITA_MOBILE_DEVICE_ENABLED":

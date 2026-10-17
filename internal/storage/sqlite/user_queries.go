@@ -18,10 +18,20 @@ func (s *Store) GetDirectiveByUser(ctx context.Context, userID string) (*domain.
 		return nil, nil
 	}
 	d := new(domain.Directive)
-	err := s.db.NewSelect().
+	// Explicit account preferences take precedence over historical channel rows,
+	// including empty clear tombstones. Never fall back after an account clear.
+	err := s.db.NewRaw(`SELECT user_id,content,updated_at FROM account_directives WHERE user_id=?`, userID).Scan(ctx, d)
+	if err == nil {
+		return d, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("getting account directive: %w", err)
+	}
+	err = s.db.NewSelect().
 		Model(d).
 		Where(legacyChatPredicate).
 		Where("user_id = ?", userID).
+		Order("updated_at DESC").
 		Limit(1).
 		Scan(ctx)
 	if err != nil {

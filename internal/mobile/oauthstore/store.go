@@ -256,6 +256,9 @@ func (s *Store) CreateFamily(ctx context.Context, f Family) error {
 		if err != nil {
 			return err
 		}
+		if ownerErr := checkClientOwnerIn(ctx, q, f.ClientID, f.OwnerID); ownerErr != nil {
+			return ownerErr
+		}
 		var ownerEpoch, deviceEpoch uint64
 		var revoked bool
 		if err = q.QueryRowContext(ctx, `SELECT o.epoch,d.epoch,d.revoked FROM oauth_owners o JOIN oauth_devices d ON d.owner_id=o.id WHERE o.id=? AND d.id=?`, f.OwnerID, f.DeviceID).Scan(&ownerEpoch, &deviceEpoch, &revoked); err != nil || revoked {
@@ -290,6 +293,9 @@ func (s *Store) live(ctx context.Context, f Family) error {
 	q, err := s.transaction(ctx)
 	if err != nil {
 		return err
+	}
+	if ownerErr := checkClientOwnerIn(ctx, q, f.ClientID, f.OwnerID); ownerErr != nil {
+		return ownerErr
 	}
 	var ownerEpoch, deviceEpoch uint64
 	var revoked bool

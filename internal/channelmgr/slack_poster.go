@@ -2,6 +2,9 @@ package channelmgr
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 
 	slackch "github.com/iulita-ai/iulita/internal/channel/slack"
 )
@@ -82,4 +85,28 @@ func (m *Manager) recomputeSlackWrite() {
 	if fn != nil {
 		fn(enabled)
 	}
+}
+
+// NativePostBinding identifies the currently selected concrete bot connection.
+// It contains no credentials and is not a portable authorization grant.
+func (m *Manager) NativePostBinding(_ context.Context, channelID string) string {
+	ch := m.pickWritable(channelID)
+	if ch == nil {
+		return ""
+	}
+	hash := sha256.Sum256([]byte(fmt.Sprintf("%p", ch)))
+	return hex.EncodeToString(hash[:])
+}
+
+// PostBoundToChannel rejects a route change after a native draft was approved.
+func (m *Manager) PostBoundToChannel(ctx context.Context, channelID, text, binding string) (string, error) {
+	ch := m.pickWritable(channelID)
+	if ch == nil || binding == "" {
+		return "", slackch.ErrWriteDenied
+	}
+	hash := sha256.Sum256([]byte(fmt.Sprintf("%p", ch)))
+	if hex.EncodeToString(hash[:]) != binding {
+		return "", slackch.ErrWriteDenied
+	}
+	return ch.PostToChannel(ctx, channelID, text)
 }

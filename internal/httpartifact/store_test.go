@@ -110,6 +110,62 @@ func (m *memRepo) SumHTTPArtifactBytes(_ context.Context) (int64, error) {
 	return sum, nil
 }
 
+func (m *memRepo) SumHTTPArtifactBytesByOwner(_ context.Context, owner string) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var sum int64
+	for _, a := range m.rows {
+		if a.OwnerUserID == owner && (a.State == domain.HTTPArtifactPartial || a.State == domain.HTTPArtifactReady) {
+			sum += a.Size
+		}
+	}
+	return sum, nil
+}
+
+func TestOwnerQuotaIncludesCommittedFilesAcrossRestart(t *testing.T) {
+	s := testStore(t)
+	data := bytes.Repeat([]byte("x"), 500)
+	w, err := s.Begin(context.Background(), spec("u1", int64(len(data))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = w.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(data)
+	if err = w.Commit(hex.EncodeToString(sum[:]), int64(len(data))); err != nil {
+		t.Fatal(err)
+	}
+	for _, restart := range []bool{false, true} {
+		if restart {
+			s, err = NewStore(s.Root(), s.repo, s.limits, zap.NewNop())
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		if _, err = s.Begin(context.Background(), spec("u1", 101)); !errors.Is(err, ErrQuotaExceeded) {
+			t.Fatalf("committed quota restart=%v: %v", restart, err)
+		}
+	}
+	other, err := s.Begin(context.Background(), spec("u2", 200))
+	if err != nil {
+		t.Fatal("another owner's quota", err)
+	}
+	if err = other.Abort(); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := s.Begin(context.Background(), spec("u1", 100))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Begin(context.Background(), spec("u1", 1)); !errors.Is(err, ErrQuotaExceeded) {
+		t.Fatal("committed plus in-flight quota", err)
+	}
+	if err = pending.Abort(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func testStore(t *testing.T) *Store {
 	t.Helper()
 	repo := newMemRepo()

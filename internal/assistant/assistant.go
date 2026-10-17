@@ -322,17 +322,8 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 
 	// Build tool definitions from enabled skills.
 	var tools []llm.ToolDefinition
-	enabledSkills := a.registry.EnabledSkills()
-	for _, s := range enabledSkills {
-		schema := s.InputSchema()
-		if schema == nil {
-			continue // text-only skills have no tool schema
-		}
-		tools = append(tools, llm.ToolDefinition{
-			Name:        s.Name(),
-			Description: s.Description(),
-			InputSchema: schema,
-		})
+	for _, entry := range a.registry.Catalog() {
+		tools = append(tools, entry.Definition)
 	}
 	if len(tools) > 0 {
 		var toolNames []string
@@ -1163,16 +1154,7 @@ func (a *Assistant) SetMemoryTriggers(triggers []string) {
 
 // matchesMemoryTrigger checks if the message text contains any memory trigger keyword.
 func (a *Assistant) matchesMemoryTrigger(text string) bool {
-	if len(a.memoryTriggers) == 0 {
-		return false
-	}
-	lower := strings.ToLower(text)
-	for _, trigger := range a.memoryTriggers {
-		if strings.Contains(lower, trigger) {
-			return true
-		}
-	}
-	return false
+	return skill.MatchMemoryTrigger(text, a.memoryTriggers)
 }
 
 // SetEmbedding configures the embedding provider for hybrid search.

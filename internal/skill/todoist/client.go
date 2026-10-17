@@ -23,6 +23,8 @@ const (
 
 // Client communicates with the Todoist Unified API v1.
 type Client struct {
+	nativeOwner  string
+	nativeEpoch  uint64
 	mu           sync.RWMutex
 	apiToken     string
 	baseURL      string
@@ -50,15 +52,10 @@ func NewClient(apiToken string, httpClient *http.Client, logger *zap.Logger) *Cl
 func (c *Client) UpdateToken(token string) {
 	c.mu.Lock()
 	c.apiToken = token
+	c.nativeEpoch++
 	c.mu.Unlock()
 
-	prefix := token
-	if len(token) > 8 {
-		prefix = token[:8]
-	}
-	c.logger.Info("todoist token updated (hot-reload)",
-		zap.String("token_prefix", prefix+"..."),
-	)
+	c.logger.Info("todoist token updated (hot-reload)")
 	// Reset logTokenOnce so the next API call logs the new token.
 	c.logTokenOnce.Store(&sync.Once{})
 }
@@ -282,14 +279,7 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body any, resu
 	}
 
 	c.logTokenOnce.Load().Do(func() {
-		prefix := tok
-		if len(tok) > 8 {
-			prefix = tok[:8]
-		}
-		c.logger.Info("todoist client activated",
-			zap.String("token_prefix", prefix+"..."),
-			zap.String("base_url", c.baseURL),
-		)
+		c.logger.Info("todoist client activated")
 	})
 
 	start := time.Now()

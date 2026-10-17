@@ -14,7 +14,7 @@ import (
 )
 
 // runStep executes one step end-to-end and returns its bounded projection.
-func (e *Engine) runStep(ctx context.Context, step Request, state *runState, scope Scope, idx, total int) StepResult {
+func (e *Engine) runStep(ctx context.Context, step Request, state *runState, scope Scope) StepResult {
 	sr := StepResult{ID: step.ID, ProxyUsed: true, BodyComplete: false}
 	start := time.Now()
 	state.currentStep = step.ID
@@ -26,7 +26,7 @@ func (e *Engine) runStep(ctx context.Context, step Request, state *runState, sco
 	sr.Method = method
 
 	// Feature toggle is re-checked per step: a mid-run disable stops the chain.
-	if !e.policy.Enabled {
+	if !e.Enabled() {
 		return stepError(sr, OutcomePolicyDenied, "http_disabled", fmt.Errorf("HTTP tool disabled"))
 	}
 
@@ -72,13 +72,16 @@ func (e *Engine) runStep(ctx context.Context, step Request, state *runState, sco
 		return *ferr
 	}
 
-	// Mutating methods need an identity-bound confirmation bound to the
-	// plan — unless a standing grant ("always allow") already covers it.
+	// Mutating methods need a confirmation for this resolved step, unless an
+	// explicit owner standing grant already covers the exact origin.
 	if !isSafeMethod(method) {
 		if e.hasStandingGrant(ctx, scope, origin) {
 			e.metrics.ConsentAsked(string(ConfirmMutation), "standing")
-		} else if state.mutGrant == nil {
-			preview := e.mutationPreview(state, idx, total)
+		} else {
+			preview, previewErr := mutationPreview(step, target, sanQuery, state)
+			if previewErr != nil {
+				return stepError(sr, OutcomePolicyDenied, "confirmation_preview", previewErr)
+			}
 			decision, ferr := e.askConsent(ctx, state, scope, ConfirmMutation, preview, 0)
 			if ferr != nil {
 				return *ferr
@@ -88,7 +91,6 @@ func (e *Engine) runStep(ctx context.Context, step Request, state *runState, sco
 			if decision.Standing != "" {
 				e.saveStandingGrant(ctx, scope, origin, decision.Standing, decision.Actor.UserID)
 			}
-			state.mutGrant = &decision
 		}
 	}
 

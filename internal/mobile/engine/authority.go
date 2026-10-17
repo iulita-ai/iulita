@@ -27,6 +27,21 @@ func AuthorityFrom(ctx context.Context) Authority {
 	return a
 }
 func permits(a Authority, t Tool) bool {
+	if t.InteractiveOnly && (a.PrincipalType == "service" || a.OwnerID == "" || a.DeviceID == "" || a.FamilyID == "") {
+		return false
+	}
+	if len(t.Actions) > 0 {
+		allowed := false
+		for _, p := range t.Actions {
+			if hasScopes(a, p.Scopes) {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return false
+		}
+	}
 	for _, scope := range t.RequiredScopes {
 		found := false
 		for _, allowed := range a.Scopes {

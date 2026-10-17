@@ -37,7 +37,7 @@ type ClientRegistration struct {
 }
 
 var clientIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
-var nativeCeiling = []string{"chats:read", "chats:write", "devices:read", "devices:manage", "devices:receive", "devices:sync", "phone:data", "phone:ui"}
+var nativeCeiling = []string{"assistant:services:read", "assistant:services:write", "chats:read", "chats:write", "devices:read", "devices:manage", "devices:receive", "devices:sync", "phone:data", "phone:ui"}
 var cliCeiling = []string{"chats:read", "chats:write", "devices:read", "devices:manage", "phone:data", "phone:ui"}
 var serviceCeiling = []string{"chats:read", "chats:write"}
 
@@ -84,7 +84,7 @@ func normalizeRegistration(r ClientRegistration) (ClientRegistration, error) {
 	ceiling := nativeCeiling
 	switch r.Kind {
 	case "native":
-		if r.OwnerID != "" || len(r.RedirectURIs) < 1 || len(r.RedirectURIs) > 8 {
+		if (r.OwnerID != "" && !canonicalID(r.OwnerID)) || len(r.RedirectURIs) < 1 || len(r.RedirectURIs) > 8 {
 			return r, ErrInvalid
 		}
 		for _, value := range r.RedirectURIs {

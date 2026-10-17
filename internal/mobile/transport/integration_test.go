@@ -101,7 +101,8 @@ func certificate(t *testing.T) (tls.Certificate, *x509.CertPool) {
 	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}, pool
 }
 func setupHarness(t *testing.T) *harness { return setupHarnessWithOptions(t, devices.Options{}) }
-func setupHarnessWithOptions(t *testing.T, options devices.Options) *harness {
+func setupHarnessWithOptions(t *testing.T, options devices.Options, assistantScopes ...string) *harness {
+	allowedScopes := append(append([]string(nil), harnessScopes...), assistantScopes...)
 	t.Helper()
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "main.sqlite")
@@ -133,7 +134,7 @@ func setupHarnessWithOptions(t *testing.T, options devices.Options) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = oauth.RegisterClient(ctx, fosite.DefaultClient{ID: "mobile", Public: true, RedirectURIs: []string{harnessRedirect}, GrantTypes: []string{"authorization_code", "refresh_token"}, ResponseTypes: []string{"code"}, Scopes: harnessScopes, Audience: []string{"iulita-mobile"}}); err != nil {
+	if err = oauth.RegisterClient(ctx, fosite.DefaultClient{ID: "mobile", Public: true, RedirectURIs: []string{harnessRedirect}, GrantTypes: []string{"authorization_code", "refresh_token"}, ResponseTypes: []string{"code"}, Scopes: allowedScopes, Audience: []string{"iulita-mobile"}}); err != nil {
 		t.Fatal(err)
 	}
 	signer, _ := realm.CursorSigner()
@@ -157,7 +158,7 @@ func setupHarnessWithOptions(t *testing.T, options devices.Options) *harness {
 		t.Fatal(err)
 	}
 	processor.VerifyAuthority = oauth.ValidateAuthority
-	browser, err := browseroauth.New(browseroauth.Config{Clock: options.Clock, Store: oauth, Accounts: accounts, Scopes: harnessScopes, Limits: browseroauth.Limits{AuthorizePerIP: 100, LoginPerIP: 100, LoginPerAccount: 100, ConsentPerIP: 100}})
+	browser, err := browseroauth.New(browseroauth.Config{Clock: options.Clock, Store: oauth, Accounts: accounts, Scopes: allowedScopes, Limits: browseroauth.Limits{AuthorizePerIP: 100, LoginPerIP: 100, LoginPerAccount: 100, ConsentPerIP: 100}})
 	if err != nil {
 		t.Fatal(err)
 	}

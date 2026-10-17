@@ -44,9 +44,9 @@ import (
 	openaillm "github.com/iulita-ai/iulita/internal/llm/openai"
 	"github.com/iulita-ai/iulita/internal/metrics"
 	"github.com/iulita-ai/iulita/internal/mobile"
+	"github.com/iulita-ai/iulita/internal/mobile/assistanttools"
 	"github.com/iulita-ai/iulita/internal/mobile/browseroauth"
 	mobileexternal "github.com/iulita-ai/iulita/internal/mobile/external"
-	"github.com/iulita-ai/iulita/internal/mobile/publictools"
 	mobileruntime "github.com/iulita-ai/iulita/internal/mobile/runtime"
 	"github.com/iulita-ai/iulita/internal/modelruntime"
 	"github.com/iulita-ai/iulita/internal/notify"
@@ -54,6 +54,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/scheduler"
 	"github.com/iulita-ai/iulita/internal/scheduler/handlers"
 	"github.com/iulita-ai/iulita/internal/skill"
+	"github.com/iulita-ai/iulita/internal/skill/askuser"
 	"github.com/iulita-ai/iulita/internal/skill/craft"
 	"github.com/iulita-ai/iulita/internal/skill/datetime"
 	"github.com/iulita-ai/iulita/internal/skill/delegate"
@@ -922,6 +923,7 @@ func main() {
 
 	// Skills
 	registry := skill.NewRegistry()
+	registry.Register(askuser.New())
 
 	var caps []string
 	if cfg.Skills.Web.APIKey != "" {
@@ -1063,12 +1065,12 @@ func main() {
 			limits.WallTimeout = d
 		}
 		// Artifact store for downloads: constructed when downloads are
-		// enabled AND the dashboard runs with authentication (delivery is
+		// enabled AND dashboard authentication or native chat delivery exists (delivery is
 		// owner-scoped by definition). Without it the engine refuses
 		// download mode before the network — no unverifiable "downloaded"
 		// claims.
 		var httpArtifacts httpfetch.ArtifactStore
-		if hcfg.Enabled && hcfg.DownloadsEnabled && authService != nil {
+		if hcfg.Enabled && hcfg.DownloadsEnabled && (authService != nil || cfg.Mobile.ChatEnabled) {
 			ttl := 24 * time.Hour
 			if d, perr := time.ParseDuration(hcfg.ArtifactTTL); perr == nil && d > 0 {
 				ttl = d
@@ -1168,6 +1170,7 @@ func main() {
 		craftManifest.SystemPrompt = cfg.Skills.Craft.SystemPrompt
 	}
 	craftClient := craft.NewClient(cfg.Skills.Craft.APIURL, cfg.Skills.Craft.APIKey, httpClient)
+	craftClient.SetNativeOwner(cfg.Skills.Craft.NativeOwnerID)
 	craftSearch := craft.NewSearch(craftClient)
 	craftSearch.SetReloader(registry, cfgStore)
 	registry.RegisterWithManifest(craftSearch, craftManifest)
@@ -1279,6 +1282,7 @@ func main() {
 		logger.Warn("failed to load slack_post manifest", zap.Error(err))
 	}
 	slackPostSkill := slackpost.NewPostSkill(store, logger)
+	slackPostSkill.SetNativeOwner(cfg.Skills.SlackOAuth.NativeOwnerID)
 	registry.RegisterWithManifest(slackPostSkill, slackPostManifest)
 
 	// share_location skill — native Telegram map pins/venue cards. Registered
@@ -1300,6 +1304,7 @@ func main() {
 	if cfg.Skills.Todoist.SystemPrompt != "" && todoistManifest != nil {
 		todoistManifest.SystemPrompt = cfg.Skills.Todoist.SystemPrompt
 	}
+	todoistClient.SetNativeOwner(cfg.Skills.Todoist.NativeOwnerID)
 	todoistSkill := todoist.NewSkill(todoistClient, logger)
 	todoistSkill.SetReloader(registry, cfgStore)
 	registry.RegisterWithManifest(todoistSkill, todoistManifest)
@@ -1872,10 +1877,11 @@ func main() {
 		if err != nil || accountPath != settings.AccountDB {
 			logger.Fatal("mobile account database mismatch")
 		}
-		service, err := mobileruntime.NewWithTools(ctx, settings, cfg.Mobile, browseroauth.PasswordAccounts{Users: store}, routingProvider, cfg.App.SystemPrompt, version.String(), publictools.Tools(registry), mobileexternal.Adapter{Store: store, Sender: mgr})
+		service, err := mobileruntime.NewWithCatalog(ctx, settings, cfg.Mobile, browseroauth.PasswordAccounts{Users: store}, routingProvider, cfg.App.SystemPrompt, version.String(), assistanttools.Catalog(registry, cfg.Skills.Memory.Triggers...), mobileexternal.Adapter{Store: store, Sender: mgr})
 		if err != nil {
 			logger.Fatal("mobile runtime initialization failed")
 		}
+		service.SetHTTPArtifacts(httpArtifactStore)
 		mobileService = service
 		defer service.Close()
 		wg.Add(1)

@@ -13,6 +13,7 @@ import (
 
 	v1 "github.com/iulita-ai/iulita/api/gen/go/iulita/mobile/v1"
 	"github.com/iulita-ai/iulita/internal/config"
+	"github.com/iulita-ai/iulita/internal/httpartifact"
 	"github.com/iulita-ai/iulita/internal/mobile"
 	"github.com/iulita-ai/iulita/internal/mobile/browseroauth"
 	"github.com/iulita-ai/iulita/internal/mobile/conversations"
@@ -33,16 +34,17 @@ import (
 
 // Config collects dependencies and limits for the mobile server.
 type Config struct {
-	Clock    *serverclock.Clock
-	TLS      *tls.Config
-	OAuth    *oauthstore.Store
-	Accounts browseroauth.Accounts
-	Chats    *conversations.Repository
-	Engine   *engine.Engine
-	Devices  *devices.Store
-	Features config.MobileConfig
-	Version  string
-	Ready    func() bool
+	HTTPArtifacts *httpartifact.Store
+	Clock         *serverclock.Clock
+	TLS           *tls.Config
+	OAuth         *oauthstore.Store
+	Accounts      browseroauth.Accounts
+	Chats         *conversations.Repository
+	Engine        *engine.Engine
+	Devices       *devices.Store
+	Features      config.MobileConfig
+	Version       string
+	Ready         func() bool
 }
 
 // Server serves the independent mobile protocol.
@@ -465,3 +467,6 @@ func (s *Server) mutate(ctx context.Context, method string, op *v1.Operation, re
 	}
 	return response, nil
 }
+
+// SetHTTPArtifacts is startup-only wiring, before Serve/Run.
+func (s *Server) SetHTTPArtifacts(store *httpartifact.Store) { s.config.HTTPArtifacts = store }

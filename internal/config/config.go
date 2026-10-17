@@ -355,20 +355,23 @@ type GoogleConfig struct {
 // user-token (xoxp-) connection used to read/search Slack. This is distinct from
 // the per-channel-instance bot_token/app_token used by internal/channel/slack.
 type SlackOAuthConfig struct {
-	ClientID     string `koanf:"client_id"`     // Slack app Client ID
-	ClientSecret string `koanf:"client_secret"` // Slack app Client Secret
-	RedirectURL  string `koanf:"redirect_url"`  // OAuth2 callback URL (e.g. https://iulita.example.com/api/slack/callback)
+	NativeOwnerID string `koanf:"native_owner_id"` // Explicit owner of native bot posting.
+	ClientID      string `koanf:"client_id"`       // Slack app Client ID
+	ClientSecret  string `koanf:"client_secret"`   // Slack app Client Secret
+	RedirectURL   string `koanf:"redirect_url"`    // OAuth2 callback URL (e.g. https://iulita.example.com/api/slack/callback)
 }
 
 type CraftConfig struct {
-	APIURL       string `koanf:"api_url"`       // Full Craft API base URL (e.g. https://connect.craft.do/links/XXX/api/v1)
-	APIKey       string `koanf:"api_key"`       // Bearer token for Craft API authentication
-	SystemPrompt string `koanf:"system_prompt"` // overrides embedded SKILL.md if set
+	NativeOwnerID string `koanf:"native_owner_id"` // Explicit account ID for native use of a global service connection.
+	APIURL        string `koanf:"api_url"`         // Full Craft API base URL (e.g. https://connect.craft.do/links/XXX/api/v1)
+	APIKey        string `koanf:"api_key"`         // Bearer token for Craft API authentication
+	SystemPrompt  string `koanf:"system_prompt"`   // overrides embedded SKILL.md if set
 }
 
 type TodoistConfig struct {
-	APIToken     string `koanf:"api_token"`     // Personal API token from Todoist Settings > Integrations > Developer
-	SystemPrompt string `koanf:"system_prompt"` // overrides embedded SKILL.md if set
+	NativeOwnerID string `koanf:"native_owner_id"` // Explicit account ID for native use of a global service connection.
+	APIToken      string `koanf:"api_token"`       // Personal API token from Todoist Settings > Integrations > Developer
+	SystemPrompt  string `koanf:"system_prompt"`   // overrides embedded SKILL.md if set
 }
 
 type WebConfig struct {
@@ -473,7 +476,7 @@ func Load(path string, paths *Paths) (*Config, *koanf.Koanf, bool, error) {
 
 	// Layer 3: environment variables
 	if err := k.Load(env.Provider("IULITA_", ".", func(s string) string {
-		// Mobile leaves contain underscores. Preserve their complete koanf key;
+		// Native backend leaves contain underscores. Preserve their complete koanf key;
 		// the legacy underscore-to-dot mapping otherwise produces chat.enabled.
 		if key, ok := mobileEnvironmentKey(s); ok {
 			return key
@@ -566,6 +569,9 @@ func structToMap(cfg *Config) map[string]interface{} {
 	m["mobile.runtime_file"] = cfg.Mobile.RuntimeFile
 
 	// Skills
+	m["skills.craft.native_owner_id"] = cfg.Skills.Craft.NativeOwnerID
+	m["skills.todoist.native_owner_id"] = cfg.Skills.Todoist.NativeOwnerID
+	m["skills.slack_oauth.native_owner_id"] = cfg.Skills.SlackOAuth.NativeOwnerID
 	m["skills.dir"] = cfg.Skills.Dir
 	m["skills.memory.half_life_days"] = cfg.Skills.Memory.HalfLifeDays
 	m["skills.memory.mmr_lambda"] = cfg.Skills.Memory.MMRLambda

@@ -57,9 +57,9 @@ func wirePrompt(p conversations.Prompt) *v1.Prompt {
 	state := v1.PromptState(v1.PromptState_value["PROMPT_STATE_"+strings.ToUpper(p.State)])
 	out := &v1.Prompt{Binding: &v1.PromptBinding{ConversationId: p.ConversationID, TurnId: p.TurnID, PromptId: p.ID, HistoryGeneration: p.Generation}, State: state, ExpiresAt: timestamppb.New(p.ExpiresAt)}
 	if p.Kind == "confirmation" {
-		out.Body = &v1.Prompt_Confirmation{Confirmation: &v1.SecurityConfirmation{OperationId: p.OperationID, Nonce: p.Nonce, FingerprintSha256: p.Fingerprint, SafePreview: p.Preview, ExpiresAt: timestamppb.New(p.ExpiresAt)}}
+		out.Body = &v1.Prompt_Confirmation{Confirmation: &v1.SecurityConfirmation{OperationId: p.OperationID, Nonce: p.Nonce, FingerprintSha256: p.Fingerprint, SafePreview: p.Preview, MaxBytes: uint64(max(p.MaxBytes, 0)), ExpiresAt: timestamppb.New(p.ExpiresAt)}}
 	} else {
-		choice := &v1.ChoicePrompt{Question: p.Question}
+		choice := &v1.ChoicePrompt{Question: p.Question, AllowText: p.AllowText}
 		for _, c := range p.Choices {
 			choice.Choices = append(choice.Choices, &v1.Choice{ChoiceId: c.ID, Label: c.Label})
 		}
@@ -246,7 +246,31 @@ func (s *Server) RespondToPrompt(ctx context.Context, in *v1.RespondToPromptRequ
 	out, err := s.mutate(ctx, "RespondToPrompt", in.Operation, in, new(v1.Prompt), func(ctx context.Context) (proto.Message, error) {
 		p := auth(ctx).Claims
 		b := in.Binding
-		prompt, err := s.config.Chats.Decide(ctx, p.Subject, p.DeviceID, b.ConversationId, b.TurnId, b.PromptId, b.HistoryGeneration, in.ChoiceId, "", "", nil)
+		current, err := s.config.Chats.Prompt(ctx, p.Subject, b.ConversationId, b.TurnId, b.PromptId)
+		if err != nil {
+			return nil, err
+		}
+		if current.Kind != "choice" || (in.ChoiceId == "") == (in.TextResponse == "") {
+			return nil, conversations.ErrInvalid
+		}
+		answer := in.ChoiceId
+		if in.TextResponse != "" {
+			if !current.AllowText {
+				return nil, conversations.ErrInvalid
+			}
+			answer = in.TextResponse
+		} else {
+			found := false
+			for _, c := range current.Choices {
+				if c.ID == answer {
+					found = true
+				}
+			}
+			if !found {
+				return nil, conversations.ErrInvalid
+			}
+		}
+		prompt, err := s.config.Chats.Decide(ctx, p.Subject, p.DeviceID, b.ConversationId, b.TurnId, b.PromptId, b.HistoryGeneration, answer, "", "", nil, conversations.ApprovalAuthority(s.config.OAuth.Authority(p)))
 		return wirePrompt(prompt), err
 	})
 	if err != nil {
@@ -257,7 +281,7 @@ func (s *Server) RespondToPrompt(ctx context.Context, in *v1.RespondToPromptRequ
 
 // RespondToConfirmation implements the authenticated RespondToConfirmation mobile RPC.
 func (s *Server) RespondToConfirmation(ctx context.Context, in *v1.RespondToConfirmationRequest) (*v1.Prompt, error) {
-	if in.Binding == nil || in.GrantedMaxBytes != 0 {
+	if in.Binding == nil || in.GrantedMaxBytes > 1<<40 {
 		return nil, conversations.ErrInvalid
 	}
 	decision := ""
@@ -269,10 +293,11 @@ func (s *Server) RespondToConfirmation(ctx context.Context, in *v1.RespondToConf
 	default:
 		return nil, conversations.ErrInvalid
 	}
+	granted := int64(in.GrantedMaxBytes)
 	out, err := s.mutate(ctx, "RespondToConfirmation", in.Operation, in, new(v1.Prompt), func(ctx context.Context) (proto.Message, error) {
 		p := auth(ctx).Claims
 		b := in.Binding
-		prompt, err := s.config.Chats.Decide(ctx, p.Subject, p.DeviceID, b.ConversationId, b.TurnId, b.PromptId, b.HistoryGeneration, decision, in.SecurityOperationId, in.Nonce, in.FingerprintSha256, conversations.ApprovalAuthority(s.config.OAuth.Authority(p)))
+		prompt, err := s.config.Chats.DecideGranted(ctx, p.Subject, p.DeviceID, b.ConversationId, b.TurnId, b.PromptId, b.HistoryGeneration, decision, in.SecurityOperationId, in.Nonce, in.FingerprintSha256, granted, conversations.ApprovalAuthority(s.config.OAuth.Authority(p)))
 		return wirePrompt(prompt), err
 	})
 	if err != nil {

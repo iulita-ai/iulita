@@ -886,7 +886,9 @@
                 "devices:sync",
                 "devices:manage",
                 "phone:data",
-                "phone:ui"
+                "phone:ui",
+                "assistant:services:read",
+                "assistant:services:write"
               ]
             },
             "minItems": 1,
@@ -1743,7 +1745,7 @@
     ]
   },
   "x-iulita-client-registrations": {
-    "native": "authorization_code + refresh_token; exact registered HTTPS callbacks",
+    "native": "authorization_code + refresh_token; exact registered HTTPS callbacks; optional assistant:services:read/write require an explicitly registered ceiling and fresh browser consent; existing grants never widen",
     "cli": "device_code + refresh_token; default chats:read chats:write; devices:receive/sync forbidden",
     "service": "client_credentials + client_secret_basic; fixed owner and service_id; default chats:read; only chats:read/write can be registered; no phone or account memory admission"
   },

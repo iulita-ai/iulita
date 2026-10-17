@@ -13,10 +13,12 @@ import (
 
 // Client provides access to the Craft REST API.
 type Client struct {
-	mu         sync.RWMutex
-	apiBaseURL string // e.g. https://connect.craft.do/links/XXX/api/v1
-	apiKey     string // Bearer token
-	httpClient *http.Client
+	nativeOwner string
+	nativeEpoch uint64
+	mu          sync.RWMutex
+	apiBaseURL  string // e.g. https://connect.craft.do/links/XXX/api/v1
+	apiKey      string // Bearer token
+	httpClient  *http.Client
 }
 
 // NewClient creates a Craft API client with the given base URL and API key.
@@ -36,6 +38,7 @@ func (c *Client) UpdateCredentials(apiURL, apiKey string) {
 	c.mu.Lock()
 	c.apiBaseURL = strings.TrimRight(apiURL, "/")
 	c.apiKey = apiKey
+	c.nativeEpoch++
 	c.mu.Unlock()
 }
 
