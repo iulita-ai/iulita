@@ -98,6 +98,41 @@ Enabled by default: the tool registers whenever `[proxy].url` is configured
 active). Without a proxy the tool is simply unavailable (`proxy_required`)
 and the rest of Iulita runs normally. Disable with `skills.http.enabled = false`.
 
+### Text Translation (`translate`, opt-in)
+
+The first version supports Web Chat, Telegram and Slack. Other channels do not expose this tool until literal delivery is supported.
+
+Translate text with Z.ai Translation Agent using the existing Z.ai connection.
+An administrator enables **Z.ai translator** in **Settings → Skills** and manages
+the shared key in **Models**. The skill has no separate key or model profile.
+It is disabled by default (`skills.translate.enabled = false`). A configured
+connection does not prove that the account can access Translation Agent; the
+shared key must have access to that service.
+
+Ask, for example: “Translate into English: …”. The target language must be
+explicit. The source language defaults to automatic detection; neither setting
+changes the interface language. An explicitly identical source and target is
+rejected locally. Supported translation languages are independent of the six
+interface languages.
+
+| Input | Description |
+|-------|-------------|
+| `text` | Exact source text; at most 20,000 Unicode characters and 64 KiB UTF-8 |
+| `target_language` | Required supported target code |
+| `source_language` | Supported source code, or `auto` by default |
+
+The accepted translation is returned without rewriting it through the chat
+model. In Web Chat, **Copy** copies only the message text. This version supports
+general text translation; files, OCR, and glossaries are unsupported. Ask for
+translation and sending or explanation in separate turns. The source
+and result remain subject to the conversation's normal storage policy, and
+the main chat model still selects the translation tool.
+
+Each operation makes one provider attempt, with no automatic fallback to a chat
+model. An incomplete response is an error, not a finished translation. After a
+timeout, a new request can incur another charge even if the first result was
+not received.
+
 ### Directives
 
 | Tool | Input | Description |

@@ -69,11 +69,24 @@ func (h *SkillReviewHandler) Handle(ctx context.Context, payload string) (string
 		return "", fmt.Errorf("invalid payload: %w", err)
 	}
 
-	// Load the turn (and some preceding context) up to and including the boundary.
+	// Load only the reviewed turn, never preceding sensitive translations.
 	history, err := h.store.GetHistoryBefore(ctx, p.ChatID, p.LastMessageID+1, maxReviewMessages)
 	if err != nil {
 		return "", fmt.Errorf("loading history: %w", err)
 	}
+	// A completed turn starts at its most recent user message. Fail closed
+	// when the bounded history window does not contain that boundary.
+	start := -1
+	for i := len(history) - 1; i >= 0; i-- {
+		if history[i].Role == domain.RoleUser {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return `{"reviewed":0,"reason":"turn boundary unavailable"}`, nil
+	}
+	history = history[start:]
 	if len(history) < 2 {
 		return `{"reviewed":0,"reason":"insufficient history"}`, nil
 	}

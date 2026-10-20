@@ -74,19 +74,22 @@
           @mouseenter="hoveredMsgId = msg.id"
           @mouseleave="hoveredMsgId = null"
         >
-          <div
-            :style="{
-              maxWidth: '100%',
-              padding: '8px 12px',
-              borderRadius: '12px',
-              background: msg.role === 'user' ? '#18a058' : '#e8e8e8',
-              color: msg.role === 'user' ? '#fff' : '#333',
-            }"
-          >
-            <div style="white-space: pre-wrap; word-break: break-word;">{{ msg.text }}</div>
-            <div :style="{ fontSize: '11px', marginTop: '4px', opacity: 0.6, textAlign: msg.role === 'user' ? 'right' : 'left' }">
-              {{ msg.timestamp }}
+          <div class="msg-content">
+            <div
+              :style="{
+                maxWidth: '100%',
+                padding: '8px 12px',
+                borderRadius: '12px',
+                background: msg.role === 'user' ? '#18a058' : '#e8e8e8',
+                color: msg.role === 'user' ? '#fff' : '#333',
+              }"
+            >
+              <div dir="auto" style="white-space: pre-wrap; word-break: break-word;">{{ msg.text }}</div>
+              <div :style="{ fontSize: '11px', marginTop: '4px', opacity: 0.6, textAlign: msg.role === 'user' ? 'right' : 'left' }">
+                {{ msg.timestamp }}
+              </div>
             </div>
+            <CopyTextButton v-if="msg.role === 'assistant'" :text="msg.text" />
           </div>
           <button
             v-if="msg.role === 'assistant' && msg.messageId"
@@ -184,6 +187,7 @@ import { NPageHeader, NTag, NText, NInput, NInputGroup, NButton, NEmpty, NSpin, 
 import { useWebSocket } from '../composables/useWebSocket'
 import { currentUser, api } from '../api'
 import AgentProgress from '../components/AgentProgress.vue'
+import CopyTextButton from '../components/CopyTextButton.vue'
 import type { AgentInfo } from '../components/agentTypes'
 
 const { t } = useI18n()
@@ -604,6 +608,7 @@ onUnmounted(() => {
   align-items: flex-end;
   gap: 4px;
 }
+.msg-content { min-width: 0; }
 .bookmark-btn {
   flex-shrink: 0;
   background: none;

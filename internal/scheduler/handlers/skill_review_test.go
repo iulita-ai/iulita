@@ -236,3 +236,35 @@ func TestSkillReview_DisabledNoop(t *testing.T) {
 		t.Errorf("expected reviewed=0 when disabled, got %s", res)
 	}
 }
+
+func TestSkillReviewExcludesPreviousTranslationTurn(t *testing.T) {
+	store := newReviewStore(t)
+	for _, m := range []*domain.ChatMessage{
+		{ChatID: "chat", UserID: "u", Role: domain.RoleUser, Content: "sensitive translation source"},
+		{ChatID: "chat", UserID: "u", Role: domain.RoleAssistant, Content: "sensitive translation result"},
+	} {
+		if err := store.SaveMessage(context.Background(), m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	last := seedTurn(t, store, "chat", "u")
+	provider := &reviewPrivacyProvider{t: t}
+	h := NewSkillReviewHandler(store, provider, config.SelfImproveConfig{Enabled: true}, zap.NewNop())
+	_, err := h.Handle(context.Background(), reviewPayload(t, "chat", "u", last))
+	if err != nil || provider.calls != 1 {
+		t.Fatalf("review %v calls%d", err, provider.calls)
+	}
+}
+
+type reviewPrivacyProvider struct {
+	t     *testing.T
+	calls int
+}
+
+func (p *reviewPrivacyProvider) Complete(_ context.Context, r llm.Request) (llm.Response, error) {
+	p.calls++
+	if strings.Contains(r.Message, "sensitive translation") || !strings.Contains(r.Message, "deploy the service") {
+		p.t.Fatalf("wrong review transcript %q", r.Message)
+	}
+	return llm.Response{Content: "NONE"}, nil
+}

@@ -95,6 +95,13 @@ export interface ArtifactTicketResponse {
   expires_in: number
 }
 
+export interface TranslationServiceStatus {
+  provider: 'zai'
+  service: 'general_translation'
+  state: 'ready' | 'not_configured' | 'forbidden' | 'revoked' | 'runtime_unavailable' | 'disabled'
+  checked: false
+}
+
 export interface SkillInfo {
   name: string
   description: string
@@ -103,6 +110,7 @@ export interface SkillInfo {
   has_capabilities: boolean
   has_config: boolean
   manifest_group?: string
+  service_status?: TranslationServiceStatus
 }
 
 export interface SkillConfigField {
@@ -119,6 +127,7 @@ export interface SkillConfigResponse {
   description: string
   schema: SkillConfigField[]
   encryption_enabled: boolean
+  service_status?: TranslationServiceStatus
 }
 
 export interface Message {

@@ -272,7 +272,12 @@
     "agentStarted": "{id} ({type}) запущен",
     "agentCompleted": "{id} завершил работу",
     "agentFailed": "{id} ошибка",
-    "agentProgress": "{id}: шаг {turn}"
+    "agentProgress": "{id}: шаг {turn}",
+    "copy": "Копировать",
+    "copyMessage": "Копировать ответ ассистента",
+    "copied": "Скопировано",
+    "copyError": "Не удалось скопировать. Выделите текст и скопируйте вручную.",
+    "copyUnavailable": "Буфер обмена недоступен. Выделите текст и скопируйте вручную."
   },
   "facts": {
     "title": "Факты",
@@ -973,5 +978,25 @@
     "deleted": "Файл удалён",
     "deleteFailed": "Не удалось удалить",
     "deleteConfirm": "Удалить этот файл навсегда?"
+  },
+  "translation": {
+    "title": "Переводчик Z.ai",
+    "description": "Перевод текста через Z.ai Translation Agent.",
+    "connection": "Подключение: Z.ai из настроек моделей",
+    "sharedKey": "Используется общий ключ Z.ai. Отдельный ключ здесь не нужен.",
+    "mode": "Режим: обычный перевод",
+    "notVerified": "Подключение настроено. Доступ к API Translation Agent ещё не проверен.",
+    "openModels": "Открыть настройки Z.ai",
+    "adminManaged": "Подключение и включение перевода настраивает администратор.",
+    "toggle": "Включить перевод Z.ai",
+    "states": {
+      "ready": "Подключение настроено",
+      "not_configured": "Подключение Z.ai не настроено",
+      "forbidden": "Z.ai запрещён текущей политикой",
+      "revoked": "Подключение Z.ai отозвано",
+      "runtime_unavailable": "Перевод временно недоступен",
+      "disabled": "Перевод выключен"
+    },
+    "details": "Подключение"
   }
 }

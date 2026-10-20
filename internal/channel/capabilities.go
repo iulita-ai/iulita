@@ -13,6 +13,7 @@ const (
 	CapTyping                            // shows typing indicator
 	CapHTML                              // renders HTML (webchat)
 	CapLocations                         // can send/receive native location messages
+	CapVerbatim                          // preserves literal native-operation output without markup processing
 )
 
 // CapabilityProvider is an optional interface channels implement to declare their features.

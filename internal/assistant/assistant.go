@@ -223,7 +223,10 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 		approved, defined := isApprovalResponse(msg.Text, localeTag)
 		if defined {
 			if approved && a.canApprove(ctx, pending.level) {
-				result := a.executeSkill(ctx, msg.ChatID, pending.tc, -1)
+				result := a.executeSkill(context.WithValue(ctx, approvedToolKey{}, pending.tc.ID), msg.ChatID, pending.tc, -1)
+				if result.Terminal && !result.PendingApproval {
+					return a.finishResponse(ctx, msg.ChatID, effectiveUserID, result.Content, true, 0, nil)
+				}
 				response := i18n.T(ctx, "ApprovalExecuted", map[string]any{"Tool": pending.tc.Name, "Result": result.Content})
 				a.saveAssistantResponse(ctx, msg.ChatID, response)
 				return response, nil
@@ -325,6 +328,9 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 	// Build tool definitions from enabled skills.
 	var tools []llm.ToolDefinition
 	for _, entry := range a.registry.Catalog() {
+		if terminal, ok := entry.Skill.(skill.TerminalDeclarer); ok && terminal.TerminalResult() && !channel.CapsFrom(ctx).Has(channel.CapVerbatim) {
+			continue
+		}
 		tools = append(tools, entry.Definition)
 	}
 	if len(tools) > 0 {
@@ -511,7 +517,8 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 	}
 
 	// Force the remember tool when message matches memory trigger keywords.
-	if a.matchesMemoryTrigger(messageText) && len(tools) > 0 {
+	translationRequest := a.explicitTranslationRequest(messageText)
+	if !translationRequest && a.matchesMemoryTrigger(messageText) && len(tools) > 0 {
 		req.ForceTool = "remember"
 		a.logger.Info("memory trigger detected, forcing remember tool",
 			zap.String("chat_id", msg.ChatID))
@@ -523,7 +530,7 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 	// location") substring-match injected marker text and would answer from
 	// the server IP instead of the user's pin. IP-scoped triggers ("my ip",
 	// "ip lookup") stay forced — a shared pin is irrelevant to an IP question.
-	if req.ForceTool == "" && len(tools) > 0 {
+	if !translationRequest && req.ForceTool == "" && len(tools) > 0 {
 		if forceTool, trigger := a.registry.MatchForceTrigger(messageText); forceTool != "" {
 			suppressGeo := forceTool == "geolocation" &&
 				(len(msg.Locations) > 0 || pinInHistory) &&
@@ -550,6 +557,8 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 		}
 	}()
 	compressedThisTurn := false
+	terminalReplan := false
+	terminalAttempted := false
 	toolIterations := 0 // iterations that executed at least one tool — feeds the complexity gate
 	for i := 0; i < maxIterations; i++ {
 		// ForceTool only applies to the first iteration.
@@ -684,34 +693,22 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 				zap.Int("available_tools", len(req.Tools)),
 				zap.Int("response_len", len(lastResp.Content)),
 			)
-			response := lastResp.Content
-			a.runPostHooks(ctx, &response)
-			lastMessageID := a.saveAssistantResponse(ctx, msg.ChatID, response)
+			return a.finishResponse(ctx, msg.ChatID, effectiveUserID, lastResp.Content, false, toolIterations, req.ToolExchanges)
+		}
 
-			// Complexity gate: a turn that needed many tool iterations is a
-			// candidate for self-improvement — enqueue a background review.
-			a.maybeEnqueueSkillReview(ctx, msg.ChatID, effectiveUserID, toolIterations, lastMessageID,
-				summarizeToolExchanges(req.ToolExchanges))
-
-			// Signal channels to skip bookmark button if remember was already used.
-			if hasToolCall(req.ToolExchanges, "remember") {
-				a.notifyStatus(ctx, msg.ChatID, channel.StatusEvent{
-					Type: "skip_bookmark",
-				})
+		// Terminal operations are exclusive. Reject every call before running
+		// any tool (including reads/approvals), keeping the wire exchange valid.
+		if a.hasTerminalCall(lastResp.ToolCalls) && len(lastResp.ToolCalls) != 1 {
+			if terminalReplan {
+				return a.finishResponse(ctx, msg.ChatID, effectiveUserID, i18n.T(ctx, "TranslationCombined"), true, 0, nil)
 			}
-
-			if a.bus != nil {
-				a.bus.Publish(ctx, eventbus.Event{
-					Type: eventbus.ResponseSent,
-					Payload: eventbus.ResponseSentPayload{
-						ChatID:   msg.ChatID,
-						Response: response,
-						Time:     time.Now(),
-					},
-				})
+			terminalReplan = true
+			ex := llm.ToolExchange{AssistantText: lastResp.Content, ToolCalls: lastResp.ToolCalls, ReasoningContent: lastResp.ReasoningContent, ProfileID: lastResp.ProfileID}
+			for _, tc := range lastResp.ToolCalls {
+				ex.Results = append(ex.Results, llm.ToolResult{ToolCallID: tc.ID, IsError: true, Content: "error: translation must be the only tool in a batch; no calls were executed. Ask the user to separate translation and other actions."})
 			}
-
-			return response, nil
+			req.ToolExchanges = append(req.ToolExchanges, ex)
+			continue
 		}
 
 		// This iteration runs tools — count it for the complexity gate.
@@ -771,7 +768,23 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 				}
 			}
 
+			terminal := a.isTerminalTool(tc.Name)
+			if terminal && requiredTool != "" && requiredTool != tc.Name && !requiredToolSucceeded {
+				return "", fmt.Errorf("required tool %q must complete before translation", requiredTool)
+			}
+			if terminal && terminalAttempted {
+				return a.finishResponse(ctx, msg.ChatID, effectiveUserID, i18n.T(ctx, "TranslationRepeated"), true, 0, nil)
+			}
+			if terminal {
+				terminalAttempted = true
+			}
 			result := a.executeSkill(ctx, msg.ChatID, tc, i)
+			if terminal && !result.PendingApproval {
+				if requiredTool != "" && requiredTool != tc.Name && !requiredToolSucceeded {
+					return "", fmt.Errorf("required tool %q did not complete successfully", requiredTool)
+				}
+				return a.finishResponse(ctx, msg.ChatID, effectiveUserID, result.Content, true, 0, req.ToolExchanges)
+			}
 			if tc.Name == requiredTool && !result.IsError && !result.PendingApproval {
 				requiredToolSucceeded = true
 			}
@@ -818,13 +831,17 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 }
 
 func (a *Assistant) executeSkill(ctx context.Context, chatID string, tc llm.ToolCall, iteration int) llm.ToolResult {
+	if a.isTerminalTool(tc.Name) && !channel.CapsFrom(ctx).Has(channel.CapVerbatim) {
+		return llm.ToolResult{ToolCallID: tc.ID, Content: i18n.T(ctx, "TranslationChannelUnavailable"), IsError: true, Terminal: true}
+	}
 	s, ok := a.registry.Get(tc.Name)
 	if !ok {
 		a.logger.Warn("unknown or disabled skill requested", zap.String("skill", tc.Name))
 		return llm.ToolResult{
 			ToolCallID: tc.ID,
-			Content:    fmt.Sprintf("error: unknown skill %q", tc.Name),
+			Content:    a.unavailableToolMessage(ctx, tc.Name),
 			IsError:    true,
+			Terminal:   a.isTerminalTool(tc.Name),
 		}
 	}
 
@@ -834,7 +851,7 @@ func (a *Assistant) executeSkill(ctx context.Context, chatID string, tc llm.Tool
 		userRole := skill.UserRoleFrom(ctx)
 		needsApproval := level == skill.ApprovalPrompt ||
 			(level == skill.ApprovalManual && userRole != string(domain.RoleAdmin))
-		if needsApproval {
+		if needsApproval && ctx.Value(approvedToolKey{}) != tc.ID {
 			a.approvals.set(chatID, tc, level)
 			prompt := a.buildApprovalPrompt(ctx, tc, level)
 			if a.sender != nil {
@@ -869,8 +886,18 @@ func (a *Assistant) executeSkill(ctx context.Context, chatID string, tc llm.Tool
 	// Notify client that a skill is starting.
 	a.notifyStatus(ctx, chatID, channel.StatusEvent{Type: "skill_start", SkillName: tc.Name})
 
+	terminal := a.isTerminalTool(tc.Name)
 	start := time.Now()
-	output, err := s.Execute(ctx, tc.Input)
+	var output string
+	var err error
+	var verbatim bool
+	if rich, ok := s.(skill.ResultExecutor); ok {
+		var result skill.Result
+		result, err = rich.ExecuteResult(ctx, tc.Input)
+		output, verbatim = result.Text, result.Verbatim
+	} else {
+		output, err = s.Execute(ctx, tc.Input)
+	}
 	durationMs := time.Since(start).Milliseconds()
 
 	// Notify client that the skill completed.
@@ -897,6 +924,11 @@ func (a *Assistant) executeSkill(ctx context.Context, chatID string, tc llm.Tool
 		})
 	}
 
+	if err != nil && terminal {
+		// Only the stable category leaves a specialized operation boundary.
+		a.logger.Warn("terminal skill failed", zap.String("skill", tc.Name), zap.String("code", terminalErrorCode(err)))
+		return llm.ToolResult{ToolCallID: tc.ID, Content: translationErrorMessage(ctx, err), IsError: true, Terminal: true}
+	}
 	if err != nil {
 		a.logger.Error("skill execution failed", zap.String("skill", tc.Name), zap.Error(err))
 		return llm.ToolResult{
@@ -957,6 +989,8 @@ func (a *Assistant) executeSkill(ctx context.Context, chatID string, tc llm.Tool
 		ToolCallID: tc.ID,
 		Content:    output,
 		IsError:    false,
+		Terminal:   terminal,
+		Verbatim:   verbatim,
 	}
 }
 
@@ -1302,7 +1336,15 @@ func (a *Assistant) buildApprovalPrompt(ctx context.Context, tc llm.ToolCall, le
 	if level == skill.ApprovalManual {
 		msgID = "ApprovalAdminPrompt"
 	}
-	return i18n.T(ctx, msgID, map[string]any{"Tool": tc.Name, "Params": string(tc.Input)})
+	params := string(tc.Input)
+	if a.isTerminalTool(tc.Name) {
+		if native, ok := a.registry.Registered(tc.Name); ok {
+			if policy, ok := native.(skill.ExecutionPolicy); ok {
+				params = policy.SafeInputSummary(tc.Input)
+			}
+		}
+	}
+	return i18n.T(ctx, msgID, map[string]any{"Tool": tc.Name, "Params": params})
 }
 
 // Shutdown waits for all background goroutines (tech analysis, insight reinforcement) to complete.

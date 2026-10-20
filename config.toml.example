@@ -382,3 +382,7 @@ ntfy_token = ""
 # Expose /metrics endpoint for Prometheus scraping.
 # Available at the same address as the dashboard server.
 enabled = false
+
+# Translation Agent reuses the existing [zai] connection; no extra API key.
+[skills.translate]
+enabled = false

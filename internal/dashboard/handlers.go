@@ -297,13 +297,14 @@ func (s *Server) handleMessages(c *fiber.Ctx) error {
 
 func (s *Server) handleSkills(c *fiber.Ctx) error {
 	type skillInfo struct {
-		Name            string `json:"name"`
-		Description     string `json:"description"`
-		Type            string `json:"type"`
-		Enabled         bool   `json:"enabled"`
-		HasCapabilities bool   `json:"has_capabilities"`
-		HasConfig       bool   `json:"has_config"`
-		ManifestGroup   string `json:"manifest_group,omitempty"`
+		Name            string               `json:"name"`
+		Description     string               `json:"description"`
+		Type            string               `json:"type"`
+		Enabled         bool                 `json:"enabled"`
+		HasCapabilities bool                 `json:"has_capabilities"`
+		HasConfig       bool                 `json:"has_config"`
+		ManifestGroup   string               `json:"manifest_group,omitempty"`
+		ServiceStatus   *skill.ServiceStatus `json:"service_status,omitempty"`
 	}
 
 	var skills []skillInfo
@@ -318,6 +319,7 @@ func (s *Server) handleSkills(c *fiber.Ctx) error {
 			HasCapabilities: ss.HasCapabilities,
 			HasConfig:       hasConfig,
 			ManifestGroup:   group,
+			ServiceStatus:   s.skillServiceStatus(ss.Skill.Name()),
 		})
 	}
 	for _, m := range s.registry.Manifests() {
@@ -346,6 +348,9 @@ func (s *Server) manifestHasConfig(manifestName string) bool {
 // If the name matches a manifest group, all skills in the group are toggled.
 func (s *Server) handleToggleSkill(c *fiber.Ctx) error {
 	name := c.Params("name")
+	if name == "translate" && !translationAdmin(c) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "admin access required"})
+	}
 	var body struct {
 		Enabled bool `json:"enabled"`
 	}
@@ -364,8 +369,19 @@ func (s *Server) handleToggleSkill(c *fiber.Ctx) error {
 	isGroup := len(s.registry.GroupSkills(name)) > 0
 
 	if body.Enabled {
+		if name == "translate" && s.configStore == nil {
+			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "config store not available"})
+		}
 		if s.configStore != nil {
-			_ = s.configStore.Delete(c.Context(), key)
+			if name == "translate" {
+				if err := s.configStore.Set(c.Context(), key, "true", username, false); err != nil {
+					return s.errorResponse(c, err)
+				}
+			} else {
+				if err := s.configStore.Delete(c.Context(), key); err != nil {
+					return s.errorResponse(c, err)
+				}
+			}
 		}
 		if isGroup {
 			s.registry.EnableGroup(name)
@@ -425,6 +441,7 @@ func (s *Server) handleGetSkillConfig(c *fiber.Ctx) error {
 		"manifest":           manifestName,
 		"description":        m.Description,
 		"schema":             fields,
+		"service_status":     s.skillServiceStatus(name),
 		"encryption_enabled": s.configStore != nil && s.configStore.EncryptionEnabled(),
 	})
 }
@@ -433,6 +450,9 @@ func (s *Server) handleGetSkillConfig(c *fiber.Ctx) error {
 func (s *Server) handleSetSkillConfig(c *fiber.Ctx) error {
 	name := c.Params("name")
 	key := c.Params("key")
+	if key == "skills.translate.enabled" && !translationAdmin(c) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "admin access required"})
+	}
 
 	if s.configStore == nil {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "config store not available"})
@@ -774,6 +794,9 @@ func (s *Server) handleListConfigDecrypted(c *fiber.Ctx) error {
 
 func (s *Server) handleSetConfig(c *fiber.Ctx) error {
 	key := c.Params("key")
+	if key == "skills.translate.enabled" && !translationAdmin(c) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "admin access required"})
+	}
 	var body struct {
 		Value   string `json:"value"`
 		Encrypt bool   `json:"encrypt"`
@@ -808,6 +831,9 @@ func (s *Server) handleSetConfig(c *fiber.Ctx) error {
 
 func (s *Server) handleDeleteConfig(c *fiber.Ctx) error {
 	key := c.Params("key")
+	if key == "skills.translate.enabled" && !translationAdmin(c) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "admin access required"})
+	}
 	if err := s.configStore.Delete(c.Context(), key); err != nil {
 		return s.errorResponse(c, err)
 	}

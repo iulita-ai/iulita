@@ -1061,6 +1061,12 @@ func (m *Manager) cleanupLocked() bool {
 func (m *Manager) admit(ctx context.Context, provider, generation, stageID string) (context.Context, func(), error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.admitLocked(ctx, provider, generation, stageID)
+}
+
+// admitLocked shares generation admission with non-chat operations. The caller
+// holds m.mu; the returned release function must only run after unlocking it.
+func (m *Manager) admitLocked(ctx context.Context, provider, generation, stageID string) (context.Context, func(), error) {
 	if m.closed {
 		return nil, nil, failure("runtime_stopped", "Model runtime is stopping", 503)
 	}

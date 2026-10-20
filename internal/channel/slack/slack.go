@@ -345,7 +345,7 @@ func (c *Channel) buildIncomingMessage(ctx context.Context, slackChannel, slackU
 		UserID:            slackUser,
 		ChannelInstanceID: c.instanceID,
 		Text:              text,
-		Caps:              channel.CapStreaming | channel.CapMarkdown | channel.CapButtons | channel.CapReactions,
+		Caps:              channel.CapStreaming | channel.CapMarkdown | channel.CapButtons | channel.CapReactions | channel.CapVerbatim,
 	}
 
 	// Look up username (cached to avoid blocking the event loop on every msg).
@@ -401,7 +401,7 @@ func (c *Channel) processMessage(parentCtx context.Context, handler channel.Mess
 		c.addReaction("hourglass_flowing_sand", meta.channelID, meta.inboundTS)
 	}
 
-	handlerCtx := context.WithoutCancel(parentCtx)
+	handlerCtx, presentation := channel.WithResponsePresentation(context.WithoutCancel(parentCtx))
 	response, err := handler(handlerCtx, msg)
 
 	if meta != nil && meta.inboundTS != "" {
@@ -423,6 +423,10 @@ func (c *Channel) processMessage(parentCtx context.Context, handler channel.Mess
 		c.chatMetaMu.Unlock()
 	}
 
+	if presentation.Verbatim() && err == nil {
+		c.sendVerbatimResponse(handlerCtx, msg.ChatID, response)
+		return
+	}
 	if c.rememberSvc != nil && response != "" && err == nil && !skipBookmark && msg.ResolvedUserID != "" {
 		c.sendResponseWithBookmark(parentCtx, msg.ChatID, response, msg.ResolvedUserID)
 		return

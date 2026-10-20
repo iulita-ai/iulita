@@ -171,7 +171,7 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 		// 👀 ack: the user sees processing started; cleared once the reply lands.
 		c.setReaction(tgChatID, msg.MessageID, "👀")
 
-		handlerCtx := context.WithoutCancel(ctx)
+		handlerCtx, presentation := channel.WithResponsePresentation(context.WithoutCancel(ctx))
 		typingCtx, stopTyping := context.WithCancel(handlerCtx)
 		go c.keepTyping(typingCtx, tgChatID)
 
@@ -206,7 +206,16 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 			if parseErr != nil {
 				uid = tgChatID // DM fallback: chat == user
 			}
-			_, _ = c.sendEphemeralHTML(tgChatID, uid, toTelegramHTML(response), msg.MessageID) //nolint:errcheck // logged inside
+			if presentation.Verbatim() {
+				c.sendVerbatimResponse(handlerCtx, tgChatID, response, msg.MessageID, uid)
+			} else {
+				_, _ = c.sendEphemeralHTML(tgChatID, uid, toTelegramHTML(response), msg.MessageID) //nolint:errcheck // logged inside
+			}
+			return
+		}
+
+		if presentation.Verbatim() && err == nil {
+			c.sendVerbatimResponse(handlerCtx, tgChatID, response, msg.MessageID, 0)
 			return
 		}
 
@@ -324,7 +333,7 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 			Text:              text,
 			LanguageCode:      update.Message.From.LanguageCode,
 			MessageID:         update.Message.ID,
-			Caps:              channel.CapStreaming | channel.CapMarkdown | channel.CapTyping | channel.CapButtons | channel.CapLocations,
+			Caps:              channel.CapStreaming | channel.CapMarkdown | channel.CapTyping | channel.CapButtons | channel.CapLocations | channel.CapVerbatim,
 		}
 
 		// Resolve iulita user from channel binding.

@@ -339,3 +339,37 @@ other = "这个书签属于其他用户。"
 
 [CopyButton]
 other = "📋 复制"
+
+# Z.ai Translation Agent
+[TranslationUnavailable]
+other = "Z.ai 翻译不可用。请在模型设置中检查现有连接。"
+
+[TranslationFailed]
+other = "无法从 Z.ai 获取翻译。"
+
+[TranslationInvalidInput]
+other = "请检查文本和支持的语言代码。目标语言为必填项，且不能与明确指定的源语言相同。"
+
+[TranslationTooLong]
+other = "文本过长，请发送较短的片段。"
+
+[TranslationBusy]
+other = "翻译服务繁忙，请稍后重试。"
+
+[TranslationAccessDenied]
+other = "Z.ai 未允许使用当前连接进行翻译。请检查密钥和 Translation Agent 访问权限。"
+
+[TranslationTimeout]
+other = "未能及时收到翻译。新的请求可能会单独计费。"
+
+[TranslationIncomplete]
+other = "Z.ai 未返回完整译文，目前没有可用的最终结果。"
+
+[TranslationCombined]
+other = "请将翻译与发送、解释或其他操作分开请求。"
+
+[TranslationRepeated]
+other = "此轮已尝试翻译。如需重试，请发送新请求。"
+
+[TranslationChannelUnavailable]
+other = "翻译功能适用于 Web Chat、Telegram 和 Slack。"

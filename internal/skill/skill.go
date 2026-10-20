@@ -35,3 +35,40 @@ type ConfigReloadable interface {
 type SynthesisModelDeclarer interface {
 	SynthesisRouteHint() string
 }
+
+// Result is a trusted native skill outcome. Delivery metadata never comes from
+// tool arguments or provider text and is not serialized into an LLM request.
+type Result struct {
+	Text     string
+	Verbatim bool
+}
+
+// ResultExecutor optionally returns a final native result without synthesis.
+// Existing skills continue to use Execute. The dispatcher invokes only one.
+type ResultExecutor interface {
+	ExecuteResult(context.Context, json.RawMessage) (Result, error)
+}
+
+// TerminalDeclarer marks a native operation whose success and errors finish the
+// turn. Such operations cannot be combined with other tools in one batch.
+type TerminalDeclarer interface{ TerminalResult() bool }
+
+// MainLoopOnly prevents hidden paid operations bypassing subagent budgets.
+type MainLoopOnly interface{ MainLoopOnly() bool }
+
+// AvailabilityAware checks current service admission metadata without secrets.
+type AvailabilityAware interface{ Available() bool }
+
+// ServiceStatus describes a specialized service without exposing credentials.
+type ServiceStatus struct {
+	Provider string `json:"provider"`
+	Service  string `json:"service"`
+	State    string `json:"state"`
+	Checked  bool   `json:"checked"`
+}
+
+// ServiceStatusDeclarer exposes only nonsecret specialized-service metadata.
+type ServiceStatusDeclarer interface{ ServiceStatus() ServiceStatus }
+
+// DefaultEnabledDeclarer lets opt-in skills persist a real enabled override.
+type DefaultEnabledDeclarer interface{ DefaultEnabled() bool }

@@ -217,6 +217,10 @@ func CoreConfigSchema() []ConfigSection {
 			},
 		},
 		{
+			Name: "translate", Label: "Z.ai Translation", Description: "Text translation using the existing Z.ai connection",
+			Fields: []ConfigField{{Key: "skills.translate.enabled", Label: "Enabled", Description: "Use the existing Z.ai connection for Translation Agent (no additional key)", Type: FieldBool, Default: "false", Section: "translate"}},
+		},
+		{
 			Name:        "selfimprove",
 			Label:       "Self-Improvement",
 			Description: "Experimental: reflect on complex turns and record reusable lessons (and optional skill drafts)",

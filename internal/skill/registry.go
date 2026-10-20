@@ -76,6 +76,9 @@ func (r *Registry) Capabilities() []string {
 func (r *Registry) Register(s Skill) {
 	r.mu.Lock()
 	r.skills[s.Name()] = s
+	if d, ok := s.(DefaultEnabledDeclarer); ok {
+		r.disabled[s.Name()] = !d.DefaultEnabled()
+	}
 	r.bindingEpoch++
 	r.bindings[s.Name()] = r.bindingEpoch
 	r.builtins[s.Name()] = true
@@ -88,6 +91,9 @@ func (r *Registry) Register(s Skill) {
 func (r *Registry) RegisterWithManifest(s Skill, m *Manifest) {
 	r.mu.Lock()
 	r.skills[s.Name()] = s
+	if d, ok := s.(DefaultEnabledDeclarer); ok {
+		r.disabled[s.Name()] = !d.DefaultEnabled()
+	}
 	r.bindingEpoch++
 	r.bindings[s.Name()] = r.bindingEpoch
 	r.builtins[s.Name()] = true
@@ -112,6 +118,9 @@ func (r *Registry) RegisterExternalWithManifest(s Skill, m *Manifest) {
 		return // protect built-in skills from being overwritten
 	}
 	r.skills[s.Name()] = s
+	if d, ok := s.(DefaultEnabledDeclarer); ok {
+		r.disabled[s.Name()] = !d.DefaultEnabled()
+	}
 	r.bindingEpoch++
 	r.bindings[s.Name()] = r.bindingEpoch
 	if m != nil {
@@ -129,6 +138,9 @@ func (r *Registry) RegisterExternalWithManifest(s Skill, m *Manifest) {
 func (r *Registry) RegisterInGroup(s Skill, manifestName string) {
 	r.mu.Lock()
 	r.skills[s.Name()] = s
+	if d, ok := s.(DefaultEnabledDeclarer); ok {
+		r.disabled[s.Name()] = !d.DefaultEnabled()
+	}
 	r.bindingEpoch++
 	r.bindings[s.Name()] = r.bindingEpoch
 	r.builtins[s.Name()] = true
@@ -181,6 +193,15 @@ func (r *Registry) AddManifest(m *Manifest) {
 	if m != nil {
 		r.manifests[m.Name] = m
 	}
+}
+
+// Registered returns policy metadata even when a skill is disabled/unavailable.
+// Execution must use Get, which rechecks availability and enabled state.
+func (r *Registry) Registered(name string) (Skill, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	s, ok := r.skills[name]
+	return s, ok
 }
 
 // Get returns a skill by name if it exists, is enabled, and has required capabilities.
@@ -308,12 +329,25 @@ func (r *Registry) SystemPrompts() []string {
 			continue
 		}
 		// Check if all skills in this manifest group are disabled.
-		if r.isGroupDisabled(m.Name) {
+		if r.isGroupDisabled(m.Name) || !r.groupAvailable(m.Name) {
 			continue
 		}
 		prompts = append(prompts, m.SystemPrompt)
 	}
 	return prompts
+}
+
+// groupAvailable omits service prompts when their dynamic admission is unavailable.
+// Called under the registry read lock; services must not call back into registry.
+func (r *Registry) groupAvailable(group string) bool {
+	for name, g := range r.skillManifest {
+		if g == group {
+			if a, ok := r.skills[name].(AvailabilityAware); ok && !a.Available() {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // isGroupDisabled returns true if ALL skills in the group are disabled.
@@ -434,6 +468,15 @@ func (r *Registry) DispatchConfigChanged(key, value string, deleted bool) {
 		if len(parts) == 3 && parts[2] == "enabled" {
 			targetName := parts[1]
 			enable := deleted || strings.EqualFold(value, "true") || value == "1" || value == ""
+			if deleted {
+				handler := targetName
+				if h, ok := r.configHandler[targetName]; ok {
+					handler = h
+				}
+				if d, ok := r.skills[handler].(DefaultEnabledDeclarer); ok {
+					enable = d.DefaultEnabled()
+				}
+			}
 			// Check if it's a manifest group name first.
 			if _, isManifest := r.manifests[targetName]; isManifest {
 				if enable {
@@ -558,6 +601,9 @@ func (r *Registry) ApprovalLevelFor(name string) ApprovalLevel {
 // hasCapabilities checks whether the skill's required capabilities are all available.
 // Skills that don't implement CapabilityAware always pass.
 func (r *Registry) hasCapabilities(s Skill) bool {
+	if a, ok := s.(AvailabilityAware); ok && !a.Available() {
+		return false
+	}
 	ca, ok := s.(CapabilityAware)
 	if !ok {
 		return true
