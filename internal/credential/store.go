@@ -393,6 +393,13 @@ func (s *Store) ListFromDB(ctx context.Context, filter CredentialFilter) ([]Cred
 
 // Bind creates a credential binding.
 func (s *Store) Bind(ctx context.Context, credentialID int64, consumerType, consumerID, createdBy string) error {
+	c, e := s.repo.GetCredential(ctx, credentialID)
+	if e != nil || c == nil {
+		return ErrNotFound
+	}
+	if string(c.Type) == "ssh_identity" || strings.HasPrefix(c.Name, "ssh.identity.") {
+		return ErrCredentialDenied
+	}
 	b := &domain.CredentialBinding{
 		CredentialID: credentialID,
 		ConsumerType: consumerType,
@@ -449,6 +456,9 @@ func (s *Store) ResolveForConsumer(ctx context.Context, consumerType, consumerID
 	if err != nil {
 		return "", fmt.Errorf("fetching credential %d: %w", bindings[0].CredentialID, err)
 	}
+	if string(cred.Type) == "ssh_identity" || strings.HasPrefix(cred.Name, "ssh.identity.") {
+		return "", ErrCredentialDenied
+	}
 	// Prefer the in-memory cache (already decrypted, no DB round-trip).
 	if val, ok := s.Get(cred.Name); ok {
 		return val, nil
@@ -480,8 +490,14 @@ func (s *Store) Resolve(ctx context.Context, name string) (string, error) {
 
 // ResolveForUser implements CredentialProvider.
 func (s *Store) ResolveForUser(ctx context.Context, name, userID string) (string, error) {
+	if strings.HasPrefix(name, "ssh.identity.") {
+		return "", ErrCredentialDenied
+	}
 	if userID != "" {
 		if cred, err := s.repo.GetCredentialByNameAndOwner(ctx, name, userID); err == nil && cred != nil {
+			if string(cred.Type) == "ssh_identity" {
+				return "", ErrCredentialDenied
+			}
 			val, ok := s.decrypt(name, cred)
 			if ok {
 				return val, nil
@@ -509,6 +525,9 @@ func cacheKey(name, ownerID string) string {
 // --- internal helpers ---
 
 func (s *Store) resolveInternal(_ context.Context, name string) (string, error) {
+	if strings.HasPrefix(name, "ssh.identity.") {
+		return "", ErrCredentialDenied
+	}
 	s.mu.RLock()
 	envVar, hasEnv := s.envMappings[name]
 	krAccount, hasKr := s.keyringMappings[name]
@@ -546,6 +565,9 @@ func (s *Store) resolveInternal(_ context.Context, name string) (string, error) 
 }
 
 func (s *Store) decrypt(name string, cred *domain.Credential) (string, bool) {
+	if string(cred.Type) == "ssh_identity" || strings.HasPrefix(name, "ssh.identity.") {
+		return "", false
+	}
 	if !cred.Encrypted || s.encryptor == nil {
 		return cred.Value, cred.Value != ""
 	}

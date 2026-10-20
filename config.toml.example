@@ -386,3 +386,9 @@ enabled = false
 # Translation Agent reuses the existing [zai] connection; no extra API key.
 [skills.translate]
 enabled = false
+
+# Native SSH executes in a separate restricted worker, never in shell_exec.
+# Access remains disabled until explicitly enabled for an authenticated owner.
+[skills.remote_access]
+worker_url = "" # unix:///run/iulita-ssh/worker.sock or https://worker.example:8443
+worker_key_file = "" # private file, same >=32 random bytes as ssh-worker --key-file

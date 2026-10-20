@@ -53,6 +53,9 @@ func (r *HTTPResolver) ResolveHTTP(ctx context.Context, scope httpfetch.Scope, r
 		principalID = ""
 	}
 
+	if string(cred.Type) == "ssh_identity" || strings.HasPrefix(cred.Name, "ssh.identity.") {
+		return nil, ErrCredentialDenied
+	}
 	// Expiry/revocation on the credential itself.
 	if cred.ExpiresAt != nil && cred.ExpiresAt.Before(time.Now()) {
 		return nil, fmt.Errorf("%w: credential expired", ErrCredentialDenied)

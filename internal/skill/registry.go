@@ -264,18 +264,29 @@ type SkillStatus struct {
 func (r *Registry) DisableSkill(name string) {
 	r.mu.Lock()
 	r.disabled[name] = true
+	target := r.skills[name]
 	r.mu.Unlock()
+	if observer, ok := target.(interface{ OnDisabled() }); ok {
+		observer.OnDisabled()
+	}
 }
 
 // DisableGroup disables all skills belonging to a manifest group.
 func (r *Registry) DisableGroup(manifestName string) {
+	var observers []interface{ OnDisabled() }
 	r.mu.Lock()
 	for skillName, mName := range r.skillManifest {
 		if mName == manifestName {
 			r.disabled[skillName] = true
+			if observer, ok := r.skills[skillName].(interface{ OnDisabled() }); ok {
+				observers = append(observers, observer)
+			}
 		}
 	}
 	r.mu.Unlock()
+	for _, observer := range observers {
+		observer.OnDisabled()
+	}
 }
 
 // EnableSkill re-enables a disabled skill.

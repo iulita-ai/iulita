@@ -17,6 +17,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/llm"
 	"github.com/iulita-ai/iulita/internal/modelruntime"
 	"github.com/iulita-ai/iulita/internal/models"
+	"github.com/iulita-ai/iulita/internal/remoteaccess"
 	"github.com/iulita-ai/iulita/internal/scheduler"
 	"github.com/iulita-ai/iulita/internal/skill"
 	slackskill "github.com/iulita-ai/iulita/internal/skill/slack"
@@ -142,6 +143,7 @@ type CredentialManager interface {
 
 // Config holds dependencies for the dashboard server.
 type Config struct {
+	RemoteAccess           *remoteaccess.Service
 	Address                string
 	Store                  storage.Repository
 	Registry               *skill.Registry
@@ -171,6 +173,9 @@ type Config struct {
 
 // Server serves the dashboard API and embedded SPA.
 type Server struct {
+	terminalTickets        *terminalTicketStore
+	remoteConfirms         *remoteConfirmations
+	remoteAccess           *remoteaccess.Service
 	app                    *fiber.App
 	address                string
 	store                  storage.Repository
@@ -201,6 +206,9 @@ type Server struct {
 // New creates a new dashboard server.
 func New(cfg Config) *Server {
 	s := &Server{
+		terminalTickets:        newTerminalTicketStore(),
+		remoteConfirms:         newRemoteConfirmations(),
+		remoteAccess:           cfg.RemoteAccess,
 		address:                cfg.Address,
 		store:                  cfg.Store,
 		registry:               cfg.Registry,
@@ -269,7 +277,11 @@ func New(cfg Config) *Server {
 		switch c.Method() {
 		case fiber.MethodPost, fiber.MethodPut, fiber.MethodPatch:
 			cl := c.Request().Header.ContentLength()
-			if cl < 0 || cl > defaultMaxBodyBytes {
+			maxBody := defaultMaxBodyBytes
+			if c.Path() == "/api/remote-access/operations" || c.Path() == "/api/remote-access/operations/preview" {
+				maxBody = 16 << 20
+			}
+			if cl < 0 || cl > maxBody {
 				return c.Status(fiber.StatusRequestEntityTooLarge).JSON(fiber.Map{"error": "request body too large"})
 			}
 		}
@@ -303,9 +315,17 @@ func New(cfg Config) *Server {
 		api.Get("/http-artifacts/download/:ticket", s.handleDownloadByTicket)
 	}
 
+	if s.remoteAccess != nil && s.authService != nil {
+		api.Get("/remote-access/terminals/connect/:ticket", s.remoteTerminalUpgrade)
+	}
+
 	// Protected routes: require JWT when auth is enabled.
 	if s.authService != nil {
 		api.Use(auth.FiberMiddleware(s.authService))
+	}
+
+	if s.remoteAccess != nil && s.authService != nil {
+		s.registerRemoteAccess(api)
 	}
 
 	// Owner-scoped artifact management (authenticated users only).

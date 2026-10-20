@@ -1,0 +1,150 @@
+# Example only. Replace image, namespaces, networks and TLS certificates before use.
+# Do not share this worker across mutually untrusted bot installations/tenants.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: iulita-ssh-worker-state
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iulita-ssh-worker
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: iulita-ssh-worker
+  template:
+    metadata:
+      labels:
+        app: iulita-ssh-worker
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: prepare-protocol-key
+          image: busybox:1.37
+          command: [sh, -ec, 'cp /raw/key /protocol/key; chmod 0600 /protocol/key; chown 10001:10001 /protocol/key']
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+              add: [CHOWN]
+          volumeMounts:
+            - name: raw-protocol
+              mountPath: /raw
+              readOnly: true
+            - name: protocol
+              mountPath: /protocol
+      containers:
+        - name: worker
+          image: example.invalid/iulita-ssh-worker:REPLACE_WITH_PINNED_DIGEST
+          args:
+            - --listen=:8443
+            - --tls-cert=/tls/tls.crt
+            - --tls-key=/tls/tls.key
+            - --key-file=/protocol/key
+            - --state-dir=/state/nonces
+            - --allow-cidrs=192.0.2.10/32,192.0.2.20/32
+          ports:
+            - name: https
+              containerPort: 8443
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: '1'
+              memory: 512Mi
+              ephemeral-storage: 64Mi
+          volumeMounts:
+            - name: state
+              mountPath: /state
+            - name: protocol
+              mountPath: /protocol
+              readOnly: true
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: iulita-ssh-worker-state
+        - name: protocol
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
+        - name: raw-protocol
+          secret:
+            secretName: iulita-ssh-protocol-key
+            defaultMode: 0400
+        - name: tls
+          secret:
+            secretName: iulita-ssh-worker-tls
+            defaultMode: 0400
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: iulita-ssh-worker
+spec:
+  selector:
+    app: iulita-ssh-worker
+  ports:
+    - name: https
+      port: 8443
+      targetPort: https
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: iulita-ssh-worker
+spec:
+  podSelector:
+    matchLabels:
+      app: iulita-ssh-worker
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: iulita
+      ports:
+        - protocol: TCP
+          port: 8443
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 192.0.2.10/32
+        - ipBlock:
+            cidr: 192.0.2.20/32
+      ports:
+        - protocol: TCP
+          port: 22
