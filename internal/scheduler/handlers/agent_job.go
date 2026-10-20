@@ -56,7 +56,7 @@ var jobToolAllowlist = []string{
 	"datetime", "recall", "session_search", "list_insights", "pdf_read",
 	"websearch", "webfetch", "weather", "openweathermap", "exchange_rate", "geolocation",
 	"google_calendar", "google_mail", "google_tasks", "google_contacts",
-	"tasks", "todoist", "craft_read", "craft_search", "craft_tasks", "remote_runbook",
+	"tasks", "todoist", "craft_read", "craft_search", "craft_tasks",
 }
 
 type agentJobPayload struct {
