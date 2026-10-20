@@ -90,7 +90,63 @@ async function prepareJob(){await action(async()=>{frozen={route_id:jobRoute.val
 async function prepareTerminal(){await action(async()=>{frozen={route_id:terminalRoute.value,options:{rows:24,cols:80,term:'xterm-256color',timeout_seconds:3600}};operationKind='terminal';approval.value=await remoteRequest('/terminals/preview','POST',frozen);showApproval.value=true})}
 async function approve(){await action(async()=>{const req={...frozen,approval_id:approval.value.approval_id,expected_plan_hash:approval.value.plan_hash};showApproval.value=false;if(operationKind==='terminal'){const t=await remoteRequest<{ticket:string}>('/terminals/ticket','POST',req);await openTerminal(t.ticket)}else{const x=await remoteRequest<any>('/operations','POST',req);lastArtifact.value=x.artifact_id||'';lastFileMeta.value=JSON.stringify(x,null,2)}})}
 async function downloadArtifact(){await action(async()=>{const a=await remoteRequest<any>('/artifacts/'+encodeURIComponent(lastArtifact.value));if(!a.file){lastFileMeta.value=JSON.stringify(a.background||a,null,2);return};lastFileMeta.value=JSON.stringify({...a.file,data:undefined},null,2);if(a.file.data || a.file.size===0){const bytes=Uint8Array.from(atob(a.file.data||''),c=>c.charCodeAt(0)),blob=new Blob([bytes]),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=a.file.path.split('/').pop()||'ssh-file';link.click();URL.revokeObjectURL(url)}})}
-async function openTerminal(ticket:string){closeTerminal();await nextTick();if(!terminalHost.value)throw Error();terminal=new Terminal({scrollback:2000,allowProposedApi:false,convertEol:false});terminal.parser.registerOscHandler(52,()=>true);terminal.parser.registerOscHandler(8,()=>true);const fit=new FitAddon();terminal.loadAddon(fit);terminal.open(terminalHost.value);fit.fit();const url=new URL('/api/remote-access/terminals/connect/'+encodeURIComponent(ticket),location.href);url.protocol=location.protocol==='https:'?'wss:':'ws:';socket=new WebSocket(url);const openedSocket=socket,openedTerminal=terminal;terminalState.value=L('Подключение…','Connecting…');socket.onmessage=e=>{if(socket!==openedSocket)return;const f=JSON.parse(e.data);if(f.kind==='ready'){connected.value=true;terminalState.value=f.execution_id;fit.fit();terminal?.focus()}else if(f.kind==='output')openedTerminal.write(Uint8Array.from(atob(f.data),c=>c.charCodeAt(0)))};socket.onclose=()=>{if(socket!==openedSocket)return;connected.value=false;terminalState.value=L('Соединение закрыто. Исход проверьте в операциях.','Connection closed. Check execution outcome.');emit('changed')};terminal.onData(data=>{if(socket!==openedSocket)return;const bytes=new TextEncoder().encode(data);if(bytes.length>65536){error.value='Input exceeds 64 KiB';return};for(let n=0;n<bytes.length;n+=4096)send({kind:'input',data:base64(bytes.subarray(n,n+4096))})});terminal.onResize(size=>{if(socket!==openedSocket)return;if(size.rows<=500&&size.cols<=500)send({kind:'resize',rows:size.rows,cols:size.cols})});observer=new ResizeObserver(()=>fit.fit());observer.observe(terminalHost.value)}
+async function openTerminal(ticket: string) {
+    closeTerminal();
+    await nextTick();
+    if (!terminalHost.value)
+        throw Error();
+    terminal = new Terminal({ scrollback: 2000, allowProposedApi: false, convertEol: false });
+    terminal.parser.registerOscHandler(52, () => true);
+    terminal.parser.registerOscHandler(8, () => true);
+    const fit = new FitAddon();
+    terminal.loadAddon(fit);
+    terminal.open(terminalHost.value);
+    fit.fit();
+    const url = new URL('/api/remote-access/terminals/connect/' + encodeURIComponent(ticket), location.href);
+    url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    socket = new WebSocket(url);
+    const openedSocket = socket, openedTerminal = terminal;
+    terminalState.value = L('Подключение…', 'Connecting…');
+    socket.onmessage = e => {
+        if (socket !== openedSocket)
+            return;
+        const f = JSON.parse(e.data);
+        if (f.kind === 'ready') {
+            connected.value = true;
+            terminalState.value = f.execution_id;
+            fit.fit();
+            terminal?.focus();
+        }
+        else if (f.kind === 'output')
+            openedTerminal.write(Uint8Array.from(atob(f.data), c => c.charCodeAt(0)));
+    };
+    socket.onclose = () => {
+        if (socket !== openedSocket)
+            return;
+        connected.value = false;
+        terminalState.value = L('Соединение закрыто. Исход проверьте в операциях.', 'Connection closed. Check execution outcome.');
+        emit('changed');
+    };
+    terminal.onData(data => {
+        if (socket !== openedSocket)
+            return;
+        const bytes = new TextEncoder().encode(data);
+        if (bytes.length > 65536) {
+            error.value = 'Input exceeds 64 KiB';
+            return;
+        }
+        for (let n = 0; n < bytes.length; n += 4096)
+            send({ kind: 'input', data: base64(bytes.subarray(n, n + 4096)) });
+    });
+    terminal.onResize(size => {
+        if (socket !== openedSocket)
+            return;
+        if (size.rows <= 500 && size.cols <= 500)
+            send({ kind: 'resize', rows: size.rows, cols: size.cols });
+    });
+    observer = new ResizeObserver(() => fit.fit());
+    observer.observe(terminalHost.value);
+}
 function send(frame:unknown){if(socket?.readyState===WebSocket.OPEN&&connected.value)socket.send(JSON.stringify(frame))}
 function closeTerminal(){observer?.disconnect();observer=null;if(socket){socket.onmessage=null;socket.onclose=null;socket.onerror=null;socket.close()}socket=null;terminal?.dispose();terminal=null;connected.value=false}
 onUnmounted(closeTerminal)
