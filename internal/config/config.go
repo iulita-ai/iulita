@@ -271,7 +271,13 @@ type ServerConfig struct {
 	Address string `koanf:"address"`
 }
 
+// TranslationConfig controls the opt-in service using the shared Z.ai connection.
+type TranslationConfig struct {
+	Enabled bool `koanf:"enabled"`
+}
+
 type SkillsConfig struct {
+	Translate   TranslationConfig    `koanf:"translate"`
 	Dir         string               `koanf:"dir"`
 	Memory      MemoryConfig         `koanf:"memory"`
 	Insights    InsightsConfig       `koanf:"insights"`
@@ -570,6 +576,7 @@ func structToMap(cfg *Config) map[string]interface{} {
 	m["mobile.runtime_file"] = cfg.Mobile.RuntimeFile
 
 	// Skills
+	m["skills.translate.enabled"] = cfg.Skills.Translate.Enabled
 	m["skills.craft.native_owner_id"] = cfg.Skills.Craft.NativeOwnerID
 	m["skills.todoist.native_owner_id"] = cfg.Skills.Todoist.NativeOwnerID
 	m["skills.slack_oauth.native_owner_id"] = cfg.Skills.SlackOAuth.NativeOwnerID

@@ -339,3 +339,37 @@ other = "Este marcador pertenece a otro usuario."
 
 [CopyButton]
 other = "📋 Copiar"
+
+# Z.ai Translation Agent
+[TranslationUnavailable]
+other = "La traducción de Z.ai no está disponible. Revisa la conexión existente en los ajustes de modelos."
+
+[TranslationFailed]
+other = "No se pudo obtener la traducción de Z.ai."
+
+[TranslationInvalidInput]
+other = "Revisa el texto y los códigos de idioma. El idioma de destino es obligatorio y debe ser distinto del origen explícito."
+
+[TranslationTooLong]
+other = "El texto es demasiado largo. Envía un fragmento más corto."
+
+[TranslationBusy]
+other = "El traductor está ocupado. Inténtalo más tarde."
+
+[TranslationAccessDenied]
+other = "Z.ai no permitió la traducción con esta conexión. Revisa la clave y el acceso a Translation Agent."
+
+[TranslationTimeout]
+other = "La traducción no llegó a tiempo. Una nueva solicitud puede cobrarse por separado."
+
+[TranslationIncomplete]
+other = "Z.ai no devolvió una traducción completa. No hay un resultado final disponible."
+
+[TranslationCombined]
+other = "Solicita la traducción por separado del envío, la explicación u otras acciones."
+
+[TranslationRepeated]
+other = "Ya se intentó traducir este mensaje. Envía una nueva solicitud para volver a intentarlo."
+
+[TranslationChannelUnavailable]
+other = "La traducción está disponible en Web Chat, Telegram y Slack."

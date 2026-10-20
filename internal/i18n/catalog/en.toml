@@ -357,3 +357,37 @@ other = "The file is too large. Please send a file smaller than 20 MiB."
 
 [TelegramDocumentDownloadFailed]
 other = "I could not download this file. Please send it again."
+
+# Z.ai Translation Agent
+[TranslationUnavailable]
+other = "Z.ai translation is unavailable. Check the existing connection in Models settings."
+
+[TranslationFailed]
+other = "Could not get a translation from Z.ai."
+
+[TranslationInvalidInput]
+other = "Check the text and supported source/target language codes. The target is required and must differ from the explicit source."
+
+[TranslationTooLong]
+other = "The text is too long. Send a smaller fragment."
+
+[TranslationBusy]
+other = "The translator is busy. Try again later."
+
+[TranslationAccessDenied]
+other = "Z.ai did not allow translation with the current connection. Check the key and Translation Agent access."
+
+[TranslationTimeout]
+other = "The translation did not arrive in time. A new request may be charged separately."
+
+[TranslationIncomplete]
+other = "Z.ai did not return a complete translation. No finished result is available."
+
+[TranslationCombined]
+other = "Translation must be requested separately from sending, explanation or other actions."
+
+[TranslationRepeated]
+other = "A translation was already attempted in this turn. Send a new request to try again."
+
+[TranslationChannelUnavailable]
+other = "Translation is available in Web Chat, Telegram and Slack."

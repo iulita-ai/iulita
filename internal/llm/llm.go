@@ -27,6 +27,8 @@ type ToolResult struct {
 	Content         string
 	IsError         bool
 	PendingApproval bool // tool has not executed; never treat this as success
+	Terminal        bool `json:"-"` // trusted native operation ends this turn, including errors
+	Verbatim        bool `json:"-"` // skip mutating postprocessing; never from provider text
 }
 
 // ToolExchange records one round of tool use: the assistant's response

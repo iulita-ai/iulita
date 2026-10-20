@@ -56,7 +56,7 @@ func (s *Skill) OnConfigChanged(key, value string) {
 func (s *Skill) Name() string { return "delegate" }
 
 func (s *Skill) Description() string {
-	return "Delegate a subtask to a secondary LLM provider for translations, summaries, or simple lookups"
+	return "Delegate summaries or simple lookups to a secondary LLM provider. Use the translate tool for explicit text translation when available."
 }
 
 func (s *Skill) InputSchema() json.RawMessage {

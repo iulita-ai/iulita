@@ -476,3 +476,32 @@ func TestClampRunes(t *testing.T) {
 		})
 	}
 }
+
+type mainOnlyFixture struct {
+	stubSkill
+	calls int
+}
+
+func (*mainOnlyFixture) MainLoopOnly() bool { return true }
+func (s *mainOnlyFixture) Execute(context.Context, json.RawMessage) (string, error) {
+	s.calls++
+	return "paid operation", nil
+}
+func TestRunnerCannotInvokeMainOnlyTranslation(t *testing.T) {
+	s := &mainOnlyFixture{stubSkill: stubSkill{name: "translate"}}
+	r := NewRunner(&stubProvider{}, newTestRegistry(s), nil, nil, "chat", zap.NewNop())
+	for _, allow := range [][]string{nil, {"translate"}} {
+		tools := r.buildTools(AgentSpec{Tools: allow}, AgentTypeProfile{})
+		for _, tool := range tools {
+			if tool.Name == "translate" {
+				t.Fatal("main-only exposed")
+			}
+		}
+	}
+	// Even stale/forged explicit allowlists cannot bypass the execution boundary.
+	r.allowedTools = map[string]bool{"translate": true}
+	out := r.executeTool(context.Background(), llm.ToolCall{ID: "x", Name: "translate", Input: json.RawMessage(`{}`)})
+	if !out.IsError || s.calls != 0 {
+		t.Fatal("main-only operation executed")
+	}
+}

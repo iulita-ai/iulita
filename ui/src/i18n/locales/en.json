@@ -272,7 +272,12 @@
     "agentStarted": "{id} ({type}) started",
     "agentCompleted": "{id} completed",
     "agentFailed": "{id} failed",
-    "agentProgress": "{id}: turn {turn}"
+    "agentProgress": "{id}: turn {turn}",
+    "copy": "Copy",
+    "copyMessage": "Copy assistant message",
+    "copied": "Copied",
+    "copyError": "Could not copy. Select the text and copy it manually.",
+    "copyUnavailable": "Clipboard is unavailable. Select the text and copy it manually."
   },
   "facts": {
     "title": "Facts",
@@ -966,5 +971,25 @@
     "deleted": "File deleted",
     "deleteFailed": "Delete failed",
     "deleteConfirm": "Delete this file permanently?"
+  },
+  "translation": {
+    "title": "Z.ai translator",
+    "description": "Translate text with Z.ai Translation Agent.",
+    "connection": "Connection: Z.ai from model settings",
+    "sharedKey": "Uses the shared Z.ai key. No separate key is needed here.",
+    "mode": "Mode: general translation",
+    "notVerified": "The connection is configured. Access to the Translation Agent API has not been verified.",
+    "openModels": "Open Z.ai model settings",
+    "adminManaged": "Your administrator manages the connection and enables translation.",
+    "toggle": "Enable Z.ai translation",
+    "states": {
+      "ready": "Connection configured",
+      "not_configured": "Z.ai connection is not configured",
+      "forbidden": "Z.ai is not allowed by the current policy",
+      "revoked": "Z.ai connection has been revoked",
+      "runtime_unavailable": "Translation is temporarily unavailable",
+      "disabled": "Translation is disabled"
+    },
+    "details": "Connection details"
   }
 }

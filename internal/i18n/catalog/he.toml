@@ -339,3 +339,37 @@ other = "סימנייה זו שייכת למשתמש אחר."
 
 [CopyButton]
 other = "📋 העתק"
+
+# Z.ai Translation Agent
+[TranslationUnavailable]
+other = "התרגום של Z.ai אינו זמין. יש לבדוק את החיבור הקיים בהגדרות המודלים."
+
+[TranslationFailed]
+other = "לא ניתן היה לקבל תרגום מ־Z.ai."
+
+[TranslationInvalidInput]
+other = "יש לבדוק את הטקסט ואת קודי השפות. שפת היעד נדרשת ועליה להיות שונה משפת המקור שצוינה."
+
+[TranslationTooLong]
+other = "הטקסט ארוך מדי. יש לשלוח קטע קצר יותר."
+
+[TranslationBusy]
+other = "שירות התרגום עמוס. יש לנסות שוב מאוחר יותר."
+
+[TranslationAccessDenied]
+other = "Z.ai לא אישר תרגום בחיבור הנוכחי. יש לבדוק את המפתח ואת הגישה ל־Translation Agent."
+
+[TranslationTimeout]
+other = "התרגום לא התקבל בזמן. בקשה חדשה עשויה להיות מחויבת בנפרד."
+
+[TranslationIncomplete]
+other = "Z.ai לא החזיר תרגום מלא. אין תוצאה סופית זמינה."
+
+[TranslationCombined]
+other = "יש לבקש תרגום בנפרד משליחה, הסבר או פעולות אחרות."
+
+[TranslationRepeated]
+other = "כבר בוצע ניסיון תרגום בסבב זה. לניסיון נוסף יש לשלוח בקשה חדשה."
+
+[TranslationChannelUnavailable]
+other = "התרגום זמין ב־Web Chat, ב־Telegram וב־Slack."

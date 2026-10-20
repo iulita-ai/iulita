@@ -259,7 +259,12 @@
     "agentStarted": "{id} ({type}) démarré",
     "agentCompleted": "{id} terminé",
     "agentFailed": "{id} échoué",
-    "agentProgress": "{id} : tour {turn}"
+    "agentProgress": "{id} : tour {turn}",
+    "copy": "Copier",
+    "copyMessage": "Copier le message de l’assistant",
+    "copied": "Copié",
+    "copyError": "Impossible de copier. Sélectionnez le texte et copiez-le manuellement.",
+    "copyUnavailable": "Le presse-papiers est indisponible. Sélectionnez le texte et copiez-le manuellement."
   },
   "facts": {
     "title": "Faits",
@@ -850,5 +855,25 @@
     "deleted": "Fichier supprimé",
     "deleteFailed": "Échec de la suppression",
     "deleteConfirm": "Supprimer définitivement ce fichier ?"
+  },
+  "translation": {
+    "title": "Traducteur Z.ai",
+    "description": "Traduisez du texte avec Z.ai Translation Agent.",
+    "connection": "Connexion : Z.ai des paramètres des modèles",
+    "sharedKey": "Utilise la clé Z.ai partagée. Aucune clé supplémentaire n’est nécessaire ici.",
+    "mode": "Mode : traduction générale",
+    "notVerified": "La connexion est configurée. L’accès à l’API Translation Agent n’a pas encore été vérifié.",
+    "openModels": "Ouvrir les paramètres Z.ai",
+    "adminManaged": "L’administrateur gère la connexion et active la traduction.",
+    "toggle": "Activer la traduction Z.ai",
+    "states": {
+      "ready": "Connexion configurée",
+      "not_configured": "La connexion Z.ai n’est pas configurée",
+      "forbidden": "La politique actuelle n’autorise pas Z.ai",
+      "revoked": "La connexion Z.ai a été révoquée",
+      "runtime_unavailable": "La traduction est temporairement indisponible",
+      "disabled": "La traduction est désactivée"
+    },
+    "details": "Détails de la connexion"
   }
 }

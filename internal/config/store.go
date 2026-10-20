@@ -199,6 +199,7 @@ func (s *Store) GetEffective(key string) (string, bool) {
 // coreKeys lists core (non-skill) config keys that can be overridden at runtime.
 // Skill-specific keys are registered dynamically via RegisterKey().
 var coreKeys = map[string]bool{
+	"skills.translate.enabled":          true,
 	"skills.http.enabled":               true,
 	"skills.http.downloads_enabled":     true,
 	"skills.http.raw_artifacts_enabled": true,
@@ -407,6 +408,9 @@ func (s *Store) Set(ctx context.Context, key, value, updatedBy string, encrypt b
 }
 
 func (s *Store) doSet(ctx context.Context, key, value, updatedBy string, encrypt bool) error {
+	if key == "skills.translate.enabled" && value != "true" && value != "false" {
+		return fmt.Errorf("translation enabled must be true or false")
+	}
 	// Force encryption for secret keys.
 	s.mu.RLock()
 	if s.secretKeys[key] {

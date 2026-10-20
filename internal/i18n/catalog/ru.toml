@@ -357,3 +357,37 @@ other = "Файл слишком большой. Пришлите файл ра�
 
 [TelegramDocumentDownloadFailed]
 other = "Не удалось скачать файл. Пришлите его ещё раз."
+
+# Z.ai Translation Agent
+[TranslationUnavailable]
+other = "Переводчик Z.ai недоступен. Проверьте существующее подключение в настройках моделей."
+
+[TranslationFailed]
+other = "Не удалось получить перевод от Z.ai."
+
+[TranslationInvalidInput]
+other = "Проверьте текст и поддерживаемые коды языков. Целевой язык обязателен и должен отличаться от явно указанного исходного."
+
+[TranslationTooLong]
+other = "Текст слишком длинный. Отправьте меньший фрагмент."
+
+[TranslationBusy]
+other = "Переводчик занят. Повторите запрос позже."
+
+[TranslationAccessDenied]
+other = "Z.ai не разрешил перевод с текущим подключением. Проверьте ключ и доступ к Translation Agent."
+
+[TranslationTimeout]
+other = "Не удалось получить перевод вовремя. Новый запрос может быть оплачен отдельно."
+
+[TranslationIncomplete]
+other = "Z.ai не вернул полный перевод. Готового результата нет."
+
+[TranslationCombined]
+other = "Запросите перевод отдельно от отправки, объяснения или других действий."
+
+[TranslationRepeated]
+other = "Перевод уже запрашивался в этом сообщении. Для повторной попытки отправьте новый запрос."
+
+[TranslationChannelUnavailable]
+other = "Переводчик доступен в Web Chat, Telegram и Slack."

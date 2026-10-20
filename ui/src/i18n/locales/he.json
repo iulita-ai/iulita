@@ -259,7 +259,12 @@
     "agentStarted": "{id} ({type}) הופעל",
     "agentCompleted": "{id} סיים",
     "agentFailed": "{id} נכשל",
-    "agentProgress": "{id}: סיבוב {turn}"
+    "agentProgress": "{id}: סיבוב {turn}",
+    "copy": "העתקה",
+    "copyMessage": "העתקת הודעת העוזר",
+    "copied": "הועתק",
+    "copyError": "ההעתקה נכשלה. יש לסמן את הטקסט ולהעתיק ידנית.",
+    "copyUnavailable": "לוח ההעתקה אינו זמין. יש לסמן את הטקסט ולהעתיק ידנית."
   },
   "facts": {
     "title": "עובדות",
@@ -850,5 +855,25 @@
     "deleted": "הקובץ נמחק",
     "deleteFailed": "המחיקה נכשלה",
     "deleteConfirm": "למחוק קובץ זה לצמיתות?"
+  },
+  "translation": {
+    "title": "תרגום Z.ai",
+    "description": "תרגום טקסט באמצעות Z.ai Translation Agent.",
+    "connection": "חיבור: Z.ai מהגדרות המודלים",
+    "sharedKey": "נעשה שימוש במפתח Z.ai המשותף. אין צורך במפתח נפרד כאן.",
+    "mode": "מצב: תרגום כללי",
+    "notVerified": "החיבור מוגדר. הגישה ל-API של Translation Agent טרם נבדקה.",
+    "openModels": "פתיחת הגדרות Z.ai",
+    "adminManaged": "מנהל המערכת מגדיר את החיבור ומפעיל את התרגום.",
+    "toggle": "הפעלת תרגום Z.ai",
+    "states": {
+      "ready": "החיבור מוגדר",
+      "not_configured": "חיבור Z.ai אינו מוגדר",
+      "forbidden": "המדיניות הנוכחית אינה מאפשרת שימוש ב-Z.ai",
+      "revoked": "חיבור Z.ai בוטל",
+      "runtime_unavailable": "התרגום אינו זמין כרגע",
+      "disabled": "התרגום מושבת"
+    },
+    "details": "פרטי החיבור"
   }
 }

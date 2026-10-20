@@ -234,7 +234,7 @@ func (c *Channel) handleConnection(conn *websocket.Conn) {
 			ChannelInstanceID: c.instanceID,
 			UserName:          username,
 			Text:              incoming.Text,
-			Caps:              channel.CapStreaming | channel.CapHTML | channel.CapButtons,
+			Caps:              channel.CapStreaming | channel.CapHTML | channel.CapButtons | channel.CapVerbatim,
 		}
 
 		c.mu.RLock()

@@ -360,30 +360,36 @@
       <n-list bordered>
         <!-- Skill groups (by manifest) -->
         <template v-for="group in skillGroups" :key="group.name">
-          <n-list-item>
-            <n-thing :title="group.name" :description="group.description">
+          <n-list-item :data-skill="group.name">
+            <n-thing :class="{ 'translation-skill': isTranslationSkill(group.name) }" :title="isTranslationSkill(group.name) ? t('translation.title') : group.name" :description="isTranslationSkill(group.name) ? t('translation.description') : group.description">
               <template #header-extra>
                 <n-space :size="8" align="center">
-                  <n-tag v-if="!group.hasCapabilities" size="small" type="warning" :bordered="false">
+                  <n-tag v-if="isTranslationSkill(group.name)" size="small" :bordered="false">
+                    {{ t(`translation.states.${group.serviceStatus?.state ?? 'runtime_unavailable'}`) }}
+                  </n-tag>
+                  <n-tag v-else-if="!group.hasCapabilities" size="small" type="warning" :bordered="false">
                     {{ t('settings.missingCapability') }}
                   </n-tag>
                   <n-tag size="small" type="info" :bordered="false">
                     {{ t('settings.tools', { count: group.skills.length }) }}
                   </n-tag>
                   <n-button
-                    v-if="group.hasConfig"
+                    v-if="group.hasConfig || isTranslationSkill(group.name)"
                     size="tiny"
                     quaternary
                     @click="openSkillConfig(group.name)"
                   >
-                    {{ t('settings.configure') }}
+                    {{ isTranslationSkill(group.name) ? t('translation.details') : t('settings.configure') }}
                   </n-button>
                   <n-switch
+                    v-if="!isTranslationSkill(group.name) || admin"
                     :value="group.enabled"
                     :disabled="togglingSkill === group.name"
+                    :aria-label="isTranslationSkill(group.name) ? t('translation.toggle') : group.name"
                     @update:value="(val: boolean) => toggleGroup(group.name, val)"
                     size="small"
                   />
+                  <n-text v-else :depth="3">{{ t(group.enabled ? 'common.enabled' : 'common.disabled') }}</n-text>
                 </n-space>
               </template>
             </n-thing>
@@ -393,6 +399,7 @@
                 <div v-for="sk in group.skills" :key="sk.name" style="display: flex; justify-content: space-between; align-items: center; padding: 2px 0;">
                   <n-text :depth="3" style="font-size: 13px;">{{ sk.name }}</n-text>
                   <n-switch
+                    v-if="!isTranslationSkill(sk.name) || admin"
                     :value="sk.enabled"
                     :disabled="togglingSkill === sk.name"
                     @update:value="(val: boolean) => toggleSkill(sk.name, val)"
@@ -404,20 +411,28 @@
           </n-list-item>
         </template>
         <!-- Standalone skills (no manifest group) -->
-        <n-list-item v-for="sk in standaloneSkills" :key="sk.name">
-          <n-thing :title="sk.name" :description="sk.description">
+        <n-list-item v-for="sk in standaloneSkills" :key="sk.name" :data-skill="sk.name">
+          <n-thing :class="{ 'translation-skill': isTranslationSkill(sk.name) }" :title="isTranslationSkill(sk.name) ? t('translation.title') : sk.name" :description="isTranslationSkill(sk.name) ? t('translation.description') : sk.description">
             <template #header-extra>
               <n-space :size="8" align="center">
+                <n-tag v-if="isTranslationSkill(sk.name)" size="small" :bordered="false">
+                  {{ t(`translation.states.${sk.service_status?.state ?? 'runtime_unavailable'}`) }}
+                </n-tag>
                 <n-tag size="small" :type="sk.type === 'tool' ? 'info' : 'warning'" :bordered="false">
                   {{ sk.type }}
                 </n-tag>
                 <n-switch
-                  v-if="sk.type === 'tool'"
+                  v-if="sk.type === 'tool' && (!isTranslationSkill(sk.name) || admin)"
                   :value="sk.enabled"
                   :disabled="togglingSkill === sk.name"
+                  :aria-label="isTranslationSkill(sk.name) ? t('translation.toggle') : sk.name"
                   @update:value="(val: boolean) => toggleSkill(sk.name, val)"
                   size="small"
                 />
+                <n-text v-else-if="isTranslationSkill(sk.name)" :depth="3">{{ t(sk.enabled ? 'common.enabled' : 'common.disabled') }}</n-text>
+                <n-button v-if="isTranslationSkill(sk.name)" size="tiny" quaternary @click="openSkillConfig(sk.name)">
+                  {{ t('translation.details') }}
+                </n-button>
               </n-space>
             </template>
           </n-thing>
@@ -427,13 +442,19 @@
     </n-card>
 
     <!-- Skill Config Drawer -->
-    <n-drawer v-model:show="drawerVisible" :width="520" placement="right">
-      <n-drawer-content :title="`${t('settings.configure')}: ${drawerSkill}`" closable>
+    <n-drawer v-model:show="drawerVisible" :width="'min(520px, 100vw)'" placement="right">
+      <n-drawer-content :title="isTranslationSkill(drawerSkill) ? t('translation.title') : `${t('settings.configure')}: ${drawerSkill}`" closable>
         <n-spin v-if="drawerLoading" />
         <n-space v-else vertical :size="16">
-          <n-empty v-if="drawerFields.length === 0" :description="t('settings.noConfigKeys')" />
+          <TranslationServiceCard
+            v-if="isTranslationSkill(drawerSkill)"
+            :service-status="drawerServiceStatus"
+            :admin="admin"
+            @manage-connection="router.push({ name: 'models' })"
+          />
+          <n-empty v-else-if="drawerFields.length === 0" :description="t('settings.noConfigKeys')" />
           <n-card
-            v-for="field in drawerFields"
+            v-for="field in editableDrawerFields"
             :key="field.key"
             size="small"
             embedded
@@ -570,6 +591,7 @@ import { ref, reactive, computed, onMounted, watch, h } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { isSkillBoolKey, skillBoolValue as skillBoolValueOf } from '../utils/skillBool'
+import TranslationServiceCard from '../components/TranslationServiceCard.vue'
 import {
   NH2, NSpace, NCard, NDescriptions, NDescriptionsItem, NList, NListItem,
   NThing, NTag, NSelect, NCode, NEmpty, NButton, NDataTable, NInput,
@@ -578,7 +600,7 @@ import {
 } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
 import { api, isAdmin } from '../api'
-import type { SystemInfo, SkillInfo, ChatInfo, JobInfo, Task, TaskCounts, ConfigEntry, GoogleAccount, GoogleCredentialStatus, SlackUserStatus, SkillConfigField, ConfigSchemaSection, ConfigSchemaField, CredentialView } from '../api'
+import type { SystemInfo, SkillInfo, ChatInfo, JobInfo, Task, TaskCounts, ConfigEntry, GoogleAccount, GoogleCredentialStatus, SlackUserStatus, SkillConfigField, ConfigSchemaSection, ConfigSchemaField, CredentialView, TranslationServiceStatus } from '../api'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -604,6 +626,7 @@ interface SkillGroup {
   hasCapabilities: boolean
   enabled: boolean
   skills: SkillInfo[]
+  serviceStatus?: TranslationServiceStatus
 }
 
 const skillGroups = computed<SkillGroup[]>(() => {
@@ -623,6 +646,7 @@ const skillGroups = computed<SkillGroup[]>(() => {
     }
     const group = groups.get(g)!
     group.skills.push(sk)
+    if (sk.service_status) group.serviceStatus = sk.service_status
     if (sk.has_config) group.hasConfig = true
     if (!sk.has_capabilities) group.hasCapabilities = false
     if (!sk.enabled) group.enabled = false
@@ -647,11 +671,16 @@ const drawerVisible = ref(false)
 const drawerSkill = ref('')
 const drawerLoading = ref(false)
 const drawerFields = ref<SkillConfigField[]>([])
+const drawerServiceStatus = ref<TranslationServiceStatus>()
+// Translation has one enabled control in the skill list; its connection is read-only.
+const editableDrawerFields = computed(() => isTranslationSkill(drawerSkill.value) ? [] : drawerFields.value)
 const fieldEdits = reactive<Record<string, string>>({})
 const fieldSaving = reactive<Record<string, boolean>>({})
 // Credential store integration for secret fields
 const availableCredentials = ref<CredentialView[]>([])
 const fieldCredentialBindings = reactive<Record<string, number | null>>({}) // field.key → credential_id
+
+function isTranslationSkill(name: string): boolean { return name === 'translate' }
 
 function shortKey(key: string): string {
   // "skills.craft.api_key" → "api_key"
@@ -663,6 +692,8 @@ async function openSkillConfig(name: string) {
   drawerSkill.value = name
   drawerVisible.value = true
   drawerLoading.value = true
+  drawerFields.value = []
+  drawerServiceStatus.value = undefined
   // Clear previous edits
   for (const k in fieldEdits) delete fieldEdits[k]
   for (const k in fieldSaving) delete fieldSaving[k]
@@ -670,9 +701,10 @@ async function openSkillConfig(name: string) {
   try {
     const [result, creds] = await Promise.all([
       api.getSkillConfig(name),
-      api.listCredentials().catch(() => [] as CredentialView[]),
+      isTranslationSkill(name) ? Promise.resolve([] as CredentialView[]) : api.listCredentials().catch(() => [] as CredentialView[]),
     ])
-    drawerFields.value = result.schema ?? []
+    drawerFields.value = isTranslationSkill(name) ? [] : (result.schema ?? [])
+    drawerServiceStatus.value = result.service_status
     availableCredentials.value = creds
     // Pre-fill non-secret values
     for (const f of drawerFields.value) {
@@ -874,7 +906,7 @@ async function loadSchema() {
   schemaLoading.value = true
   try {
     const result = await api.getConfigSchema()
-    schemaSections.value = (result.sections ?? []).map(section => ({ ...section, fields: section.fields.filter(field => !isModelSetting(field.key)) })).filter(section => section.fields.length > 0)
+    schemaSections.value = (result.sections ?? []).map(section => ({ ...section, fields: section.fields.filter(field => !isModelSetting(field.key) && field.key !== 'skills.translate.enabled') })).filter(section => section.fields.length > 0)
     // Pre-fill edits from effective values
     for (const sec of schemaSections.value) {
       for (const f of sec.fields) {
@@ -1074,12 +1106,14 @@ async function loadSkills() {
 }
 
 async function toggleSkill(name: string, enabled: boolean) {
+  if (isTranslationSkill(name) && !admin) return
   togglingSkill.value = name
   try {
     await api.toggleSkill(name, enabled)
     const sk = skills.value.find(s => s.name === name)
     if (sk) sk.enabled = enabled
-    message.success(t('settings.skillToggled', { name, state: enabled ? t('common.enabled') : t('common.disabled') }))
+    if (isTranslationSkill(name)) await loadSkills()
+    message.success(t('settings.skillToggled', { name: isTranslationSkill(name) ? t('translation.title') : name, state: enabled ? t('common.enabled') : t('common.disabled') }))
   } catch (e: any) {
     message.error(e.message)
   } finally {
@@ -1088,6 +1122,7 @@ async function toggleSkill(name: string, enabled: boolean) {
 }
 
 async function toggleGroup(groupName: string, enabled: boolean) {
+  if (isTranslationSkill(groupName) && !admin) return
   togglingSkill.value = groupName
   try {
     await api.toggleSkill(groupName, enabled)
@@ -1095,7 +1130,8 @@ async function toggleGroup(groupName: string, enabled: boolean) {
     for (const sk of skills.value) {
       if (sk.manifest_group === groupName) sk.enabled = enabled
     }
-    message.success(t('settings.groupToggled', { name: groupName, state: enabled ? t('common.enabled') : t('common.disabled') }))
+    if (isTranslationSkill(groupName)) await loadSkills()
+    message.success(t('settings.groupToggled', { name: isTranslationSkill(groupName) ? t('translation.title') : groupName, state: enabled ? t('common.enabled') : t('common.disabled') }))
   } catch (e: any) {
     message.error(e.message)
   } finally {
@@ -1328,3 +1364,17 @@ onMounted(async () => {
 
 watch(selectedChat, () => loadDirective())
 </script>
+
+<style scoped>
+.translation-skill :deep(.n-thing-header) {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.translation-skill :deep(.n-thing-header__extra) { min-width: 0; }
+.translation-skill :deep(.n-tag) {
+  max-width: 100%;
+  height: auto;
+  white-space: normal;
+  padding-block: 4px;
+}
+</style>

@@ -80,12 +80,14 @@ import (
 	tasksskill "github.com/iulita-ai/iulita/internal/skill/tasks"
 	"github.com/iulita-ai/iulita/internal/skill/todoist"
 	"github.com/iulita-ai/iulita/internal/skill/tokenusage"
+	translateskill "github.com/iulita-ai/iulita/internal/skill/translate"
 	"github.com/iulita-ai/iulita/internal/skill/weather"
 	"github.com/iulita-ai/iulita/internal/skill/webfetch"
 	"github.com/iulita-ai/iulita/internal/skill/websearch"
 	"github.com/iulita-ai/iulita/internal/skillmgr"
 	"github.com/iulita-ai/iulita/internal/storage/sqlite"
 	"github.com/iulita-ai/iulita/internal/transcription"
+	"github.com/iulita-ai/iulita/internal/translation"
 	"github.com/iulita-ai/iulita/internal/version"
 	"github.com/iulita-ai/iulita/internal/web"
 	"github.com/iulita-ai/iulita/ui"
@@ -1332,6 +1334,16 @@ func main() {
 	unifiedTasks.RegisterProvider("craft_tasks", "craft", craft.NewTasks(craftClient))
 	registry.RegisterWithManifest(unifiedTasks, tasksManifest)
 	logger.Info("unified tasks meta-skill registered")
+
+	translationManifest, err := translateskill.LoadManifest()
+	if err != nil {
+		logger.Fatal("translation manifest could not be loaded", zap.Error(err))
+	}
+	translationService := translation.New(modelManager, llmHTTPClient, observeModelAttempt)
+	registry.RegisterWithManifest(translateskill.New(translationService), translationManifest)
+	if enabled, found := cfgStore.GetEffective("skills.translate.enabled"); found {
+		registry.DispatchConfigChanged("skills.translate.enabled", enabled, false)
+	}
 
 	delegateManifest, err := delegate.LoadManifest()
 	if err != nil {
@@ -2627,6 +2639,9 @@ func registerConfigReload(bus *eventbus.Bus, cfgStore *config.Store, asst *assis
 			// Dispatch skill config changes to the registry.
 			if strings.HasPrefix(p.Key, "skills.") {
 				val, found := cfgStore.Get(p.Key)
+				if p.Key == "skills.translate.enabled" {
+					val, found = cfgStore.GetEffective(p.Key)
+				}
 				registry.DispatchConfigChanged(p.Key, val, !found)
 				if found {
 					logger.Info("hot-reloaded skill config", zap.String("key", p.Key))

@@ -260,7 +260,12 @@
     "agentStarted": "{id}（{type}）已启动",
     "agentCompleted": "{id} 已完成",
     "agentFailed": "{id} 失败",
-    "agentProgress": "{id}：第 {turn} 轮"
+    "agentProgress": "{id}：第 {turn} 轮",
+    "copy": "复制",
+    "copyMessage": "复制助手消息",
+    "copied": "已复制",
+    "copyError": "无法复制。请选择文本并手动复制。",
+    "copyUnavailable": "剪贴板不可用。请选择文本并手动复制。"
   },
   "facts": {
     "title": "事实",
@@ -915,5 +920,25 @@
     "deleted": "文件已删除",
     "deleteFailed": "删除失败",
     "deleteConfirm": "永久删除此文件？"
+  },
+  "translation": {
+    "title": "Z.ai 翻译",
+    "description": "通过 Z.ai Translation Agent 翻译文本。",
+    "connection": "连接：模型设置中的 Z.ai",
+    "sharedKey": "使用共用的 Z.ai 密钥，无需在此添加单独的密钥。",
+    "mode": "模式：通用翻译",
+    "notVerified": "连接已配置，尚未验证 Translation Agent API 的访问权限。",
+    "openModels": "打开 Z.ai 设置",
+    "adminManaged": "连接和翻译功能由管理员管理。",
+    "toggle": "启用 Z.ai 翻译",
+    "states": {
+      "ready": "连接已配置",
+      "not_configured": "尚未配置 Z.ai 连接",
+      "forbidden": "当前策略不允许使用 Z.ai",
+      "revoked": "Z.ai 连接已撤销",
+      "runtime_unavailable": "翻译暂时不可用",
+      "disabled": "翻译已禁用"
+    },
+    "details": "连接详情"
   }
 }

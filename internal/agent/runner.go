@@ -264,6 +264,9 @@ func (r *Runner) buildTools(spec AgentSpec, profile AgentTypeProfile) []llm.Tool
 
 	var tools []llm.ToolDefinition
 	for _, s := range r.registry.EnabledSkills() {
+		if scope, ok := s.(skill.MainLoopOnly); ok && scope.MainLoopOnly() {
+			continue
+		}
 		schema := s.InputSchema()
 		if schema == nil {
 			continue // text-only skills don't become tools
@@ -322,6 +325,9 @@ func (r *Runner) executeTool(ctx context.Context, tc llm.ToolCall) llm.ToolResul
 		}
 	}
 
+	if scope, ok := s.(skill.MainLoopOnly); ok && scope.MainLoopOnly() {
+		return llm.ToolResult{ToolCallID: tc.ID, Content: "error: tool is only available in the main conversation", IsError: true}
+	}
 	start := time.Now()
 	output, err := s.Execute(ctx, tc.Input)
 	durationMs := time.Since(start).Milliseconds()
