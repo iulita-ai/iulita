@@ -77,6 +77,12 @@ const router = createRouter({
       meta: { admin: true },
     },
     {
+      path: '/remote-access',
+      name: 'remote-access',
+      component: () => import('./views/RemoteAccess.vue'),
+      meta: { admin: true },
+    },
+    {
       path: '/credentials',
       name: 'credentials',
       component: () => import('./views/Credentials.vue'),

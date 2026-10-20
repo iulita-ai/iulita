@@ -109,3 +109,20 @@ func DocumentsFrom(ctx context.Context) []DocumentAttachment {
 	v, _ := ctx.Value(ctxDocuments).([]DocumentAttachment)
 	return v
 }
+
+// remoteCallerKey is deliberately private: only trusted adapters set this context.
+type remoteCallerKey struct{}
+
+// WithRemoteCaller binds a trusted execution entry point; tool input cannot set it.
+func WithRemoteCaller(ctx context.Context, caller string) context.Context {
+	return context.WithValue(ctx, remoteCallerKey{}, caller)
+}
+
+// RemoteCallerFrom returns the trusted delegate or scheduler scope.
+func RemoteCallerFrom(ctx context.Context) string {
+	v, ok := ctx.Value(remoteCallerKey{}).(string)
+	if !ok {
+		return ""
+	}
+	return v
+}

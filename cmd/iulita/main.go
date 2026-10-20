@@ -51,6 +51,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/modelruntime"
 	"github.com/iulita-ai/iulita/internal/notify"
 	"github.com/iulita-ai/iulita/internal/ratelimit"
+	"github.com/iulita-ai/iulita/internal/remoteaccess"
 	"github.com/iulita-ai/iulita/internal/scheduler"
 	"github.com/iulita-ai/iulita/internal/scheduler/handlers"
 	"github.com/iulita-ai/iulita/internal/skill"
@@ -70,6 +71,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/skill/orchestrate"
 	"github.com/iulita-ai/iulita/internal/skill/pdfreader"
 	"github.com/iulita-ai/iulita/internal/skill/reminders"
+	remoteaccessskill "github.com/iulita-ai/iulita/internal/skill/remoteaccess"
 	scheduleskill "github.com/iulita-ai/iulita/internal/skill/schedule"
 	"github.com/iulita-ai/iulita/internal/skill/sessionsearch"
 	"github.com/iulita-ai/iulita/internal/skill/sharelocation"
@@ -1140,6 +1142,43 @@ func main() {
 		logger.Info("web search: DDG only (no Brave API key)")
 	}
 
+	// Native SSH is registered only with an explicitly configured isolated worker.
+	var remoteAccessService *remoteaccess.Service
+	if cfg.Skills.RemoteAccess.WorkerURL != "" {
+		keyInfo, keyErr := os.Stat(cfg.Skills.RemoteAccess.WorkerKeyFile)
+		if keyErr != nil || keyInfo.Mode().Perm()&0o077 != 0 {
+			logger.Fatal("SSH worker key file must be private (0600)")
+		}
+		workerKey, keyErr := os.ReadFile(cfg.Skills.RemoteAccess.WorkerKeyFile)
+		if keyErr != nil {
+			logger.Fatal("cannot read SSH worker key")
+		}
+		transport, remoteErr := remoteaccess.NewRPCTransport(cfg.Skills.RemoteAccess.WorkerURL, workerKey)
+		if remoteErr != nil {
+			logger.Fatal("invalid SSH worker configuration", zap.Error(remoteErr))
+		}
+		remoteAccessService, remoteErr = remoteaccess.NewService(filepath.Join(paths.DataDir, "ssh-access", "catalog.json"), credStore, transport)
+		if remoteErr != nil {
+			logger.Fatal("cannot initialize remote access", zap.Error(remoteErr))
+		}
+		defer func() {
+			if closeErr := remoteAccessService.Close(); closeErr != nil {
+				logger.Error("remote access shutdown failed", zap.Error(closeErr))
+			}
+		}()
+		remoteAccessService.SetPrincipalChecker(func(checkctx context.Context, owner string) bool {
+			user, lookupErr := store.GetUser(checkctx, owner)
+			return lookupErr == nil && user != nil && !user.Disabled && !user.MustChangePass
+		})
+		registry.RegisterWithManifest(remoteaccessskill.New(remoteAccessService, "exec"), remoteaccessskill.Manifest())
+		for _, action := range []string{"chain", "status", "cancel", "runbook", "files", "background"} {
+			registry.RegisterInGroup(remoteaccessskill.New(remoteAccessService, action), "remote_access")
+		}
+		if remoteAccessService.Snapshot(remoteaccess.Scope{OwnerID: "startup", CallerID: "startup"}).Enabled {
+			registry.EnableGroup("remote_access")
+		}
+	}
+
 	// Shell exec — register with manifest.
 	if cfg.Skills.ShellExec.Enabled && len(cfg.Skills.ShellExec.AllowedBins) > 0 {
 		timeout := 10 * time.Second
@@ -1690,6 +1729,14 @@ func main() {
 	})
 
 	// Subscribe channelmgr to credential changes for hot-reload.
+	if remoteAccessService != nil {
+		bus.SubscribeAsync(eventbus.CredentialChanged, func(_ context.Context, evt eventbus.Event) error {
+			if p, ok := evt.Payload.(eventbus.CredentialChangedPayload); ok {
+				return remoteAccessService.CredentialChanged(p.Name)
+			}
+			return nil
+		})
+	}
 	bus.SubscribeAsync(eventbus.CredentialChanged, func(_ context.Context, _ eventbus.Event) error {
 		mgr.HandleCredentialChanged()
 		return nil
@@ -2011,7 +2058,9 @@ func main() {
 		PollInterval: 5 * time.Second,
 	}, logger)
 	agentJobWorker.SetEventBus(bus)
-	agentJobWorker.Register(handlers.NewAgentJobHandler(store, llmProvider, registry, bus, mgr, logger))
+	sshJobHandler := handlers.NewAgentJobHandler(store, llmProvider, registry, bus, mgr, logger)
+	sshJobHandler.SetRemoteAccess(remoteAccessService)
+	agentJobWorker.Register(sshJobHandler)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -2109,6 +2158,7 @@ func main() {
 			SkillManager:      dashSkillMgr,
 			TodoProviders:     todoProviders,
 			CredentialManager: credStore,
+			RemoteAccess:      remoteAccessService,
 			Embedder:          embedder,
 			HTTPArtifacts:     httpArtifactStore, // nil unless downloads enabled + auth wired
 			StandingGrants:    store,

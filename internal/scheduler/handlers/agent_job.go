@@ -1,12 +1,17 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/iulita-ai/iulita/internal/remoteaccess"
+	"github.com/iulita-ai/iulita/internal/scheduler"
 
 	"go.uber.org/zap"
 
@@ -51,7 +56,7 @@ var jobToolAllowlist = []string{
 	"datetime", "recall", "session_search", "list_insights", "pdf_read",
 	"websearch", "webfetch", "weather", "openweathermap", "exchange_rate", "geolocation",
 	"google_calendar", "google_mail", "google_tasks", "google_contacts",
-	"tasks", "todoist", "craft_read", "craft_search", "craft_tasks",
+	"tasks", "todoist", "craft_read", "craft_search", "craft_tasks", "remote_runbook",
 }
 
 type agentJobPayload struct {
@@ -70,6 +75,7 @@ type agentJobPayload struct {
 // user-owned jobs it runs a full agentic loop (tools + user memory) scoped to the
 // owning user; legacy admin-global jobs (UserID == "") run as a bare prompt.
 type AgentJobHandler struct {
+	remote   *remoteaccess.Service
 	store    storage.Repository
 	provider llm.Provider
 	registry *skill.Registry
@@ -84,6 +90,47 @@ func NewAgentJobHandler(store storage.Repository, provider llm.Provider, registr
 	return &AgentJobHandler{store: store, provider: provider, registry: registry, bus: bus, sender: sender, logger: logger}
 }
 
+// SetRemoteAccess attaches the shared owner-scoped SSH dispatcher.
+func (h *AgentJobHandler) SetRemoteAccess(s *remoteaccess.Service) { h.remote = s }
+
+// RemoteRunbookPromptPrefix selects deterministic typed SSH scheduling without an LLM.
+const RemoteRunbookPromptPrefix = "iulita-ssh-runbook-v1:"
+
+//nolint:nilerr // Return terminal metadata instead of errors so queue retries cannot replay SSH.
+func (h *AgentJobHandler) runRemote(ctx context.Context, p agentJobPayload) (string, error) {
+	denied := `{"state":"denied","error_code":"scheduled_ssh_unavailable"}`
+	if h.remote == nil || h.store == nil || p.UserID == "" || p.JobID <= 0 || scheduler.TaskIDFrom(ctx) <= 0 {
+		return denied, nil
+	}
+	user, userErr := h.store.GetUser(ctx, p.UserID)
+	if userErr != nil || user == nil || user.Disabled || user.MustChangePass {
+		return denied, nil
+	}
+	job, err := h.store.GetAgentJob(ctx, p.JobID)
+	if err != nil || job == nil || !job.Enabled || job.UserID != p.UserID || job.Prompt != p.Prompt {
+		return denied, nil
+	}
+	var in remoteaccess.RunbookRequest
+	d := json.NewDecoder(bytes.NewBufferString(strings.TrimPrefix(p.Prompt, RemoteRunbookPromptPrefix)))
+	d.DisallowUnknownFields()
+	if d.Decode(&in) != nil {
+		return denied, nil
+	}
+	var extra any
+	if d.Decode(&extra) != io.EOF {
+		return denied, nil
+	}
+	x, err := h.remote.ExecuteScheduledRunbook(ctx, p.UserID, fmt.Sprintf("job-%d-task-%d", p.JobID, scheduler.TaskIDFrom(ctx)), in)
+	if x.ID == "" && err != nil {
+		return denied, nil
+	}
+	raw, e := json.Marshal(x)
+	if e != nil {
+		return `{"state":"unknown_outcome"}`, nil
+	}
+	return string(raw), nil
+}
+
 // Type returns the task type this handler serves.
 func (h *AgentJobHandler) Type() string { return TaskTypeAgentJob }
 
@@ -94,6 +141,9 @@ func (h *AgentJobHandler) Handle(ctx context.Context, payload string) (string, e
 		return "", fmt.Errorf("invalid payload: %w", err)
 	}
 
+	if strings.HasPrefix(p.Prompt, RemoteRunbookPromptPrefix) {
+		return h.runRemote(ctx, p)
+	}
 	// Bound wall-clock so a stuck job can't hold the worker forever.
 	ctx, cancel := context.WithTimeout(ctx, jobTaskTimeout)
 	defer cancel()
@@ -190,7 +240,7 @@ func (h *AgentJobHandler) run(ctx context.Context, p agentJobPayload, memoryBloc
 // userContext enriches ctx with the identity/role/time keys the user-scoped
 // skills (calendar, recall, …) require under the scheduler (no incoming message).
 func (h *AgentJobHandler) userContext(ctx context.Context, p agentJobPayload) context.Context {
-	ctx = skill.WithUserID(ctx, p.UserID)
+	ctx = skill.WithRemoteCaller(skill.WithUserID(ctx, p.UserID), "scheduler")
 	ctx = skill.WithUserRole(ctx, string(domain.RoleUser)) // jobs never run with admin privileges
 	if p.DeliveryChatID != "" {
 		ctx = skill.WithChatID(ctx, p.DeliveryChatID)

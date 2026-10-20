@@ -329,6 +329,11 @@ func (r *Runner) executeTool(ctx context.Context, tc llm.ToolCall) llm.ToolResul
 		return llm.ToolResult{ToolCallID: tc.ID, Content: "error: tool is only available in the main conversation", IsError: true}
 	}
 	start := time.Now()
+	caller := skill.RemoteCallerFrom(ctx)
+	if caller == "" {
+		caller = "delegate"
+	}
+	ctx = skill.WithRemoteCaller(skill.WithUserID(ctx, r.userID), caller)
 	output, err := s.Execute(ctx, tc.Input)
 	durationMs := time.Since(start).Milliseconds()
 

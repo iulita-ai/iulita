@@ -276,20 +276,27 @@ type TranslationConfig struct {
 	Enabled bool `koanf:"enabled"`
 }
 
+// RemoteAccessConfig configures the isolated native SSH worker and access catalog.
+type RemoteAccessConfig struct {
+	WorkerURL     string `koanf:"worker_url"`
+	WorkerKeyFile string `koanf:"worker_key_file"`
+}
+
 type SkillsConfig struct {
-	Translate   TranslationConfig    `koanf:"translate"`
-	Dir         string               `koanf:"dir"`
-	Memory      MemoryConfig         `koanf:"memory"`
-	Insights    InsightsConfig       `koanf:"insights"`
-	Web         WebConfig            `koanf:"web"`
-	HTTP        HTTPSkillConfig      `koanf:"http"`
-	ShellExec   ShellExecConfig      `koanf:"shell_exec"`
-	Craft       CraftConfig          `koanf:"craft"`
-	Google      GoogleConfig         `koanf:"google"`
-	SlackOAuth  SlackOAuthConfig     `koanf:"slack_oauth"`
-	Todoist     TodoistConfig        `koanf:"todoist"`
-	External    ExternalSkillsConfig `koanf:"external"`
-	SelfImprove SelfImproveConfig    `koanf:"selfimprove"`
+	RemoteAccess RemoteAccessConfig   `koanf:"remote_access"`
+	Translate    TranslationConfig    `koanf:"translate"`
+	Dir          string               `koanf:"dir"`
+	Memory       MemoryConfig         `koanf:"memory"`
+	Insights     InsightsConfig       `koanf:"insights"`
+	Web          WebConfig            `koanf:"web"`
+	HTTP         HTTPSkillConfig      `koanf:"http"`
+	ShellExec    ShellExecConfig      `koanf:"shell_exec"`
+	Craft        CraftConfig          `koanf:"craft"`
+	Google       GoogleConfig         `koanf:"google"`
+	SlackOAuth   SlackOAuthConfig     `koanf:"slack_oauth"`
+	Todoist      TodoistConfig        `koanf:"todoist"`
+	External     ExternalSkillsConfig `koanf:"external"`
+	SelfImprove  SelfImproveConfig    `koanf:"selfimprove"`
 }
 
 // HTTPSkillConfig controls the strict http_request tool ([skills.http]).

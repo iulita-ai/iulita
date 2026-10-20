@@ -126,3 +126,15 @@ func TestWakeGate_FailsOpenOnError(t *testing.T) {
 		t.Error("gate error must NOT cause a skip")
 	}
 }
+func TestTypedSSHDoesNotReachLLM(t *testing.T) {
+	p := &fixedProvider{content: "must never run"}
+	h := NewAgentJobHandler(memStore(t), p, nil, nil, nil, zap.NewNop())
+	result, err := handle(t, h, agentJobPayload{JobID: 1, UserID: "owner", Prompt: RemoteRunbookPromptPrefix + `{"runbook_id":"one"}`})
+	if err != nil || !strings.Contains(result, "denied") || p.calls != 0 {
+		t.Fatalf("%s %v calls=%d", result, err, p.calls)
+	}
+	result, err = handle(t, h, agentJobPayload{JobID: 1, Prompt: RemoteRunbookPromptPrefix + `{"runbook_id":"one"}`})
+	if err != nil || !strings.Contains(result, "denied") || p.calls != 0 {
+		t.Fatal("legacy ownerless typed SSH reached LLM")
+	}
+}
