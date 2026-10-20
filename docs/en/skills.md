@@ -167,7 +167,12 @@ Provider chain: ipinfo.io (with key) → ip-api.com → ipapi.co. Validates IP i
 
 | Tool | Input | Description |
 |------|-------|-------------|
-| `pdf_read` | `url` | Fetch and read PDF documents. Validates `%PDF-` magic bytes. |
+| `pdf_read` | `attachment_index` | Extract text with page references from an attached PDF (no URL fetching). |
+| `file_summarize` | `attachment_index`, `save_to_facts`, `language` | Summarize an attached PDF or UTF-8 text file; optionally save the summary as a user-owned fact. |
+
+Send a PDF to Telegram without a caption to summarize and save it to your facts. A caption can request extraction only or summarization without saving. Files are available only during the current message; reattach them for a later request. Saved summaries include the filename and SHA-256 source identity. Reuploading an already saved document returns its existing summary.
+
+Limits: 20 MiB PDF, 200 pages, 512 KiB extracted text. Text extraction requires Poppler (`pdftotext`), included in the Docker image. Scans need a text layer/OCR before upload; encrypted PDFs must be unlocked. Extraction has a 30-second deadline and two concurrent slots. Configure container CPU/memory limits for untrusted PDF parsing.
 
 ### Set Language
 

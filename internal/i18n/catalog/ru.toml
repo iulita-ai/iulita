@@ -348,3 +348,12 @@ other = "Эта закладка принадлежит другому поль�
 
 [CopyButton]
 other = "📋 Копировать"
+
+[TelegramDocumentUnsupported]
+other = "Этот тип файла не поддерживается. Пришлите PDF или текстовый файл."
+
+[TelegramDocumentTooLarge]
+other = "Файл слишком большой. Пришлите файл размером до 20 МиБ."
+
+[TelegramDocumentDownloadFailed]
+other = "Не удалось скачать файл. Пришлите его ещё раз."

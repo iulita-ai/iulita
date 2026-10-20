@@ -348,3 +348,12 @@ other = "This bookmark belongs to another user."
 
 [CopyButton]
 other = "📋 Copy"
+
+[TelegramDocumentUnsupported]
+other = "This file type is not supported. Please send a PDF or text file."
+
+[TelegramDocumentTooLarge]
+other = "The file is too large. Please send a file smaller than 20 MiB."
+
+[TelegramDocumentDownloadFailed]
+other = "I could not download this file. Please send it again."

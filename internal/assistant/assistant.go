@@ -344,6 +344,10 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 	// Convert channel documents to LLM documents.
 	var documents []llm.DocumentAttachment
 	for _, doc := range msg.Documents {
+		// PDFs must pass the bounded local parser, independently of provider support.
+		if strings.EqualFold(doc.MimeType, "application/pdf") {
+			continue
+		}
 		documents = append(documents, llm.DocumentAttachment{Data: doc.Data, MimeType: doc.MimeType, Filename: doc.Filename})
 	}
 
@@ -468,7 +472,7 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 	a.runPreHooks(ctx, &msg)
 
 	// Enrich message with link summaries if enabled.
-	messageText := msg.Text
+	messageText := documentMessageText(msg)
 	if a.autoLinkSummary && messageText != "" {
 		messageText = enrichWithLinks(messageText, a.maxLinks)
 	}

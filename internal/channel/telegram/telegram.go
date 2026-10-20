@@ -3,7 +3,6 @@ package telegram
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -379,32 +378,26 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 			}
 		}
 
-		// Download document if present (PDF, text files).
+		// Validate metadata before downloading; enforce the same bound on bytes below.
 		if hasDocument {
 			doc := update.Message.Document
-			if c.isSupportedDocument(doc.MimeType) {
-				if doc.FileSize > 30*1024*1024 {
-					c.logger.Warn("document too large, skipping",
-						zap.String("filename", doc.FileName),
-						zap.Int64("size", doc.FileSize),
-						zap.String("chat_id", chatID))
-				} else {
-					data, err := c.downloadFile(ctx, doc.FileID)
-					if err != nil {
-						c.logger.Error("failed to download document", zap.Error(err),
-							zap.String("filename", doc.FileName), zap.String("chat_id", chatID))
-					} else {
-						msg.Documents = []channel.DocumentAttachment{
-							{Data: data, MimeType: doc.MimeType, Filename: doc.FileName},
-						}
-					}
-				}
-			} else {
-				c.logger.Warn("unsupported document type, skipping",
-					zap.String("mime_type", doc.MimeType),
-					zap.String("filename", doc.FileName),
-					zap.String("chat_id", chatID))
+			localeCtx := i18n.WithLocale(ctx, i18n.ResolveLocale(msg.Locale, msg.LanguageCode))
+			mimeType := documentMIME(doc.MimeType, doc.FileName)
+			if !c.isSupportedDocument(mimeType) {
+				c.sendSingleMessage(update.Message.Chat.ID, i18n.T(localeCtx, "TelegramDocumentUnsupported"), 0)
+				return
 			}
+			if doc.FileSize > maxTelegramFileBytes {
+				c.sendSingleMessage(update.Message.Chat.ID, i18n.T(localeCtx, "TelegramDocumentTooLarge"), 0)
+				return
+			}
+			data, err := c.downloadFile(ctx, doc.FileID)
+			if err != nil {
+				c.logger.Warn("document download failed", zap.Error(err), zap.String("chat_id", chatID))
+				c.sendSingleMessage(update.Message.Chat.ID, i18n.T(localeCtx, "TelegramDocumentDownloadFailed"), 0)
+				return
+			}
+			msg.Documents = []channel.DocumentAttachment{{Data: data, MimeType: mimeType, Filename: doc.FileName}}
 		}
 
 		// Download and transcribe voice/audio if present.
@@ -794,7 +787,7 @@ func (c *Channel) isSupportedDocument(mimeType string) bool {
 func (c *Channel) downloadFile(ctx context.Context, fileID string) ([]byte, error) {
 	f, err := c.bot.GetFile(ctx, &bot.GetFileParams{FileID: fileID})
 	if err != nil {
-		return nil, fmt.Errorf("getting file: %w", err)
+		return nil, fmt.Errorf("getting file: %w", sanitizeTGError(err))
 	}
 	url := c.bot.FileDownloadLink(f)
 
@@ -813,7 +806,7 @@ func (c *Channel) downloadFile(ctx context.Context, fileID string) ([]byte, erro
 		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
 
-	data, err := io.ReadAll(resp.Body)
+	data, err := readTelegramFile(resp.Body, resp.ContentLength)
 	if err != nil {
 		return nil, fmt.Errorf("reading file body: %w", err)
 	}

@@ -60,6 +60,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/skill/delegate"
 	"github.com/iulita-ai/iulita/internal/skill/directives"
 	"github.com/iulita-ai/iulita/internal/skill/exchange"
+	"github.com/iulita-ai/iulita/internal/skill/filesummary"
 	"github.com/iulita-ai/iulita/internal/skill/geolocation"
 	googleskill "github.com/iulita-ai/iulita/internal/skill/google"
 	httpfetchskill "github.com/iulita-ai/iulita/internal/skill/httpfetch"
@@ -1353,6 +1354,11 @@ func main() {
 		logger.Warn("failed to load pdfreader manifest", zap.Error(err))
 	}
 	registry.RegisterWithManifest(pdfreader.New(), pdfManifest)
+	summaryManifest, err := filesummary.LoadManifest()
+	if err != nil {
+		logger.Warn("failed to load file summary manifest", zap.Error(err))
+	}
+	registry.RegisterWithManifest(filesummary.New(llmProvider, store), summaryManifest)
 
 	// Token usage statistics skill.
 	tokenUsageManifest, err := tokenusage.LoadManifest()

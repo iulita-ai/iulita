@@ -126,7 +126,8 @@ Web 搜索链为 `Brave → DuckDuckGo`，通过 `FallbackSearcher` 实现。Duc
 
 | 工具 | 输入 | 描述 |
 |------|------|------|
-| `pdf_read` | `url` | 获取并读取 PDF 文档。验证 `%PDF-` 魔术字节。 |
+| `pdf_read` | `attachment_index` | 从附件 PDF 提取文本和页码引用，不通过 URL 下载。 |
+| `file_summarize` | `attachment_index`, `save_to_facts`, `language` | 总结附件 PDF 或 UTF-8 文本，并可选择将摘要保存为用户事实。 |
 
 ### 设置语言
 
