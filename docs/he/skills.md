@@ -126,7 +126,8 @@ type Skill interface {
 
 | כלי | קלט | תיאור |
 |------|-------|-------------|
-| `pdf_read` | `url` | שליפה וקריאת מסמכי PDF. מאמת בתי magic של `%PDF-`. |
+| `pdf_read` | `attachment_index` | חילוץ טקסט עם הפניות לעמודים מ-PDF מצורף, ללא הורדה מכתובת URL. |
+| `file_summarize` | `attachment_index`, `save_to_facts`, `language` | סיכום PDF או טקסט UTF-8 מצורף ושמירה אופציונלית בזיכרון המשתמש. |
 
 ### הגדרת שפה
 

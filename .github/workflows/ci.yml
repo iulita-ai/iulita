@@ -49,6 +49,9 @@ jobs:
       - name: Create ui/dist placeholder for embed
         run: mkdir -p ui/dist && touch ui/dist/.gitkeep
 
+      - name: Install PDF text extraction runtime
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
+
       - name: Run tests with coverage
         env:
           CGO_ENABLED: "0"

@@ -10,7 +10,7 @@ type Fact struct {
 	ChatID         string    `bun:",notnull"`            // source channel chat ID
 	UserID         string    `bun:",notnull,default:''"` // owner user UUID
 	Content        string    `bun:",notnull"`
-	SourceType     string    `bun:",notnull,default:'user'"` // user, system
+	SourceType     string    `bun:",notnull,default:'user'"` // user, system, document
 	CreatedAt      time.Time `bun:",nullzero,notnull,default:current_timestamp"`
 	LastAccessedAt time.Time `bun:",nullzero,notnull,default:current_timestamp"`
 	AccessCount    int       `bun:",notnull,default:0"`

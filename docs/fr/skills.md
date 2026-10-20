@@ -126,7 +126,8 @@ Chaine de fournisseurs : ipinfo.io (avec cle) → ip-api.com → ipapi.co. Valid
 
 | Outil | Entree | Description |
 |-------|--------|-------------|
-| `pdf_read` | `url` | Recuperer et lire des documents PDF. Valide les octets magiques `%PDF-`. |
+| `pdf_read` | `attachment_index` | Extraire le texte avec références de page depuis un PDF joint, sans téléchargement par URL. |
+| `file_summarize` | `attachment_index`, `save_to_facts`, `language` | Résumer un PDF ou fichier UTF-8 joint et enregistrer éventuellement le résumé dans la mémoire utilisateur. |
 
 ### Changer de langue
 

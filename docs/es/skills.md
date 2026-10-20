@@ -126,7 +126,8 @@ Cadena de proveedores: ipinfo.io (con clave) → ip-api.com → ipapi.co. Valida
 
 | Herramienta | Entrada | Descripcion |
 |-------------|---------|-------------|
-| `pdf_read` | `url` | Obtener y leer documentos PDF. Valida los bytes magicos `%PDF-`. |
+| `pdf_read` | `attachment_index` | Extraer texto con referencias de página de un PDF adjunto; no descarga URLs. |
+| `file_summarize` | `attachment_index`, `save_to_facts`, `language` | Resumir un PDF o archivo UTF-8 adjunto y guardar opcionalmente el resumen en la memoria del usuario. |
 
 ### Establecer Idioma
 

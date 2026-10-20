@@ -1,9 +1,23 @@
 # Release guide
 
-This guide summarizes the public releases from v0.38.0 through v0.50.1. Follow the linked release for its
+This guide summarizes the public releases from v0.38.0 through v0.51.0. Follow the linked release for its
 exact changelog. A source feature is not automatically available in an older
 container or binary.
 
+
+
+## v0.51.0: Telegram PDF summaries and saved facts
+
+[v0.51.0](https://github.com/iulita-ai/iulita/releases/tag/v0.51.0) adds
+`pdf_read` for local text extraction with page references and `file_summarize`
+for bounded document summaries. Sending a PDF to Telegram without a caption
+summarizes it and saves the summary as an owner-scoped fact. Explicit captions
+can request extraction only or no saving. Saved summaries include source
+filename and SHA-256; repeated saved uploads reuse the existing fact.
+
+The Docker image includes Poppler. Limits are 20 MiB, 200 pages and 512 KiB of
+extracted text. Scanned documents require a text layer/OCR; password-protected
+files must be unlocked. Document content is treated as untrusted source claims.
 
 ## v0.50.1: explicit city and timezone fallbacks
 

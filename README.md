@@ -152,7 +152,7 @@ Web Chat ────┼→ Channel Manager → Assistant → LLM Provider Chain
 | `geolocation` | IP-based geolocation |
 | `shell_exec` | Sandboxed shell command execution (requires admin approval) |
 | `delegate` | One-shot LLM delegation to secondary providers |
-| `pdfreader` | PDF document reading |
+| `pdf_read` / `file_summarize` | Extract attached PDF text, summarize documents and save summaries to facts |
 | `set_language` | Switch interface language via chat |
 | `skills` | List, enable, disable, configure skills at runtime |
 | `datetime` | Current date/time in user's timezone |
