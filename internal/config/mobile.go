@@ -4,6 +4,10 @@ import "fmt"
 
 func mobileEnvironmentKey(name string) (string, bool) {
 	switch name {
+	case "IULITA_SKILLS_REMOTE_ACCESS_WORKER_URL":
+		return "skills.remote_access.worker_url", true
+	case "IULITA_SKILLS_REMOTE_ACCESS_WORKER_KEY_FILE":
+		return "skills.remote_access.worker_key_file", true
 	case "IULITA_SKILLS_CRAFT_NATIVE_OWNER_ID":
 		return "skills.craft.native_owner_id", true
 	case "IULITA_SKILLS_TODOIST_NATIVE_OWNER_ID":
