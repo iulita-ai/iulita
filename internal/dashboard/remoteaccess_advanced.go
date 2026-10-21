@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -40,7 +41,8 @@ func (s *Server) remotePutRunbook(c *fiber.Ctx) error {
 	if bodyErr := remoteBody(c, &b); bodyErr != nil {
 		return bodyErr
 	}
-	b.ID = c.Params("id")
+	// Catalog IDs must not retain Fiber's reusable request buffer.
+	b.ID = strings.Clone(c.Params("id"))
 	saved, err := s.remoteAccess.PutRunbook(sc, b)
 	if err != nil {
 		return remoteError(err)

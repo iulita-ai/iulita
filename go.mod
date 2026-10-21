@@ -39,6 +39,7 @@ require (
 	github.com/uptrace/bun v1.2.18
 	github.com/uptrace/bun/dialect/sqlitedialect v1.2.18
 	github.com/uptrace/bun/driver/sqliteshim v1.2.18
+	github.com/valyala/fasthttp v1.52.0
 	github.com/yuin/goldmark v1.8.6
 	github.com/zalando/go-keyring v0.2.6
 	go.uber.org/zap v1.27.1
@@ -173,7 +174,6 @@ require (
 	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/tmthrgd/go-hex v0.0.0-20190904060850-447a3041c3bc // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
-	github.com/valyala/fasthttp v1.52.0 // indirect
 	github.com/valyala/tcplisten v1.0.0 // indirect
 	github.com/viant/afs v1.30.0 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
