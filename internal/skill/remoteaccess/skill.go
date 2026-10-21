@@ -129,7 +129,8 @@ func decode(input json.RawMessage, v any) error {
 	return nil
 }
 
-// Execute authorizes each command and returns private-output metadata only.
+// Execute authorizes each command and returns metadata with an optional,
+// explicitly approved sanitized model projection. Originals stay private.
 func (s *Skill) Execute(ctx context.Context, input json.RawMessage) (string, error) {
 	owner := skill.UserIDFrom(ctx)
 	if owner == "" || s.service == nil {

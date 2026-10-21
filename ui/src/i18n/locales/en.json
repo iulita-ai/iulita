@@ -251,7 +251,7 @@
     "jobDeleted": "Job deleted"
   },
   "chat": {
-    "privateResultHint": "Private command output. It is not sent to the assistant or saved in chat history.",
+    "privateResultHint": "Original private command output, outside chat history. If you approved model analysis, the AI provider receives a separate filtered, limited copy.",
     "title": "Chat",
     "connected": "Connected",
     "disconnected": "Disconnected",

@@ -78,6 +78,10 @@ func TestTelegramSSHApprovalResolvesKeyboardAndDeliversOnlyPrivateDocument(t *te
 			}
 		case strings.HasSuffix(req.URL.Path, "/sendDocument"):
 			document = true
+			if !strings.Contains(req.FormValue("caption"), "Approved model analysis") || strings.Contains(req.FormValue("caption"), "not sent to the AI") {
+				t.Error("private original caption contradicts model-sharing consent")
+			}
+
 			if req.FormValue("chat_id") != "7" || req.FormValue("protect_content") != "true" || req.FormValue("parse_mode") != "" {
 				t.Error("private document isolation missing")
 			}
