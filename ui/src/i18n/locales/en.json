@@ -251,7 +251,7 @@
     "jobDeleted": "Job deleted"
   },
   "chat": {
-    "privateResultHint": "Private command output. It is not sent to the assistant or saved in chat history.",
+    "privateResultHint": "Original private command output, outside chat history. If you approved model analysis, the AI provider receives a separate filtered, limited copy.",
     "title": "Chat",
     "connected": "Connected",
     "disconnected": "Disconnected",
@@ -996,6 +996,11 @@
   },
   "remoteAccess": {
     "permanent": "No expiration",
+    "allowModelOutput": "Allow model analysis of command output",
+    "modelOutputGrantHint": "Only exec commands can share output. Filtered, size-limited output is sent to the configured AI provider and may remain in chat history. Redaction cannot guarantee removal of all secrets. Each command still requires confirmation. For bot analysis, allow this on the remote_exec permission; the bot must request model_output for each command.",
+    "modelOutputChatHint": "Commands launched here return private output only. For model analysis, allow it on the remote_exec permission and ask the bot in chat to analyze the route; each sharing command requires confirmation.",
+    "modelOutputWarning": "This execution will send filtered, size-limited command output to the configured AI provider for analysis. Output may remain in chat history. Redaction cannot guarantee removal of all secrets. Only approve commands whose output may be shared.",
+    "modelOutputEnabled": "Model analysis allowed",
     "permanentHint": "This permission remains active until you disable it. Commands still require confirmation.",
     "title": "Remote access",
     "subtitle": "Native SSH · Private keys remain in the encrypted vault",

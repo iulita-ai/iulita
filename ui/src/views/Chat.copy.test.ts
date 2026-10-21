@@ -55,7 +55,7 @@ describe('Chat copy and text delivery', () => {
     handlers.get('private_result')!({text, message_id:'never-bookmark-this'}); await flushPromises()
     expect(wrapper.get('.private-result pre').element.textContent).toBe(text)
     expect(wrapper.find('script').exists()).toBe(false);expect(wrapper.find('img').exists()).toBe(false)
-    expect(wrapper.text()).toContain('not sent to the assistant')
+    expect(wrapper.text()).toContain('If you approved model analysis')
     expect(wrapper.find('button.bookmark-btn').exists()).toBe(false)
     expect(wrapper.find('button[aria-label="Copy assistant message"]').exists()).toBe(false)
     expect(send).not.toHaveBeenCalled();expect(api.getMessages).toHaveBeenCalledTimes(1)

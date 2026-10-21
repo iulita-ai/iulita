@@ -296,6 +296,6 @@ func (tc *telegramConfirmer) DeliverPrivateResult(ctx context.Context, actor int
 	if actor.UserID == "" || tc.fromTg <= 0 || tc.chatID != tc.fromTg || owner != actor.UserID {
 		return errors.New("private SSH output requires requester private chat")
 	}
-	_, err := tc.channel.bot.SendDocument(ctx, &bot.SendDocumentParams{ChatID: tc.chatID, Document: &models.InputFileUpload{Filename: "ssh-" + executionID + ".txt", Data: strings.NewReader(text)}, Caption: "SSH command result (private output; not sent to the AI model)", ProtectContent: true})
+	_, err := tc.channel.bot.SendDocument(ctx, &bot.SendDocumentParams{ChatID: tc.chatID, Document: &models.InputFileUpload{Filename: "ssh-" + executionID + ".txt", Data: strings.NewReader(text)}, Caption: "Original SSH output. Approved model analysis uses a separate filtered, limited copy.", ProtectContent: true})
 	return err
 }

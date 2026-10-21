@@ -76,20 +76,21 @@ type Route struct {
 
 // Grant authorizes one caller and capability against an exact route revision.
 type Grant struct {
-	FileRoot        string    `json:"file_root,omitempty"`
-	RunbookID       string    `json:"runbook_id,omitempty"`
-	RunbookRevision int       `json:"runbook_revision,omitempty"`
-	MaxUses         int       `json:"max_uses,omitempty"`
-	Uses            int       `json:"uses,omitempty"`
-	ID              string    `json:"id"`
-	OwnerID         string    `json:"owner_id"`
-	CallerID        string    `json:"caller_id"`
-	RouteID         string    `json:"route_id"`
-	RouteRevision   int       `json:"route_revision"`
-	Capability      string    `json:"capability"`
-	ExpiresAt       time.Time `json:"expires_at"`
-	Permanent       bool      `json:"permanent"`
-	Enabled         bool      `json:"enabled"`
+	AllowModelOutput bool      `json:"allow_model_output"`
+	FileRoot         string    `json:"file_root,omitempty"`
+	RunbookID        string    `json:"runbook_id,omitempty"`
+	RunbookRevision  int       `json:"runbook_revision,omitempty"`
+	MaxUses          int       `json:"max_uses,omitempty"`
+	Uses             int       `json:"uses,omitempty"`
+	ID               string    `json:"id"`
+	OwnerID          string    `json:"owner_id"`
+	CallerID         string    `json:"caller_id"`
+	RouteID          string    `json:"route_id"`
+	RouteRevision    int       `json:"route_revision"`
+	Capability       string    `json:"capability"`
+	ExpiresAt        time.Time `json:"expires_at"`
+	Permanent        bool      `json:"permanent"`
+	Enabled          bool      `json:"enabled"`
 }
 
 // ActiveAt reports whether an enabled grant has an explicit valid lifetime.
@@ -113,6 +114,7 @@ type Secret struct {
 
 // ExecuteRequest specifies an exact command and optional one-use approval.
 type ExecuteRequest struct {
+	ModelOutput      bool               `json:"model_output"`
 	Operation        string             `json:"operation,omitempty"`
 	Terminal         *TerminalOptions   `json:"terminal,omitempty"`
 	File             *FileRequest       `json:"file,omitempty"`
@@ -129,6 +131,7 @@ type ExecuteRequest struct {
 
 // Approval is the immutable human-visible operation preview.
 type Approval struct {
+	ModelOutput            bool       `json:"model_output"`
 	GrantID                string     `json:"grant_id"`
 	AuthorizationExpiresAt time.Time  `json:"authorization_expires_at"`
 	ApprovalID             string     `json:"approval_id"`
@@ -147,22 +150,25 @@ type ConfirmFunc func(context.Context, Approval) (bool, error)
 
 // Execution contains metadata only; raw output resides in encrypted artifacts.
 type Execution struct {
-	Operation   string    `json:"operation,omitempty"`
-	ID          string    `json:"id"`
-	OwnerID     string    `json:"owner_id"`
-	CallerID    string    `json:"caller_id"`
-	RouteID     string    `json:"route_id"`
-	PlanHash    string    `json:"plan_hash"`
-	State       string    `json:"state"`
-	CreatedAt   time.Time `json:"created_at"`
-	FinishedAt  time.Time `json:"finished_at"`
-	ExitCode    *int      `json:"exit_code,omitempty"`
-	ErrorCode   string    `json:"error_code,omitempty"`
-	Truncated   bool      `json:"truncated"`
-	StdoutBytes int       `json:"stdout_bytes"`
-	StderrBytes int       `json:"stderr_bytes"`
-	ArtifactID  string    `json:"artifact_id,omitempty"`
-	ApprovedAt  time.Time `json:"approved_at"`
+	ModelOutput   bool      `json:"model_output"`
+	GrantID       string    `json:"grant_id,omitempty"`
+	RouteRevision int       `json:"route_revision,omitempty"`
+	Operation     string    `json:"operation,omitempty"`
+	ID            string    `json:"id"`
+	OwnerID       string    `json:"owner_id"`
+	CallerID      string    `json:"caller_id"`
+	RouteID       string    `json:"route_id"`
+	PlanHash      string    `json:"plan_hash"`
+	State         string    `json:"state"`
+	CreatedAt     time.Time `json:"created_at"`
+	FinishedAt    time.Time `json:"finished_at"`
+	ExitCode      *int      `json:"exit_code,omitempty"`
+	ErrorCode     string    `json:"error_code,omitempty"`
+	Truncated     bool      `json:"truncated"`
+	StdoutBytes   int       `json:"stdout_bytes"`
+	StderrBytes   int       `json:"stderr_bytes"`
+	ArtifactID    string    `json:"artifact_id,omitempty"`
+	ApprovedAt    time.Time `json:"approved_at"`
 }
 
 // Artifact contains private command details and bounded remote output.
@@ -174,9 +180,10 @@ type Artifact struct {
 	Stderr     string            `json:"stderr"`
 }
 type sealedArtifact struct {
-	OwnerID    string    `json:"owner_id"`
-	Ciphertext string    `json:"ciphertext"`
-	ExpiresAt  time.Time `json:"expires_at"`
+	ModelRequestCiphertext string    `json:"model_request_ciphertext,omitempty"`
+	OwnerID                string    `json:"owner_id"`
+	Ciphertext             string    `json:"ciphertext"`
+	ExpiresAt              time.Time `json:"expires_at"`
 }
 type storedApproval struct {
 	OwnerID     string    `json:"owner_id"`
@@ -544,7 +551,7 @@ func (s *Service) PutGrant(sc Scope, x Grant) (Grant, error) {
 	r, ok := s.data.Routes[x.RouteID]
 	now := time.Now()
 	validLifetime := x.Permanent && x.ExpiresAt.IsZero() || !x.Permanent && x.ExpiresAt.After(now) && !x.ExpiresAt.After(now.Add(24*time.Hour))
-	if !validScope(sc) || !ok || r.OwnerID != sc.OwnerID || x.CallerID == "" || !validCapability(x.Capability) || !validLifetime {
+	if !validScope(sc) || !ok || r.OwnerID != sc.OwnerID || x.CallerID == "" || !validCapability(x.Capability) || !validLifetime || (x.AllowModelOutput && (x.Capability != "exec" || x.RunbookID != "")) {
 		return x, ErrDenied
 	}
 	if x.ID != "" {
@@ -704,6 +711,9 @@ func (s *Service) SetPrincipalChecker(check func(context.Context, string) bool) 
 	s.principalChecker = check
 }
 func (s *Service) plan(sc Scope, req ExecuteRequest) (Approval, error) {
+	if req.ModelOutput && !ordinaryModelExec(req) {
+		return Approval{}, ErrDenied
+	}
 	if s.principalChecker != nil {
 		checkctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		allowed := s.principalChecker(checkctx, sc.OwnerID) && checkctx.Err() == nil
@@ -724,7 +734,7 @@ func (s *Service) plan(sc Scope, req ExecuteRequest) (Approval, error) {
 	var matched Grant
 	//nolint:gocritic // Select an immutable grant snapshot for the consent hash.
 	for _, g := range s.data.Grants {
-		if g.ActiveAt(time.Now()) && g.OwnerID == sc.OwnerID && g.CallerID == sc.CallerID && g.RouteID == r.ID && g.RouteRevision == r.Revision && g.Capability == req.Capability && grantMatches(g, req, s.data.Runbooks) {
+		if g.ActiveAt(time.Now()) && g.OwnerID == sc.OwnerID && g.CallerID == sc.CallerID && g.RouteID == r.ID && g.RouteRevision == r.Revision && g.Capability == req.Capability && grantMatches(g, req, s.data.Runbooks) && (!req.ModelOutput || g.AllowModelOutput) {
 			granted = true
 			if matched.ID == "" || g.ID < matched.ID {
 				matched = g
@@ -744,7 +754,7 @@ func (s *Service) plan(sc Scope, req ExecuteRequest) (Approval, error) {
 			return Approval{}, ErrDenied
 		}
 	}
-	a := Approval{GrantID: matched.ID, Command: req.Command, Route: r, AuthorizationExpiresAt: matched.ExpiresAt}
+	a := Approval{ModelOutput: req.ModelOutput, GrantID: matched.ID, Command: req.Command, Route: r, AuthorizationExpiresAt: matched.ExpiresAt}
 	for _, h := range r.Hops {
 		v, ok := s.data.Servers[h.ServerID]
 		i, iok := s.data.Identities[h.IdentityID]
@@ -870,7 +880,20 @@ func (s *Service) executeWithTransport(ctx context.Context, sc Scope, req Execut
 		s.mu.Unlock()
 		return Execution{}, fmt.Errorf("concurrency limit")
 	}
-	x := Execution{Operation: req.Operation, ID: newID(), OwnerID: sc.OwnerID, CallerID: sc.CallerID, RouteID: req.RouteID, PlanHash: a.PlanHash, State: "awaiting_approval", CreatedAt: time.Now()}
+	x := Execution{ModelOutput: req.ModelOutput, GrantID: a.GrantID, RouteRevision: a.Route.Revision, Operation: req.Operation, ID: newID(), OwnerID: sc.OwnerID, CallerID: sc.CallerID, RouteID: req.RouteID, PlanHash: a.PlanHash, State: "awaiting_approval", CreatedAt: time.Now()}
+	var modelRequestCiphertext string
+	if req.ModelOutput {
+		privateRequest, me := json.Marshal(canonicalRequest(req))
+		if me != nil {
+			s.mu.Unlock()
+			return Execution{}, ErrDenied
+		}
+		modelRequestCiphertext, me = s.vault.SealPrivate(string(privateRequest))
+		if me != nil {
+			s.mu.Unlock()
+			return Execution{}, ErrDenied
+		}
+	}
 	intentBytes, marshalErr := json.Marshal(Artifact{Command: req.Command})
 	if marshalErr != nil {
 		s.mu.Unlock()
@@ -882,7 +905,7 @@ func (s *Service) executeWithTransport(ctx context.Context, sc Scope, req Execut
 		return Execution{}, fmt.Errorf("cannot persist private command intent")
 	}
 	x.ArtifactID = newID()
-	s.data.Artifacts[x.ArtifactID] = sealedArtifact{OwnerID: sc.OwnerID, Ciphertext: intentCipher, ExpiresAt: time.Now().Add(24 * time.Hour)}
+	s.data.Artifacts[x.ArtifactID] = sealedArtifact{ModelRequestCiphertext: modelRequestCiphertext, OwnerID: sc.OwnerID, Ciphertext: intentCipher, ExpiresAt: time.Now().Add(24 * time.Hour)}
 	a.ExecutionID = x.ID
 	a.ExpiresAt = time.Now().Add(5 * time.Minute)
 	deadline := time.Now().Add(time.Duration(req.TimeoutSeconds+300) * time.Second)
@@ -974,7 +997,7 @@ func (s *Service) executeWithTransport(ctx context.Context, sc Scope, req Execut
 		consumed := false
 		//nolint:gocritic // Copy and persist only the selected authorization grant.
 		for id, g := range s.data.Grants {
-			if g.ID == a.GrantID && g.ActiveAt(time.Now()) && g.OwnerID == sc.OwnerID && g.CallerID == sc.CallerID && g.RouteID == req.RouteID && g.RouteRevision == a.Route.Revision && g.Capability == req.Capability && grantMatches(g, req, s.data.Runbooks) {
+			if g.ID == a.GrantID && g.ActiveAt(time.Now()) && g.OwnerID == sc.OwnerID && g.CallerID == sc.CallerID && g.RouteID == req.RouteID && g.RouteRevision == a.Route.Revision && g.Capability == req.Capability && grantMatches(g, req, s.data.Runbooks) && (!req.ModelOutput || g.AllowModelOutput) {
 				g.Uses++
 				s.data.Grants[id] = g
 				consumed = true
@@ -1061,13 +1084,13 @@ func (s *Service) executeWithTransport(ctx context.Context, sc Scope, req Execut
 		}
 		// Keep encrypted file artifacts within the catalog reopen bound.
 		for {
-			total := len(sealed)
+			total := len(sealed) + len(modelRequestCiphertext)
 			oldest := ""
 			for id, a := range s.data.Artifacts {
 				if id == x.ArtifactID {
 					continue
 				}
-				total += len(a.Ciphertext)
+				total += len(a.Ciphertext) + len(a.ModelRequestCiphertext)
 				if oldest == "" || a.ExpiresAt.Before(s.data.Artifacts[oldest].ExpiresAt) {
 					oldest = id
 				}
@@ -1077,7 +1100,7 @@ func (s *Service) executeWithTransport(ctx context.Context, sc Scope, req Execut
 			}
 			delete(s.data.Artifacts, oldest)
 		}
-		s.data.Artifacts[x.ArtifactID] = sealedArtifact{OwnerID: sc.OwnerID, Ciphertext: sealed, ExpiresAt: time.Now().Add(24 * time.Hour)}
+		s.data.Artifacts[x.ArtifactID] = sealedArtifact{ModelRequestCiphertext: modelRequestCiphertext, OwnerID: sc.OwnerID, Ciphertext: sealed, ExpiresAt: time.Now().Add(24 * time.Hour)}
 	} else {
 		x.ErrorCode = "artifact_storage_failed"
 	}
