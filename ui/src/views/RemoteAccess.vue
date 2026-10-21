@@ -90,7 +90,9 @@
           <label>{{ t('remoteAccess.capabilities') }}<select v-model="form.capability" required><option value="exec">exec</option><option value="key_install">key_install</option><option value="key_remove">key_remove</option><option v-for="cap in ['file_get','file_put','file_stat','background_install','background_start','background_status','background_cancel','terminal','runbook']" :key="cap" :value="cap">{{ cap }}</option></select></label>
           <label v-if="form.capability?.startsWith('file_') || form.capability?.startsWith('background_')">{{ t('remoteAccess.root') }}<input v-model="form.file_root" placeholder="/home/user/private" required></label>
           <template v-if="form.capability==='runbook'"><label>Runbook<select v-model="form.runbook_id" required><option v-for="book in state.runbooks" :key="book.id" :value="book.id">{{ book.label }} · v{{ book.revision }}</option></select></label><label>{{ t('remoteAccess.maxUses') }}<input v-model.number="form.max_uses" type="number" min="1" max="1000" required></label></template>
-          <label>{{ t('remoteAccess.expires') }}<input v-model="expires" type="datetime-local" required></label>
+          <label>{{ t('remoteAccess.permanent') }}<input v-model="form.permanent" type="checkbox"></label>
+          <p v-if="form.permanent">{{ t('remoteAccess.permanentHint') }}</p>
+          <label v-else>{{ t('remoteAccess.expires') }}<input v-model="expires" type="datetime-local" required></label>
         </template>
         <n-space><n-button @click="closeEditor">{{ t('remoteAccess.cancel') }}</n-button><n-button attr-type="submit" type="primary" :loading="busy">{{ t('remoteAccess.save') }}</n-button></n-space>
       </form>
@@ -138,18 +140,20 @@ function pending(e:SSHExecution){return ['pending_approval','awaiting_approval']
 function cancellable(e:SSHExecution){return pending(e)||['running','queued','dispatch_started','approved'].includes(e.state)}
 function itemLabel(item:any){return item.label||item.username||item.id}
 function routeLabel(id?:string){const r=state.routes.find(r=>r.id===id);return r?`${r.label}: ${r.hops.map(h=>{const s=state.servers.find(s=>s.id===h.server_id);const i=state.identities.find(i=>i.id===h.identity_id);return `${i?.username||'?'}@${s?.address||'?'}:${s?.port||22}`}).join(' → ')}`:id||'—'}
-function describe(kind:RemoteCollection,item:any){if(kind==='servers')return `${item.address}:${item.port} · ${(item.host_keys||[]).join(', ')}`;if(kind==='identities')return `${item.username} · ${item.auth_type} · ${item.public_fingerprint||''} ${item.public_key||''}`;if(kind==='routes')return routeLabel(item.id);return `${item.caller_id} · ${routeLabel(item.route_id)} · ${item.capability} · ${item.expires_at||'—'}`}
+function displayExpiry(value?:string){return !value || value.startsWith('0001-') ? '—' : value}
+function localExpiry(value?:string){if(!value || value.startsWith('0001-'))return '';const date=new Date(value);return Number.isNaN(date.getTime())?'':new Date(date.getTime()-date.getTimezoneOffset()*60000).toISOString().slice(0,16)}
+function describe(kind:RemoteCollection,item:any){if(kind==='servers')return `${item.address}:${item.port} · ${(item.host_keys||[]).join(', ')}`;if(kind==='identities')return `${item.username} · ${item.auth_type} · ${item.public_fingerprint||''} ${item.public_key||''}`;if(kind==='routes')return routeLabel(item.id);return `${item.caller_id} · ${routeLabel(item.route_id)} · ${item.capability} · ${item.permanent?t('remoteAccess.permanent'):displayExpiry(item.expires_at)}`}
 async function load(){loading.value=true;try{const s=await remoteAccessApi.snapshot();Object.assign(state,{...s,servers:s.servers||[],identities:s.identities||[],routes:s.routes||[],grants:s.grants||[],executions:s.executions||[]});pendingApprovals.value=await remoteAccessApi.approvals();keyOperations.value=await remoteAccessApi.keyOperations();loaded.value=true}catch{error.value=t('remoteAccess.error')}finally{loading.value=false}}
 async function mutate(action:()=>Promise<unknown>){if(busy.value)return;busy.value=true;error.value='';try{await action();await load()}catch{error.value=t('remoteAccess.error')}finally{busy.value=false}}
 function closeEditor(){editor.value=null;password.value='';privateKey.value='';passphrase.value='';form.value={}}
-function openEditor(kind:RemoteCollection,item?:any){closeEditor();editor.value=kind;editingID.value=item?.id||'';form.value=item?JSON.parse(JSON.stringify(item)):{label:'',enabled:true,address:'',port:22,auth_type:'password',username:'',caller_id:'dashboard',route_id:'',capability:'exec'};fingerprints.value=(item?.host_keys||[]).join('\n');hops.value=item?.hops?JSON.parse(JSON.stringify(item.hops)):[{server_id:'',identity_id:''}];expires.value=item?.expires_at?new Date(new Date(item.expires_at).getTime()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16):''}
+function openEditor(kind:RemoteCollection,item?:any){closeEditor();editor.value=kind;editingID.value=item?.id||'';form.value=item?JSON.parse(JSON.stringify(item)):{label:'',enabled:true,address:'',port:22,auth_type:'password',username:'',caller_id:'dashboard',route_id:'',capability:'exec',permanent:false};form.value.permanent=item?.permanent===true;fingerprints.value=(item?.host_keys||[]).join('\n');hops.value=item?.hops?JSON.parse(JSON.stringify(item.hops)):[{server_id:'',identity_id:''}];expires.value=localExpiry(item?.expires_at)}
 async function save(){
   if(!editor.value)return
   const kind=editor.value, f=form.value
   let data:Record<string,unknown>={enabled:f.enabled}
   if(kind==='servers')Object.assign(data,{label:f.label,address:f.address,port:f.port,host_keys:fingerprints.value.split(/\n/).map(s=>s.trim()).filter(Boolean),trust_source:f.trust_source})
   if(kind==='routes')Object.assign(data,{label:f.label,hops:hops.value})
-  if(kind==='grants')Object.assign(data,{caller_id:f.caller_id,route_id:f.route_id,capability:f.capability,expires_at:new Date(expires.value).toISOString(),...(f.file_root?{file_root:f.file_root}:{}),...(f.capability==='runbook'?{runbook_id:f.runbook_id,max_uses:f.max_uses}: {})})
+  if(kind==='grants')Object.assign(data,{caller_id:f.caller_id,route_id:f.route_id,capability:f.capability,permanent:f.permanent===true,...(f.permanent?{}:{expires_at:new Date(expires.value).toISOString()}),...(f.file_root?{file_root:f.file_root}:{}),...(f.capability==='runbook'?{runbook_id:f.runbook_id,max_uses:f.max_uses}: {})})
   if(kind==='identities'){
     const identity={username:f.username,auth_type:f.auth_type,enabled:f.enabled,...(f.expires_at?{expires_at:f.expires_at}:{})}
     const secret={...(password.value?{password:password.value}:{}),...(privateKey.value?{private_key:privateKey.value}:{}),...(passphrase.value?{passphrase:passphrase.value}:{})}

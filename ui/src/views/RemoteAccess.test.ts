@@ -36,4 +36,43 @@ describe('Remote SSH dashboard',()=>{
     expect(remoteAccessApi.save).toHaveBeenCalledWith('identities',expect.objectContaining({secret:{private_key:key}}),'i');w.unmount()
   })
 
+  async function editGrant(grant:Record<string,unknown>){
+    vi.mocked(remoteAccessApi.snapshot).mockResolvedValue({...structuredClone(snapshot),grants:[{id:'g',caller_id:'dashboard',route_id:'r',capability:'exec',route_revision:1,enabled:true,...grant}]})
+    const w=mount(RemoteAccess);await flushPromises()
+    await w.findAll('.n-tabs-tab').find(t=>t.text()==='Permissions')!.trigger('click');await flushPromises()
+    await button(w,'Edit').trigger('click');await flushPromises();return w
+  }
+  it('converts a temporary permission to permanent without sending a stale expiration',async()=>{
+    const w=await editGrant({expires_at:'2026-10-22T08:20:00Z'})
+    expect(w.find('input[type="datetime-local"]').attributes('required')).toBeDefined()
+    await w.findAll('input[type=checkbox]')[1]!.setValue(true)
+    expect(w.find('input[type="datetime-local"]').exists()).toBe(false)
+    await w.find('form').trigger('submit');await flushPromises()
+    expect(remoteAccessApi.save).toHaveBeenCalledWith('grants',{enabled:true,caller_id:'dashboard',route_id:'r',capability:'exec',permanent:true},'g');w.unmount()
+  })
+  it('preserves explicit permanent permissions with a backend zero date',async()=>{
+    const w=await editGrant({permanent:true,expires_at:'0001-01-01T00:00:00Z'})
+    expect(w.text()).toContain('No expiration');expect(w.text()).not.toContain('0001-')
+    expect(w.find('input[type="datetime-local"]').exists()).toBe(false)
+    await w.find('form').trigger('submit');await flushPromises()
+    expect(remoteAccessApi.save).toHaveBeenCalledWith('grants',expect.objectContaining({permanent:true}),'g')
+    expect(vi.mocked(remoteAccessApi.save).mock.calls[0]![1]).not.toHaveProperty('expires_at');w.unmount()
+  })
+  it('requires an expiration when changing a permanent permission to temporary',async()=>{
+    const w=await editGrant({permanent:true,expires_at:'0001-01-01T00:00:00Z'})
+    await w.findAll('input[type=checkbox]')[1]!.setValue(false)
+    const date=w.find('input[type="datetime-local"]');expect((date.element as HTMLInputElement).value).toBe('')
+    expect(date.attributes('required')).toBeDefined();await date.setValue('2026-10-22T10:00')
+    await w.find('form').trigger('submit');await flushPromises()
+    expect(remoteAccessApi.save).toHaveBeenCalledWith('grants',expect.objectContaining({permanent:false,expires_at:new Date('2026-10-22T10:00').toISOString()}),'g');w.unmount()
+  })
+  it('defaults new permissions to temporary without inferring permanence from a missing expiry',async()=>{
+    const w=await editGrant({expires_at:'0001-01-01T00:00:00Z'})
+    expect((w.findAll('input[type=checkbox]')[1]!.element as HTMLInputElement).checked).toBe(false)
+    expect((w.find('input[type="datetime-local"]').element as HTMLInputElement).value).toBe('')
+    await button(w,'Cancel').trigger('click');await flushPromises();await button(w,'Add').trigger('click');await flushPromises()
+    expect((w.findAll('input[type=checkbox]')[1]!.element as HTMLInputElement).checked).toBe(false)
+    expect(w.find('input[type="datetime-local"]').attributes('required')).toBeDefined();w.unmount()
+  })
+
 })

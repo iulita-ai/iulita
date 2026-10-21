@@ -86,8 +86,8 @@ func (s *Skill) executeOperation(ctx context.Context, sc engine.Scope, input jso
 		}
 		preview.WriteString("\n" + a.Command + "\n\nOnly this exact operation. Output and file contents remain private. Cancellation does not prove remote work stopped.")
 		now := time.Now()
-		decision, e := confirmer.Confirm(c, interact.Confirmation{Nonce: a.ExecutionID, OperationID: a.ExecutionID, Fingerprint: a.PlanHash, Reason: interact.ConfirmMutation, Preview: preview.String(), IssuedAt: now, ExpiresAt: a.ExpiresAt}, interact.Actor{UserID: sc.OwnerID})
-		return e == nil && decision.Approved && decision.Actor.UserID == sc.OwnerID, e
+		decision, e := confirmer.Confirm(c, interact.Confirmation{Nonce: a.ExecutionID, OperationID: a.ExecutionID, Fingerprint: a.PlanHash, Reason: interact.ConfirmSSHCommand, Preview: preview.String(), IssuedAt: now, ExpiresAt: a.ExpiresAt}, interact.Actor{UserID: sc.OwnerID})
+		return e == nil && decision.Approved && decision.Standing == "" && decision.Actor.UserID == sc.OwnerID, e
 	})
 	if err != nil {
 		return "", engine.ErrDenied

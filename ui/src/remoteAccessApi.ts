@@ -4,7 +4,7 @@ export interface SSHServer { id: string; label: string; address: string; port: n
 export interface SSHIdentity { id: string; username: string; auth_type: string; enabled: boolean; revision?: number; public_key?: string; public_fingerprint?: string }
 export interface SSHHop { server_id: string; identity_id: string }
 export interface SSHRoute { id: string; label: string; hops: SSHHop[]; enabled: boolean; revision?: number }
-export interface SSHGrant { id: string; caller_id: string; route_id: string; capability: string; route_revision: number; enabled: boolean; expires_at?: string; revision?: number }
+export interface SSHGrant { id: string; caller_id: string; route_id: string; capability: string; route_revision: number; enabled: boolean; permanent?: boolean; expires_at?: string; revision?: number }
 export interface SSHExecution { id: string; route_id?: string; state: string; plan_hash?: string; command?: string; created_at?: string; exit_code?: number; error_code?: string; artifact_id?: string; stdout_bytes?: number; stderr_bytes?: number; truncated?: boolean }
 export interface RemoteSnapshot { enabled: boolean; servers: SSHServer[]; identities: SSHIdentity[]; routes: SSHRoute[]; grants: SSHGrant[]; executions: SSHExecution[]; installations?: SSHInstallation[]; runbooks?: any[]; jobs?: any[] }
 export interface SSHKeyOperation {id:string;action:string;state:string;error_code?:string;installation_id?:string;created_at:string}

@@ -323,3 +323,61 @@ func TestEmptyPrivateFileArtifactCanBeUploaded(t *testing.T) {
 		t.Fatal("empty upload not dispatched")
 	}
 }
+
+type privateOutputConfirmer struct {
+	confirmer
+	delivered   string
+	owner       string
+	deliveryErr error
+	standing    string
+}
+
+func (c *privateOutputConfirmer) Confirm(ctx context.Context, a interact.Confirmation, actor interact.Actor) (interact.Decision, error) {
+	if a.Reason != interact.ConfirmSSHCommand {
+		return interact.Decision{}, errors.New("not SSH one-shot confirmation")
+	}
+	d, e := c.confirmer.Confirm(ctx, a, actor)
+	d.Standing = c.standing
+	return d, e
+}
+func (c *privateOutputConfirmer) DeliverPrivateResult(_ context.Context, actor interact.Actor, _, text string) error {
+	c.owner = actor.UserID
+	c.delivered = text
+	return c.deliveryErr
+}
+func TestPrivateSSHOutputDeliveredOutOfBandAndNeverReturnedToModel(t *testing.T) {
+	for _, failure := range []bool{false, true} {
+		t.Run(map[bool]string{false: "sent", true: "delivery failed"}[failure], func(t *testing.T) {
+			_, s, ctx, input, tr := fixture(t, "exec")
+			c := &privateOutputConfirmer{confirmer: confirmer{actor: "owner"}}
+			if failure {
+				c.deliveryErr = errors.New("channel unavailable")
+			}
+			out, err := s.Execute(interact.WithConfirmer(ctx, c), input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.owner != "owner" || !strings.Contains(c.delivered, "RAW-OUTPUT-CANARY") {
+				t.Fatal("owner did not receive private output")
+			}
+			if strings.Contains(out, "CANARY") || strings.Contains(out, "stdout:") {
+				t.Fatal("private bytes entered model result")
+			}
+			status := "sent_to_requesting_user"
+			if failure {
+				status = "available_in_remote_access"
+			}
+			if !strings.Contains(out, status) || tr.calls.Load() != 1 {
+				t.Fatal("incorrect delivery metadata or SSH retry")
+			}
+		})
+	}
+}
+func TestSSHStandingDecisionCannotAuthorizeCommand(t *testing.T) {
+	_, s, ctx, input, tr := fixture(t, "exec")
+	c := &privateOutputConfirmer{confirmer: confirmer{actor: "owner"}, standing: interact.StandingGlobal}
+	_, _ = s.Execute(interact.WithConfirmer(ctx, c), input)
+	if tr.calls.Load() != 0 || c.delivered != "" {
+		t.Fatal("standing decision dispatched SSH or delivered output")
+	}
+}

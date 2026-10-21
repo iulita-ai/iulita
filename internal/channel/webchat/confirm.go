@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -17,8 +18,10 @@ var confirmCounter atomic.Int64
 // chat socket that requested the operation, so it is bound to that
 // principal. Free-text or unknown answers deny (fail closed).
 type webchatConfirmer struct {
-	channel *Channel
-	chatID  string
+	channel           *Channel
+	chatID            string
+	deliveryMu        sync.Mutex
+	privateDeliveries map[string]func(context.Context, interact.Actor, string, string) error
 }
 
 // Confirm pushes the prompt over the authenticated socket and waits.
@@ -56,10 +59,36 @@ func (wc *webchatConfirmer) Confirm(ctx context.Context, action interact.Confirm
 	case answer := <-replyCh:
 		switch strings.TrimSpace(answer) {
 		case "confirm_approve":
+			wc.deliveryMu.Lock()
+			if wc.privateDeliveries == nil {
+				wc.privateDeliveries = make(map[string]func(context.Context, interact.Actor, string, string) error)
+			}
+			wc.privateDeliveries[action.OperationID] = func(deliverctx context.Context, actor interact.Actor, id, text string) error {
+				if deliverctx.Err() != nil || actor.UserID != expect.UserID || id != action.OperationID {
+					return fmt.Errorf("private result binding mismatch")
+				}
+				wc.channel.mu.RLock()
+				current := wc.channel.clients[wc.chatID]
+				wc.channel.mu.RUnlock()
+				if current != conn {
+					return fmt.Errorf("requesting connection changed")
+				}
+				if !wc.channel.sendToConn(conn, wsOutgoingMessage{Type: "private_result", Text: text, MessageID: "ssh-private-" + id, Timestamp: time.Now().Format(time.RFC3339)}) {
+					return fmt.Errorf("private result delivery failed")
+				}
+				return nil
+			}
+			wc.deliveryMu.Unlock()
 			return interact.Decision{Approved: true, Actor: expect, MaxBytes: action.MaxBytes}, nil
 		case "confirm_always_origin":
+			if action.Reason != interact.ConfirmMutation {
+				return interact.Decision{}, interact.ErrConfirmRejected
+			}
 			return interact.Decision{Approved: true, Actor: expect, MaxBytes: action.MaxBytes, Standing: interact.StandingOrigin}, nil
 		case "confirm_always":
+			if action.Reason != interact.ConfirmMutation {
+				return interact.Decision{}, interact.ErrConfirmRejected
+			}
 			return interact.Decision{Approved: true, Actor: expect, MaxBytes: action.MaxBytes, Standing: interact.StandingGlobal}, nil
 		default:
 			return interact.Decision{Approved: false, Actor: expect}, interact.ErrConfirmRejected
@@ -93,4 +122,17 @@ func (c *Channel) ConfirmerFor(chatID string) interact.ConfirmationAsker {
 		return nil
 	}
 	return &webchatConfirmer{channel: c, chatID: chatID}
+}
+
+// DeliverPrivateResult bypasses assistant history/model context and sends only
+// to the same authenticated websocket that requested the confirmation.
+func (wc *webchatConfirmer) DeliverPrivateResult(ctx context.Context, actor interact.Actor, executionID, text string) error {
+	wc.deliveryMu.Lock()
+	deliver := wc.privateDeliveries[executionID]
+	delete(wc.privateDeliveries, executionID)
+	wc.deliveryMu.Unlock()
+	if deliver == nil {
+		return fmt.Errorf("no verified private recipient")
+	}
+	return deliver(ctx, actor, executionID, text)
 }

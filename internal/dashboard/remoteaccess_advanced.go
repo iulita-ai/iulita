@@ -131,7 +131,7 @@ func (s *Server) remoteSchedule(c *fiber.Ctx) error {
 	authorized := false
 	for id := range snapshot.Grants {
 		g := snapshot.Grants[id]
-		if g.Enabled && g.CallerID == "scheduler" && g.RouteID == book.RouteID && g.RunbookID == book.ID && g.RunbookRevision == book.Revision && g.Capability == "runbook" && g.ExpiresAt.After(time.Now()) && g.MaxUses > g.Uses {
+		if g.ActiveAt(time.Now()) && g.CallerID == "scheduler" && g.RouteID == book.RouteID && g.RunbookID == book.ID && g.RunbookRevision == book.Revision && g.Capability == "runbook" && g.MaxUses > g.Uses {
 			authorized = true
 			break
 		}
