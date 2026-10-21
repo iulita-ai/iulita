@@ -251,6 +251,7 @@
     "jobDeleted": "Job deleted"
   },
   "chat": {
+    "privateResultHint": "Private command output. It is not sent to the assistant or saved in chat history.",
     "title": "Chat",
     "connected": "Connected",
     "disconnected": "Disconnected",
@@ -994,6 +995,8 @@
     "details": "Connection details"
   },
   "remoteAccess": {
+    "permanent": "No expiration",
+    "permanentHint": "This permission remains active until you disable it. Commands still require confirmation.",
     "title": "Remote access",
     "subtitle": "Native SSH · Private keys remain in the encrypted vault",
     "servers": "Servers",

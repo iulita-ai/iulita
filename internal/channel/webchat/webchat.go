@@ -37,7 +37,7 @@ type rememberAck struct {
 
 // wsOutgoingMessage is the JSON structure sent to the browser.
 type wsOutgoingMessage struct {
-	Type        string            `json:"type"` // "message", "stream_edit", "stream_done", "status", "prompt", "remember_ack"
+	Type        string            `json:"type"` // "message", "private_result", "stream_edit", "stream_done", "status", "prompt", "remember_ack"
 	Text        string            `json:"text"`
 	MessageID   string            `json:"message_id,omitempty"`
 	PromptID    string            `json:"prompt_id,omitempty"`
@@ -269,11 +269,11 @@ func (c *Channel) processMessage(ctx context.Context, conn *websocket.Conn, msg 
 	c.cacheMessage(msgIDStr, msg.ChatID, response)
 }
 
-func (c *Channel) sendToConn(conn *websocket.Conn, msg wsOutgoingMessage) {
+func (c *Channel) sendToConn(conn *websocket.Conn, msg wsOutgoingMessage) bool {
 	data, err := json.Marshal(msg)
 	if err != nil {
 		c.logger.Error("webchat: failed to marshal message", zap.Error(err))
-		return
+		return false
 	}
 	// Find the per-connection write mutex to serialize writes.
 	c.mu.RLock()
@@ -289,22 +289,24 @@ func (c *Channel) sendToConn(conn *websocket.Conn, msg wsOutgoingMessage) {
 	c.mu.RUnlock()
 
 	if wmu == nil {
-		return // The connection was replaced or disconnected.
+		return false // The connection was replaced or disconnected.
 	}
 	wmu.Lock()
 	defer wmu.Unlock()
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if c.clients[chatID] != conn || c.writeMu[chatID] != wmu {
-		return
+		return false
 	}
 	if err := conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
 		c.logger.Debug("webchat write deadline failed", zap.Error(err))
-		return
+		return false
 	}
 	if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
 		c.logger.Debug("webchat: failed to write message", zap.Error(err))
+		return false
 	}
+	return true
 }
 
 // cachedMsg stores message content alongside its owner for security validation.

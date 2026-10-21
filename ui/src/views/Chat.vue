@@ -67,6 +67,12 @@
           <n-text v-else :depth="3" style="font-size: 12px">{{ t('chat.answered') }}</n-text>
           <div style="font-size: 11px; margin-top: 4px; opacity: 0.6;">{{ msg.timestamp }}</div>
         </n-card>
+        <!-- Private command output is ephemeral and never an assistant message. -->
+        <n-card v-else-if="msg.role === 'private_result'" class="private-result" size="small" style="max-width: 90%;">
+          <n-text :depth="3">{{ t('chat.privateResultHint') }}</n-text>
+          <pre dir="auto" style="white-space: pre-wrap; overflow-wrap: anywhere; max-height: 60vh; overflow: auto;">{{ msg.text }}</pre>
+          <n-text :depth="3" style="font-size: 11px;">{{ msg.timestamp }}</n-text>
+        </n-card>
         <!-- Regular message -->
         <div
           v-else
@@ -196,7 +202,7 @@ const { setLocale } = useLocale()
 interface ChatMessage {
   id: string
   dbId?: number // database ID for pagination
-  role: 'user' | 'assistant' | 'prompt'
+  role: 'user' | 'assistant' | 'prompt' | 'private_result'
   text: string
   timestamp: string
   messageId?: string // WS message_id for bookmark correlation
@@ -476,6 +482,20 @@ on('status', (payload: any) => {
       if (isNearBottom()) scrollToBottom(true)
       break
   }
+  if (isNearBottom()) scrollToBottom(true)
+})
+
+// Private output stays in this mounted view only: no history or bookmark identifiers.
+on('private_result', (payload: unknown) => {
+  if (!payload || typeof payload !== 'object' || !('text' in payload) || typeof payload.text !== 'string') return
+  const result = payload as { text: string; timestamp?: string }
+  messages.value.push({
+    id: `private-${Date.now()}-${messages.value.length}`,
+    role: 'private_result',
+    text: result.text,
+    timestamp: result.timestamp ? formatTime(result.timestamp) : new Date().toLocaleTimeString(),
+  })
+  trimMessages()
   if (isNearBottom()) scrollToBottom(true)
 })
 

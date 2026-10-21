@@ -88,7 +88,20 @@ type Grant struct {
 	RouteRevision   int       `json:"route_revision"`
 	Capability      string    `json:"capability"`
 	ExpiresAt       time.Time `json:"expires_at"`
+	Permanent       bool      `json:"permanent"`
 	Enabled         bool      `json:"enabled"`
+}
+
+// ActiveAt reports whether an enabled grant has an explicit valid lifetime.
+// A missing expiry on a legacy timed grant never authorizes access.
+func (g Grant) ActiveAt(now time.Time) bool {
+	if !g.Enabled {
+		return false
+	}
+	if g.Permanent {
+		return g.ExpiresAt.IsZero()
+	}
+	return g.ExpiresAt.After(now)
 }
 
 // Secret is write-only authentication material supplied outside model input.
@@ -529,7 +542,9 @@ func (s *Service) PutGrant(sc Scope, x Grant) (Grant, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	r, ok := s.data.Routes[x.RouteID]
-	if !validScope(sc) || !ok || r.OwnerID != sc.OwnerID || x.CallerID == "" || !validCapability(x.Capability) || !x.ExpiresAt.After(time.Now()) || x.ExpiresAt.After(time.Now().Add(24*time.Hour)) {
+	now := time.Now()
+	validLifetime := x.Permanent && x.ExpiresAt.IsZero() || !x.Permanent && x.ExpiresAt.After(now) && !x.ExpiresAt.After(now.Add(24*time.Hour))
+	if !validScope(sc) || !ok || r.OwnerID != sc.OwnerID || x.CallerID == "" || !validCapability(x.Capability) || !validLifetime {
 		return x, ErrDenied
 	}
 	if x.ID != "" {
@@ -709,7 +724,7 @@ func (s *Service) plan(sc Scope, req ExecuteRequest) (Approval, error) {
 	var matched Grant
 	//nolint:gocritic // Select an immutable grant snapshot for the consent hash.
 	for _, g := range s.data.Grants {
-		if g.Enabled && g.OwnerID == sc.OwnerID && g.CallerID == sc.CallerID && g.RouteID == r.ID && g.RouteRevision == r.Revision && g.Capability == req.Capability && g.ExpiresAt.After(time.Now()) && grantMatches(g, req, s.data.Runbooks) {
+		if g.ActiveAt(time.Now()) && g.OwnerID == sc.OwnerID && g.CallerID == sc.CallerID && g.RouteID == r.ID && g.RouteRevision == r.Revision && g.Capability == req.Capability && grantMatches(g, req, s.data.Runbooks) {
 			granted = true
 			if matched.ID == "" || g.ID < matched.ID {
 				matched = g
@@ -738,7 +753,7 @@ func (s *Service) plan(sc Scope, req ExecuteRequest) (Approval, error) {
 		}
 		a.Servers = append(a.Servers, v)
 		a.Identities = append(a.Identities, i)
-		if !i.ExpiresAt.IsZero() && i.ExpiresAt.Before(a.AuthorizationExpiresAt) {
+		if !i.ExpiresAt.IsZero() && (a.AuthorizationExpiresAt.IsZero() || i.ExpiresAt.Before(a.AuthorizationExpiresAt)) {
 			a.AuthorizationExpiresAt = i.ExpiresAt
 		}
 		vhash, ve := s.vault.PrivateVersion(context.Background(), sc.OwnerID, i.CredentialRef, "ssh_identity")
@@ -871,7 +886,7 @@ func (s *Service) executeWithTransport(ctx context.Context, sc Scope, req Execut
 	a.ExecutionID = x.ID
 	a.ExpiresAt = time.Now().Add(5 * time.Minute)
 	deadline := time.Now().Add(time.Duration(req.TimeoutSeconds+300) * time.Second)
-	if a.AuthorizationExpiresAt.Before(deadline) {
+	if !a.AuthorizationExpiresAt.IsZero() && a.AuthorizationExpiresAt.Before(deadline) {
 		deadline = a.AuthorizationExpiresAt
 	}
 	runctx, cancel := context.WithDeadline(ctx, deadline)
@@ -959,7 +974,7 @@ func (s *Service) executeWithTransport(ctx context.Context, sc Scope, req Execut
 		consumed := false
 		//nolint:gocritic // Copy and persist only the selected authorization grant.
 		for id, g := range s.data.Grants {
-			if g.ID == a.GrantID && g.Enabled && g.OwnerID == sc.OwnerID && g.CallerID == sc.CallerID && g.RouteID == req.RouteID && g.RouteRevision == a.Route.Revision && g.Capability == req.Capability && grantMatches(g, req, s.data.Runbooks) && g.ExpiresAt.After(time.Now()) {
+			if g.ID == a.GrantID && g.ActiveAt(time.Now()) && g.OwnerID == sc.OwnerID && g.CallerID == sc.CallerID && g.RouteID == req.RouteID && g.RouteRevision == a.Route.Revision && g.Capability == req.Capability && grantMatches(g, req, s.data.Runbooks) {
 				g.Uses++
 				s.data.Grants[id] = g
 				consumed = true
