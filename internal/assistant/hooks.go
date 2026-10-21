@@ -6,6 +6,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/iulita-ai/iulita/internal/channel"
+	"github.com/iulita-ai/iulita/internal/skill"
 )
 
 // PreprocessorHook runs before the LLM call, modifying the incoming message.
@@ -31,6 +32,9 @@ func (a *Assistant) runPreHooks(ctx context.Context, msg *channel.IncomingMessag
 
 // runPostHooks executes all registered postprocessor hooks in order.
 func (a *Assistant) runPostHooks(ctx context.Context, response *string) {
+	if skill.RemoteOutputUsedInTurn(ctx) {
+		return
+	}
 	for _, h := range a.postHooks {
 		if err := h.Process(ctx, response); err != nil {
 			a.logger.Warn("post-hook failed", zap.String("hook", h.Name()), zap.Error(err))

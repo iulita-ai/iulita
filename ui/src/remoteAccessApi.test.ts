@@ -9,7 +9,7 @@ describe('SSH API safety',()=>{
   })
   it('never replays a command or displays server response bodies after authentication failure',async()=>{
     const fetch=vi.fn().mockResolvedValue(new Response('SECRET',{status:401}));vi.stubGlobal('fetch',fetch)
-    await expect(remoteAccessApi.execute({command:'uptime'})).rejects.toThrow('Remote access request failed (401)')
+    await expect(remoteAccessApi.execute({route_id:'route',command:'uptime'})).rejects.toThrow('Remote access request failed (401)')
     expect(fetch).toHaveBeenCalledTimes(1)
   })
   it('binds explicit execution approval to the preview hash',async()=>{
