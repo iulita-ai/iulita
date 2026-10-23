@@ -282,7 +282,18 @@ type RemoteAccessConfig struct {
 	WorkerKeyFile string `koanf:"worker_key_file"`
 }
 
+// MCPConfig controls owner-managed MCP connections. Network destinations are
+// deployment-owned; the dashboard cannot broaden this allowlist.
+type MCPConfig struct {
+	Enabled        bool     `koanf:"enabled"`
+	AllowedOrigins []string `koanf:"allowed_origins"`
+	OAuthRedirect  string   `koanf:"oauth_redirect"`
+	WorkerURL      string   `koanf:"worker_url"`
+	WorkerKeyFile  string   `koanf:"worker_key_file"`
+}
+
 type SkillsConfig struct {
+	MCP          MCPConfig            `koanf:"mcp"`
 	RemoteAccess RemoteAccessConfig   `koanf:"remote_access"`
 	Translate    TranslationConfig    `koanf:"translate"`
 	Dir          string               `koanf:"dir"`

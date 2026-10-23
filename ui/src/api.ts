@@ -1,3 +1,4 @@
+import type { MCPConnection, MCPPlan, MCPSnapshot } from "./mcp"
 export interface SystemInfo {
   app: string
   version: string
@@ -1265,4 +1266,22 @@ export const api = {
     get<ImportedConversation[]>(`/api/import/conversations?limit=${limit}&offset=${offset}`),
   getImportedConversationMessages: (uuid: string) =>
     get<ImportedMessage[]>(`/api/import/conversations/${encodeURIComponent(uuid)}`),
+}
+
+// Owner-scoped MCP endpoints. No credential value is ever returned.
+export const mcpAPI = {
+ update: (id:string, body:unknown) => put<MCPConnection>(`/api/mcp/connections/${encodeURIComponent(id)}`,body),
+ snapshot: () => get<MCPSnapshot>('/api/mcp'),
+ connection: (id: string) => get<MCPConnection>(`/api/mcp/connections/${encodeURIComponent(id)}`),
+ create: (draft: unknown) => post<MCPConnection>('/api/mcp/connections', draft),
+ action: (id: string, action: string, revision: number) => post<MCPConnection>(`/api/mcp/connections/${encodeURIComponent(id)}/actions`, {action, revision}),
+ credentials: (id: string, body: unknown) => post<void>(`/api/mcp/connections/${encodeURIComponent(id)}/credentials`, body),
+ review: (id: string, body: unknown) => post<void>(`/api/mcp/connections/${encodeURIComponent(id)}/review`, body),
+ plans: () => get<MCPPlan[]>('/api/mcp/plans'),
+ prepare: (body: unknown) => post<MCPPlan>('/api/mcp/plans', body),
+ decide: (p: MCPPlan, approved: boolean) => post(`/api/mcp/plans/${encodeURIComponent(p.id)}/decision`, { hash:p.hash, approved }),
+ cancel: (id: string) => post(`/api/mcp/executions/${encodeURIComponent(id)}/cancel`),
+ artifact: (id: string) => get<unknown>(`/api/mcp/artifacts/${encodeURIComponent(id)}`),
+ enabled: (enabled: boolean) => post('/api/mcp/policy', {enabled}),
+ oauth: (id: string, body: unknown) => post<{url:string}>(`/api/mcp/connections/${encodeURIComponent(id)}/oauth`, body),
 }

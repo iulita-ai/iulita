@@ -15,6 +15,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/credential"
 	"github.com/iulita-ai/iulita/internal/domain"
 	"github.com/iulita-ai/iulita/internal/llm"
+	"github.com/iulita-ai/iulita/internal/mcpclient"
 	"github.com/iulita-ai/iulita/internal/modelruntime"
 	"github.com/iulita-ai/iulita/internal/models"
 	"github.com/iulita-ai/iulita/internal/remoteaccess"
@@ -143,6 +144,8 @@ type CredentialManager interface {
 
 // Config holds dependencies for the dashboard server.
 type Config struct {
+	MCP                    *mcpclient.Service
+	MCPOAuthRedirect       string
 	RemoteAccess           *remoteaccess.Service
 	Address                string
 	Store                  storage.Repository
@@ -173,6 +176,8 @@ type Config struct {
 
 // Server serves the dashboard API and embedded SPA.
 type Server struct {
+	mcp                    *mcpclient.Service
+	mcpOAuthRedirect       string
 	terminalTickets        *terminalTicketStore
 	remoteConfirms         *remoteConfirmations
 	remoteAccess           *remoteaccess.Service
@@ -206,6 +211,7 @@ type Server struct {
 // New creates a new dashboard server.
 func New(cfg Config) *Server {
 	s := &Server{
+		mcp: cfg.MCP, mcpOAuthRedirect: cfg.MCPOAuthRedirect,
 		terminalTickets:        newTerminalTicketStore(),
 		remoteConfirms:         newRemoteConfirmations(),
 		remoteAccess:           cfg.RemoteAccess,
@@ -319,6 +325,10 @@ func New(cfg Config) *Server {
 		api.Get("/remote-access/terminals/connect/:ticket", s.remoteTerminalUpgrade)
 	}
 
+	if s.mcp != nil && s.authService != nil {
+		api.Get("/mcp/oauth/callback", s.mcpOAuthCallback)
+	}
+
 	// Protected routes: require JWT when auth is enabled.
 	if s.authService != nil {
 		api.Use(auth.FiberMiddleware(s.authService))
@@ -326,6 +336,10 @@ func New(cfg Config) *Server {
 
 	if s.remoteAccess != nil && s.authService != nil {
 		s.registerRemoteAccess(api)
+	}
+
+	if s.mcp != nil && s.authService != nil {
+		s.registerMCP(api)
 	}
 
 	// Owner-scoped artifact management (authenticated users only).

@@ -16,7 +16,12 @@ const router = createRouter({
       component: () => import('./views/Dashboard.vue'),
     },
     {
-      path: '/facts',
+      path: '/mcp',
+ name: 'mcp',
+ component: () => import('./views/MCP.vue'),
+ },
+ {
+ path: '/facts',
       name: 'facts',
       component: () => import('./views/Facts.vue'),
     },
