@@ -336,6 +336,11 @@ func (s *Skill) Execute(ctx context.Context, input json.RawMessage) (string, err
 			if errors.Is(requestErr, mcpclient.ErrApproval) {
 				return encode(map[string]any{"state": "approval_pending", "plan_id": p.ID, "message": "Approve in your private MCP settings."})
 			}
+			// An explicit refusal (or an expired confirmation) must not leave a
+			// runnable approval card behind in another authenticated surface.
+			if rejectErr := s.Service.Approve(context.WithoutCancel(ctx), sc, p.ID, p.Hash, false); rejectErr != nil && !errors.Is(rejectErr, mcpclient.ErrConflict) {
+				return "", rejectErr
+			}
 			return "", requestErr
 		}
 		if requestErr := s.Service.Approve(ctx, sc, p.ID, p.Hash, true); requestErr != nil {

@@ -17,7 +17,7 @@ func TestMCPRecordCASAndAuditAreAtomic(t *testing.T) {
 	if e = s.RunMigrations(ctx); e != nil {
 		t.Fatal(e)
 	}
-	r := &domain.MCPRecord{ID: "record", OwnerID: "owner", ActorID: "owner", Kind: "connection", Revision: 1, Payload: "encrypted-v1"}
+	r := &domain.MCPRecord{ID: "record", OwnerID: "owner", ActorID: "owner", Kind: "connection", Action: "connection_created", State: "draft:stopped", Revision: 1, Payload: "encrypted-v1"}
 	if e = s.SaveMCPRecord(ctx, r, 0); e != nil {
 		t.Fatal(e)
 	}
@@ -25,7 +25,7 @@ func TestMCPRecordCASAndAuditAreAtomic(t *testing.T) {
 		t.Fatal("foreign record readable")
 	}
 	events, e := s.ListMCPEvents(ctx, "owner")
-	if e != nil || len(events) != 1 || events[0].ActorID != "owner" {
+	if e != nil || len(events) != 1 || events[0].ActorID != "owner" || events[0].Action != "connection_created" || events[0].State != "draft:stopped" {
 		t.Fatal(events, e)
 	}
 	r.Revision = 2
@@ -46,5 +46,31 @@ func TestMCPRecordCASAndAuditAreAtomic(t *testing.T) {
 	old, e := s.GetMCPRecord(ctx, "owner", r.ID, "connection")
 	if e != nil || old.Revision != 1 || old.Payload != "encrypted-v1" {
 		t.Fatal("transaction failed to roll back", old, e)
+	}
+}
+
+func TestMCPAuditMigrationPreservesOldEvents(t *testing.T) {
+	ctx := context.Background()
+	s, e := New(":memory:")
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer s.Close()
+	_, e = s.db.ExecContext(ctx, `CREATE TABLE mcp_record_events (id INTEGER PRIMARY KEY, owner_id TEXT NOT NULL, actor_id TEXT NOT NULL, record_id TEXT NOT NULL, kind TEXT NOT NULL, revision INTEGER NOT NULL, created_at TIMESTAMP NOT NULL)`)
+	if e != nil {
+		t.Fatal(e)
+	}
+	_, e = s.db.ExecContext(ctx, `INSERT INTO mcp_record_events VALUES (1,'owner','owner','record','connection',1,CURRENT_TIMESTAMP)`)
+	if e != nil {
+		t.Fatal(e)
+	}
+	for range 2 {
+		if e = s.RunMigrations(ctx); e != nil {
+			t.Fatal(e)
+		}
+	}
+	events, e := s.ListMCPEvents(ctx, "owner")
+	if e != nil || len(events) != 1 || events[0].RecordID != "record" || events[0].Action != "" {
+		t.Fatal(events, e)
 	}
 }

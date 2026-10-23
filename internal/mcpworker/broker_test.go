@@ -47,7 +47,7 @@ func TestWorkerProfilesIsolationAndReplay(t *testing.T) {
 		}
 	}
 	args := strings.Join(PodmanArgs(Profile{Image: image}, "fixture", true), " ")
-	for _, required := range []string{"--pull=never", "--read-only", "--network none", "--user 65532:65532", "--cap-drop ALL", "--security-opt no-new-privileges", "--pids-limit 64", "--env MCP_ACCESS_TOKEN"} {
+	for _, required := range []string{"--timeout 360", "--log-driver none", "--image-volume ignore", "--pull=never", "--read-only", "--network none", "--user 65532:65532", "--cap-drop ALL", "--security-opt no-new-privileges", "--pids-limit 64", "--env MCP_ACCESS_TOKEN"} {
 		if !strings.Contains(args, required) {
 			t.Fatal(args)
 		}
@@ -135,5 +135,49 @@ func TestSignedBrokerToRealStdioProcess(t *testing.T) {
 	}
 	if result.Content[0].(*sdk.TextContent).Text != "true" {
 		t.Fatal("worker inherited ambient secrets or lost authorized credential")
+	}
+}
+
+func TestBrokerShutdownDrainsRealProcess(t *testing.T) {
+	key := make([]byte, 32)
+	b, e := NewBroker(key, map[string]Profile{"fixture": {Image: "fixture@sha256:" + strings.Repeat("a", 64)}}, filepath.Join(t.TempDir(), "state"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	var process *exec.Cmd
+	started := make(chan struct{})
+	b.command = func(ctx context.Context, _ []string) *exec.Cmd {
+		process = exec.CommandContext(ctx, os.Args[0], "-test.run=^TestWorkerProcess$", "--", "mcp-test-helper")
+		close(started)
+		return process
+	}
+	server := httptest.NewTLSServer(b)
+	defer server.Close()
+	client, e := NewClient("wss"+strings.TrimPrefix(server.URL, "https"), key)
+	if e != nil {
+		t.Fatal(e)
+	}
+	client.Dialer.TLSClientConfig = server.Client().Transport.(*http.Transport).TLSClientConfig
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	transport, e := client.Transport(ctx, "owner", "connection", 1, "fixture", "")
+	if e != nil {
+		t.Fatal(e)
+	}
+	<-started
+	sdkClient := sdk.NewClient(&sdk.Implementation{Name: "client", Version: "1"}, &sdk.ClientOptions{Capabilities: &sdk.ClientCapabilities{}})
+	session, e := sdkClient.Connect(ctx, transport, nil)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer session.Close()
+	if e = b.Shutdown(ctx); e != nil {
+		t.Fatal(e)
+	}
+	if process.ProcessState == nil {
+		t.Fatal("shutdown returned before process was reaped")
+	}
+	if _, e = session.ListTools(ctx, nil); e == nil {
+		t.Fatal("session survived shutdown")
 	}
 }

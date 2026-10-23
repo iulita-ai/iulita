@@ -21,7 +21,7 @@ import (
 
 func safeOrigin(raw string) string {
 	u, e := url.Parse(raw)
-	if e != nil {
+	if e != nil || u.Scheme == "" || u.Host == "" {
 		return ""
 	}
 	return strings.ToLower(u.Scheme + "://" + u.Host)

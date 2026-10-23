@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/iulita-ai/iulita/internal/config"
 	"github.com/iulita-ai/iulita/internal/credential"
@@ -241,5 +242,82 @@ func TestSingleWriterAndScope(t *testing.T) {
 		if _, e := f.s.Snapshot(context.Background(), sc); !errors.Is(e, ErrDenied) {
 			t.Fatal(sc, e)
 		}
+	}
+}
+
+func TestPlanConversationBindingAndAdmission(t *testing.T) {
+	f := fixture(t)
+	c, it := setup(t, f)
+	f.sc = Scope{OwnerID: "owner", CallerID: "main", ConversationID: "private-a", Private: true}
+	p := prepare(t, f, c, it)
+	other := f.sc
+	other.ConversationID = "private-b"
+	if err := f.s.Approve(context.Background(), other, p.ID, p.Hash, true); !errors.Is(err, ErrConflict) {
+		t.Fatal(err)
+	}
+	if err := f.s.Approve(context.Background(), f.sc, p.ID, p.Hash, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.Execute(context.Background(), other, p.ID); !errors.Is(err, ErrApproval) {
+		t.Fatal(err)
+	}
+	if err := f.s.SetEnabled(false); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.Start(context.Background(), f.sc, p.ID); err == nil {
+		t.Fatal("acknowledged rejected execution")
+	}
+	if f.protocol.calls.Load() != 0 {
+		t.Fatal("dispatched rejected execution")
+	}
+}
+
+func TestIdleConnectionAndCatalogRefreshStayDisabled(t *testing.T) {
+	f := fixture(t)
+	c, it := setup(t, f)
+	f.s.mu.Lock()
+	f.s.connections[c.ID].CheckedAt = time.Now().Add(-time.Hour)
+	f.s.mu.Unlock()
+	_ = prepare(t, f, c, it)
+	c, _ = f.s.Connection(context.Background(), f.sc, c.ID)
+	c, err := f.s.Action(context.Background(), f.sc, c.ID, "disconnect", c.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err = f.s.Action(context.Background(), f.sc, c.ID, "refresh_catalog", c.Revision)
+	if err != nil || c.Desired != "disabled" {
+		t.Fatal(c, err)
+	}
+}
+
+func TestClosedServiceCannotMutateReleasedStore(t *testing.T) {
+	f := fixture(t)
+	if e := f.s.Close(); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := f.s.Create(context.Background(), f.sc, Draft{Label: "late", Endpoint: "https://fixture.example/mcp", Domain: "personal"}); !errors.Is(e, ErrUnavailable) {
+		t.Fatal(e)
+	}
+	if e := f.s.SetEnabled(true); !errors.Is(e, ErrUnavailable) {
+		t.Fatal(e)
+	}
+}
+
+func TestArtifactQuotaDoesNotEraseKnownProviderOutcome(t *testing.T) {
+	f := fixture(t)
+	c, it := setup(t, f)
+	p := prepare(t, f, c, it)
+	if e := f.s.Approve(context.Background(), f.sc, p.ID, p.Hash, true); e != nil {
+		t.Fatal(e)
+	}
+	f.s.mu.Lock()
+	f.s.artifacts["quota-fixture"] = artifactInfo{owner: f.sc.OwnerID, bytes: 100 << 20, expires: time.Now().Add(time.Hour)}
+	f.s.mu.Unlock()
+	result, e := f.s.Execute(context.Background(), f.sc, p.ID)
+	if e != nil || result.State != "result_unavailable" || result.SideEffectState != "provider_reported_complete" || result.ArtifactID != "" {
+		t.Fatal(result, e)
+	}
+	if _, e = f.s.Execute(context.Background(), f.sc, p.ID); e != nil || f.protocol.calls.Load() != 1 {
+		t.Fatal("storage failure caused replay", e)
 	}
 }

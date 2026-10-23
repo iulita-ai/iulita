@@ -1,17 +1,17 @@
 <template>
   <n-space vertical :size="20" class="mcp-page">
-    <n-page-header :title="t('mcp.title')" :subtitle="t('mcp.subtitle')">
-      <template #extra
-        ><n-space
-          ><n-button :loading="loading" @click="load">{{
-            t("mcp.refresh")
-          }}</n-button
-          ><n-button type="primary" @click="newDraft">{{
-            t("mcp.add")
-          }}</n-button></n-space
-        ></template
-      >
-    </n-page-header>
+    <header class="mcp-header">
+      <div>
+        <h1>{{ t("mcp.title") }}</h1>
+        <p>{{ t("mcp.subtitle") }}</p>
+      </div>
+      <n-space>
+        <n-button :loading="loading" @click="load()">{{
+          t("mcp.refresh")
+        }}</n-button>
+        <n-button type="primary" @click="newDraft">{{ t("mcp.add") }}</n-button>
+      </n-space>
+    </header>
     <n-alert v-if="error" type="error" role="alert">{{ error }}</n-alert>
     <n-alert v-if="loaded && !snapshot.enabled" type="warning">{{
       t("mcp.disabledHint")
@@ -39,6 +39,8 @@
           :key="c.id"
           class="mcp-row"
           :class="{ selected: selected?.id === c.id }"
+          :aria-current="selected?.id === c.id ? 'true' : undefined"
+          :disabled="busy"
           @click="select(c.id)"
         >
           <strong>{{ c.label }}</strong
@@ -50,11 +52,16 @@
         <n-space vertical :size="16">
           <div>
             <h2>{{ selected.label }}</h2>
-            <n-text depth="3">{{ selected.endpoint }}</n-text>
+            <n-text depth="3">{{
+              selected.transport === "stdio"
+                ? selected.profile
+                : selected.endpoint
+            }}</n-text>
           </div>
           <n-space
             ><n-tag
               :type="
+                snapshot.enabled &&
                 selected.desired_state === 'enabled' &&
                 selected.runtime_state === 'ready'
                   ? 'success'
@@ -62,7 +69,18 @@
               "
               >{{ status(selected) }}</n-tag
             ><n-tag>{{ t(`mcp.domain.${selected.data_domain}`) }}</n-tag
-            ><n-text depth="3">{{ t(`mcp.auth.${selected.auth_mode}`,selected.auth_mode) }}</n-text></n-space
+            ><n-text depth="3">{{
+              t(`mcp.auth.${selected.auth_mode}`, selected.auth_mode)
+            }}</n-text></n-space
+          >
+          <n-alert
+            v-if="
+              ['expired', 'refresh_failed', 'revoked'].includes(
+                selected.auth_state,
+              )
+            "
+            type="warning"
+            >{{ t("mcp.authAttention") }}</n-alert
           >
           <n-alert v-if="selected.error_code" type="warning"
             >{{ t("mcp.connectionFailed") }} ({{
@@ -157,6 +175,7 @@
                         busy ||
                         !item.allowed ||
                         selected.desired_state !== 'enabled' ||
+                        selected.runtime_state !== 'ready' ||
                         !snapshot.enabled
                       "
                       @click="openCall(item)"
@@ -203,7 +222,7 @@
                     t("mcp.saveAccess")
                   }}</n-button>
                 </form>
-                <details>
+                <details v-if="selected.transport === 'http'">
                   <summary>OAuth</summary>
                   <form class="mcp-form" @submit.prevent="startOAuth">
                     <label
@@ -282,6 +301,9 @@
         ><n-alert v-if="x.state === 'unknown_outcome'" type="warning">{{
           t("mcp.unknown")
         }}</n-alert
+        ><n-alert v-if="x.state === 'result_unavailable'" type="warning">{{
+          t("mcp.resultUnavailable")
+        }}</n-alert
         ><n-space
           ><n-button
             v-if="
@@ -306,6 +328,7 @@
       class="mcp-modal"
     >
       <form @submit.prevent="create" class="mcp-form">
+        <n-alert v-if="error" type="error" role="alert">{{ error }}</n-alert>
         <label
           >{{ t("mcp.name")
           }}<n-input
@@ -352,7 +375,9 @@
             :aria-label="t('mcp.results')"
             :placeholder="t('mcp.results')"
         /></label>
-        <n-alert type="info">{{ t("mcp.draftHint") }}</n-alert>
+        <n-alert type="info">{{
+          t(editing ? "mcp.editHint" : "mcp.draftHint")
+        }}</n-alert>
         <n-button
           type="primary"
           attr-type="submit"
@@ -372,6 +397,7 @@
       :title="t('mcp.reviewCall')"
       class="mcp-modal"
       ><form class="mcp-form" @submit.prevent="prepare">
+        <n-alert v-if="error" type="error" role="alert">{{ error }}</n-alert>
         <p>{{ callItem?.title || callItem?.name }}</p>
         <label
           >{{ t("mcp.arguments")
@@ -408,7 +434,6 @@ import {
   NEmpty,
   NInput,
   NModal,
-  NPageHeader,
   NSelect,
   NSpace,
   NSwitch,
@@ -417,11 +442,13 @@ import {
   NTag,
   NText,
   useDialog,
+  useThemeVars,
 } from "naive-ui";
 import { isAdmin, mcpAPI } from "../api";
 import type { MCPConnection, MCPItem, MCPPlan, MCPSnapshot } from "../mcp";
 const { t, locale } = useI18n();
 const dialog = useDialog();
+const theme = useThemeVars();
 const snapshot = ref<MCPSnapshot>({
   enabled: false,
   connections: [],
@@ -445,6 +472,9 @@ const argumentsJSON = ref("{}"),
   issuer = ref(""),
   clientID = ref(""),
   scopes = ref("");
+const callConnection = ref<MCPConnection | null>(null);
+let selectionVersion = 0;
+let disposed = false;
 const editing = ref<string | null>(null);
 const editRevision = ref(0);
 const draft = ref({
@@ -460,6 +490,7 @@ const transportOptions = computed(() => [
   { value: "stdio", label: t("mcp.local") },
 ]);
 function newDraft() {
+  error.value = "";
   editing.value = null;
   draft.value = {
     label: "",
@@ -504,12 +535,17 @@ const effectOptions = computed(() =>
   })),
 );
 const authOptions = computed(() =>
-  ["none", "bearer", "headers"].map((value) => ({
+  (selected.value?.transport === "stdio"
+    ? ["none", "bearer"]
+    : ["none", "bearer", "headers"]
+  ).map((value) => ({
     value,
     label: t(`mcp.auth.${value}`),
   })),
 );
 function status(c: MCPConnection) {
+  if (!snapshot.value.enabled && c.desired_state === "enabled")
+    return t("mcp.blocked");
   return c.desired_state === "enabled"
     ? t(`mcp.runtime.${c.runtime_state}`, c.runtime_state)
     : t(`mcp.desired.${c.desired_state}`, c.desired_state);
@@ -526,19 +562,29 @@ function items(kind: string) {
 function connectionLabel(id: string) {
   return snapshot.value.connections.find((c) => c.id === id)?.label || id;
 }
-async function load() {
+async function load(silent = false) {
+  if (loading.value || disposed) return;
+  const version = selectionVersion;
   loading.value = true;
-  error.value = "";
+  if (!silent) error.value = "";
   try {
     const [s, p] = await Promise.all([mcpAPI.snapshot(), mcpAPI.plans()]);
+    if (disposed) return;
     snapshot.value = s;
     plans.value = p;
     loaded.value = true;
+    if (version !== selectionVersion) return;
     if (
       selected.value &&
       s.connections.some((c) => c.id === selected.value?.id)
     ) {
+      if (
+        s.connections.find((c) => c.id === selected.value?.id)?.revision ===
+        selected.value.revision
+      )
+        return;
       const next = await mcpAPI.connection(selected.value.id);
+      if (disposed || version !== selectionVersion) return;
       if (next.revision !== selected.value.revision) {
         token.value = "";
         headers.value = "{}";
@@ -554,14 +600,18 @@ async function load() {
   }
 }
 async function select(id: string) {
+  const version = ++selectionVersion;
+  token.value = "";
+  headers.value = "{}";
+  showCall.value = false;
+  callConnection.value = null;
   try {
-    selected.value = await mcpAPI.connection(id);
-    token.value = "";
-    headers.value = "{}";
-    authMode.value =
-      selected.value.auth_mode === "oauth" ? "none" : selected.value.auth_mode;
+    const next = await mcpAPI.connection(id);
+    if (disposed || version !== selectionVersion) return;
+    selected.value = next;
+    authMode.value = next.auth_mode === "oauth" ? "none" : next.auth_mode;
   } catch (e) {
-    error.value = String(e);
+    if (!disposed && version === selectionVersion) error.value = String(e);
   }
 }
 async function work(fn: () => Promise<unknown>) {
@@ -602,7 +652,8 @@ async function create() {
   });
 }
 async function act(action: string) {
-  if (!selected.value) return;
+  const c = selected.value;
+  if (!c) return;
   if (action === "disconnect" || action === "reconnect") {
     dialog.warning({
       title: t(action === "disconnect" ? "mcp.disconnect" : "mcp.reconnect"),
@@ -614,17 +665,15 @@ async function act(action: string) {
       ),
       negativeText: t("mcp.keep"),
       onPositiveClick: () =>
-        work(() =>
-          mcpAPI.action(selected.value!.id, action, selected.value!.revision),
-        ),
+        work(() => mcpAPI.action(c.id, action, c.revision)),
     });
     return;
   }
-  await work(() =>
-    mcpAPI.action(selected.value!.id, action, selected.value!.revision),
-  );
+  await work(() => mcpAPI.action(c.id, action, c.revision));
 }
 async function review(item: MCPItem, allowed: boolean, effect: string) {
+  const c = selected.value;
+  if (!c) return;
   dialog.warning({
     title: t("mcp.reviewAccess"),
     content: t("mcp.reviewAccessHint", {
@@ -635,8 +684,8 @@ async function review(item: MCPItem, allowed: boolean, effect: string) {
     negativeText: t("mcp.keep"),
     onPositiveClick: () =>
       work(() =>
-        mcpAPI.review(selected.value!.id, {
-          revision: selected.value!.revision,
+        mcpAPI.review(c.id, {
+          revision: c.revision,
           review: {
             item_id: item.id,
             revision: item.revision,
@@ -647,13 +696,30 @@ async function review(item: MCPItem, allowed: boolean, effect: string) {
       ),
   });
 }
+function parseObject(text: string, header = false): Record<string, unknown> {
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error(t("mcp.invalidJSON"));
+  }
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    Array.isArray(parsed) ||
+    (header && Object.values(parsed).some((v) => typeof v !== "string"))
+  )
+    throw new Error(t(header ? "mcp.invalidHeaders" : "mcp.invalidJSON"));
+  return parsed;
+}
 async function saveCredential() {
   await work(async () => {
     await mcpAPI.credentials(selected.value!.id, {
       revision: selected.value!.revision,
       mode: authMode.value,
       token: token.value,
-      headers: authMode.value === "headers" ? JSON.parse(headers.value) : null,
+      headers:
+        authMode.value === "headers" ? parseObject(headers.value, true) : null,
     });
     token.value = "";
     headers.value = "{}";
@@ -673,15 +739,14 @@ async function startOAuth() {
   });
 }
 function danger(action: string) {
+  const c = selected.value;
+  if (!c) return;
   dialog.warning({
     title: t(action === "delete" ? "mcp.delete" : "mcp.revoke"),
-    content: t("mcp.deleteHint"),
-    positiveText: t("mcp.confirm"),
+    content: t("mcp.deleteHint") + " " + c.label,
+    positiveText: t(action === "delete" ? "mcp.delete" : "mcp.revoke"),
     negativeText: t("mcp.keep"),
-    onPositiveClick: () =>
-      work(() =>
-        mcpAPI.action(selected.value!.id, action, selected.value!.revision),
-      ),
+    onPositiveClick: () => work(() => mcpAPI.action(c.id, action, c.revision)),
   });
 }
 function setEnabled(value: boolean) {
@@ -694,6 +759,8 @@ function setEnabled(value: boolean) {
   });
 }
 function openCall(item: MCPItem) {
+  error.value = "";
+  callConnection.value = selected.value;
   callItem.value = item;
   argumentsJSON.value = "{}";
   showCall.value = true;
@@ -701,10 +768,10 @@ function openCall(item: MCPItem) {
 async function prepare() {
   await work(async () => {
     await mcpAPI.prepare({
-      connection_id: selected.value!.id,
+      connection_id: callConnection.value!.id,
       item_id: callItem.value!.id,
       descriptor_revision: callItem.value!.revision,
-      arguments: JSON.parse(argumentsJSON.value),
+      arguments: parseObject(argumentsJSON.value),
     });
     showCall.value = false;
   });
@@ -725,26 +792,45 @@ let poller: ReturnType<typeof setInterval> | undefined;
 onMounted(() => {
   void load();
   poller = setInterval(() => {
-    if (
-      !busy.value &&
-      !loading.value &&
-      (plans.value.length > 0 ||
-        snapshot.value.executions.some((x) =>
-          ["running", "dispatching", "cancel_requested"].includes(x.state),
-        ))
-    )
-      void load();
-  }, 3000);
+    if (!busy.value && !loading.value && document.visibilityState !== "hidden")
+      void load(true);
+  }, 5000);
 });
 onUnmounted(() => {
+  disposed = true;
+  token.value = "";
+  headers.value = "{}";
+  resultOutput.value = "";
   if (poller) clearInterval(poller);
 });
 </script>
 
 <style scoped>
 .mcp-page {
+  --mcp-border: v-bind("theme.borderColor");
+  --mcp-accent: v-bind("theme.primaryColor");
   max-width: 1280px;
+  overflow-wrap: anywhere;
   margin: 0 auto;
+}
+.mcp-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+}
+.mcp-header > div:first-child {
+  min-width: 0;
+}
+.mcp-header h1 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.4;
+}
+.mcp-header p {
+  margin: 8px 0 0;
+  max-width: 65ch;
+  opacity: 0.75;
 }
 .mcp-workspace {
   display: grid;
@@ -764,13 +850,14 @@ onUnmounted(() => {
   padding: 16px;
   background: transparent;
   color: inherit;
-  border: 1px solid var(--n-border-color, #555);
+  border: 1px solid var(--mcp-border);
   border-radius: 6px;
   cursor: pointer;
   min-height: 44px;
 }
 .mcp-row.selected {
-  border-inline-start: 4px solid #63e2b7;
+  border-color: var(--mcp-accent);
+  box-shadow: inset 3px 0 var(--mcp-accent);
 }
 .mcp-row span {
   font-size: 13px;
@@ -784,7 +871,7 @@ onUnmounted(() => {
 }
 .mcp-item {
   padding: 16px 0;
-  border-bottom: 1px solid #555;
+  border-bottom: 1px solid var(--mcp-border);
 }
 .mcp-item p {
   max-width: 75ch;
@@ -823,6 +910,9 @@ summary:focus-visible {
   outline-offset: 3px;
 }
 @media (max-width: 700px) {
+  .mcp-header {
+    flex-direction: column;
+  }
   .mcp-page :deep(.n-button) {
     min-height: 44px;
   }

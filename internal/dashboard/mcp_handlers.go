@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -252,11 +251,9 @@ func (s *Server) mcpDecision(c *fiber.Ctx) error {
 	}
 	// Captured scope is already authenticated. Work is application-root bound and
 	// journaled by the service, not tied to Fiber's recycled request context.
-	go func() {
-		if _, err := s.mcp.Execute(context.Background(), sc, id); err != nil {
-			slog.Warn("MCP operation was not admitted")
-		}
-	}()
+	if err := s.mcp.Start(context.Background(), sc, id); err != nil {
+		return mcpError(err)
+	}
 	return c.Status(202).JSON(fiber.Map{"execution_id": id, "state": "accepted"})
 }
 func (s *Server) mcpCancel(c *fiber.Ctx) error {

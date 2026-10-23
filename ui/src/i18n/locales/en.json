@@ -1079,6 +1079,14 @@
     "maxUses": "Maximum authorized runs"
   },
   "mcp": {
+    "resultUnavailable": "The service returned a response, but the result could not be saved. Check the service before attempting a new request.",
+    "blocked": "Execution disabled",
+    "invalidJSON": "Enter a valid JSON object with named parameters.",
+    "invalidHeaders": "Headers must be a JSON object with string values.",
+
+    "authAttention": "Authorization needs attention. Update access or sign in again before connecting.",
+    "editHint": "Saving changes disconnects this connection and invalidates pending requests. Changing server, local profile or data domain also removes credentials and capability access.",
+
     "title": "MCP connections",
     "subtitle": "Choose which external services and capabilities your assistant may use.",
     "refresh": "Refresh",
@@ -1177,6 +1185,7 @@
       "deleted": "Deleted"
     },
     "execution": {
+      "result_unavailable": "Result not saved",
       "running": "Connecting",
       "dispatching": "Request sent",
       "cancel_requested": "Cancellation requested",

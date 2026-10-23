@@ -60,6 +60,10 @@ type Broker struct {
 	StateDir string
 	Slots    chan struct{}
 	command  func(context.Context, []string) *exec.Cmd
+	mu       sync.Mutex
+	closing  bool
+	sessions map[string]context.CancelFunc
+	workers  sync.WaitGroup
 }
 
 var imagePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9./:_-]*@sha256:[a-f0-9]{64}$`)
@@ -69,7 +73,7 @@ func validateProfile(p Profile) error {
 	if !imagePattern.MatchString(p.Image) || len(p.Args) > 32 {
 		return errDenied
 	}
-	if p.Network != "" && p.Network != "none" && !strings.HasPrefix(p.Network, "iulita-mcp-") {
+	if p.Network != "" && p.Network != "none" && (!strings.HasPrefix(p.Network, "iulita-mcp-") || !namePattern.MatchString(p.Network)) {
 		return errDenied
 	}
 	for _, a := range p.Args {
@@ -97,7 +101,26 @@ func NewBroker(key []byte, profiles map[string]Profile, state string) (*Broker, 
 	if e != nil || info.Mode().Perm()&0o077 != 0 {
 		return nil, errDenied
 	}
-	return &Broker{Key: append([]byte(nil), key...), Profiles: profiles, StateDir: state, Slots: make(chan struct{}, 4)}, nil
+	return &Broker{Key: append([]byte(nil), key...), Profiles: profiles, StateDir: state, Slots: make(chan struct{}, 4), sessions: map[string]context.CancelFunc{}}, nil
+}
+
+// Shutdown closes hijacked WebSockets and waits for container cleanup. HTTP
+// Server.Shutdown alone does not wait for upgraded connections.
+func (b *Broker) Shutdown(ctx context.Context) error {
+	b.mu.Lock()
+	b.closing = true
+	for _, cancel := range b.sessions {
+		cancel()
+	}
+	b.mu.Unlock()
+	done := make(chan struct{})
+	go func() { b.workers.Wait(); close(done) }()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 func signature(key []byte, payload string) string {
 	m := hmac.New(sha256.New, key)
@@ -158,7 +181,7 @@ func PodmanArgs(p Profile, name string, withToken bool) []string {
 	if network == "" {
 		network = "none"
 	}
-	args := []string{"run", "--rm", "--interactive", "--pull=never", "--name", name, "--read-only", "--network", network, "--user", "65532:65532", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--pids-limit", "64", "--memory", "256m", "--cpus", "1", "--tmpfs", "/tmp:rw,noexec,nosuid,size=16m"}
+	args := []string{"run", "--rm", "--timeout", "360", "--interactive", "--pull=never", "--name", name, "--read-only", "--log-driver", "none", "--image-volume", "ignore", "--network", network, "--user", "65532:65532", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--pids-limit", "64", "--memory", "256m", "--cpus", "1", "--tmpfs", "/tmp:rw,noexec,nosuid,size=16m"}
 	if withToken {
 		args = append(args, "--env", "MCP_ACCESS_TOKEN")
 	}
@@ -193,11 +216,33 @@ func (b *Broker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "busy", http.StatusTooManyRequests)
 		return
 	}
+	deadline := time.Unix(lease.Expires, 0)
+	ctx, cancel := context.WithDeadline(r.Context(), deadline)
+	id := uuid.NewString()
+	b.mu.Lock()
+	if b.closing {
+		b.mu.Unlock()
+		cancel()
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	b.sessions[id] = cancel
+	b.workers.Add(1)
+	b.mu.Unlock()
+	defer func() {
+		cancel()
+		b.mu.Lock()
+		delete(b.sessions, id)
+		b.mu.Unlock()
+		b.workers.Done()
+	}()
 	ws, e := (&websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return r.Header.Get("Origin") == "" }}).Upgrade(w, r, nil)
 	if e != nil {
 		return
 	}
 	defer closeQuietly(ws)
+	stopClose := context.AfterFunc(ctx, func() { closeQuietly(ws) })
+	defer stopClose()
 	ws.SetReadLimit(8 << 20)
 	if err := ws.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		return
@@ -210,15 +255,12 @@ func (b *Broker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if json.Unmarshal(data, &bootstrap) != nil || strings.ContainsAny(bootstrap.Token, "\r\n") {
 		return
 	}
-	deadline := time.Unix(lease.Expires, 0)
 	if err := ws.SetReadDeadline(deadline); err != nil {
 		return
 	}
 	if err := ws.SetWriteDeadline(deadline); err != nil {
 		return
 	}
-	ctx, cancel := context.WithDeadline(r.Context(), deadline)
-	defer cancel()
 	name := "iulita-mcp-" + uuid.NewString()
 	//nolint:gosec // G204: fixed rootless launcher; digest, network and fixed args are deployment-validated.
 	cmd := exec.CommandContext(ctx, "podman", PodmanArgs(profile, name, bootstrap.Token != "")...)
@@ -356,12 +398,22 @@ func (c *Client) Transport(ctx context.Context, owner, connection string, genera
 		return nil, errDenied
 	}
 	ws.SetReadLimit(8 << 20)
-	if e := ws.WriteJSON(Bootstrap{Token: token}); e != nil {
+	stopClose := context.AfterFunc(ctx, func() { closeQuietly(ws) })
+	deadline := time.Now().Add(10 * time.Second)
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
+	}
+	if err := ws.SetWriteDeadline(deadline); err != nil {
+		stopClose()
 		closeQuietly(ws)
 		return nil, errDenied
 	}
-	conn := &wsConnection{ws: ws}
-	context.AfterFunc(ctx, func() { closeQuietly(conn) })
+	if e := ws.WriteJSON(Bootstrap{Token: token}); e != nil {
+		stopClose()
+		closeQuietly(ws)
+		return nil, errDenied
+	}
+	conn := &wsConnection{ws: ws, stopClose: stopClose}
 	return &wsTransport{conn}, nil
 }
 
@@ -371,10 +423,11 @@ type wsTransport struct{ c *wsConnection }
 func (t *wsTransport) Connect(context.Context) (sdk.Connection, error) { return t.c, nil }
 
 type wsConnection struct {
-	ws       *websocket.Conn
-	mu       sync.Mutex
-	once     sync.Once
-	closeErr error
+	ws        *websocket.Conn
+	mu        sync.Mutex
+	once      sync.Once
+	closeErr  error
+	stopClose func() bool
 }
 
 // Read decodes one size-limited JSON-RPC frame.
@@ -408,7 +461,12 @@ func (c *wsConnection) Write(ctx context.Context, m jsonrpc.Message) error {
 
 // Close shuts down the broker stream once and unblocks pending reads.
 func (c *wsConnection) Close() error {
-	c.once.Do(func() { c.closeErr = c.ws.Close() })
+	c.once.Do(func() {
+		if c.stopClose != nil {
+			c.stopClose()
+		}
+		c.closeErr = c.ws.Close()
+	})
 	return c.closeErr
 }
 

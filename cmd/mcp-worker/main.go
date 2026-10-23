@@ -103,6 +103,12 @@ func run() error {
 		}
 		e = server.ListenAndServeTLS(*cert, *tlsKey)
 	}
+	cancel()
+	cleanup, stopCleanup := context.WithTimeout(context.Background(), 15*time.Second)
+	defer stopCleanup()
+	if err := handler.Shutdown(cleanup); err != nil {
+		return fmt.Errorf("MCP worker cleanup incomplete: %w", err)
+	}
 	if errors.Is(e, http.ErrServerClosed) {
 		return nil
 	}

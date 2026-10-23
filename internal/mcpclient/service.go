@@ -39,6 +39,7 @@ type Service struct {
 	active            map[string]context.CancelFunc
 	probes            map[string]context.CancelFunc
 	refreshing        map[string]chan struct{}
+	authWork          map[string]map[string]context.CancelFunc
 	revisions         map[string]int64
 	artifacts         map[string]artifactInfo
 	oauthExpiry       map[string]artifactInfo
@@ -131,7 +132,7 @@ func New(o Options) (*Service, error) {
 			x.State = "unknown_outcome"
 			x.SideEffectState = "unknown"
 			x.FinishedAt = time.Now()
-			if s.saveLocked(x.Owner, x.ID, "execution", x) != nil {
+			if s.saveLocked(x.Owner, x.ID, "execution", x, "execution_state") != nil {
 				return fail()
 			}
 		}
@@ -140,7 +141,7 @@ func New(o Options) (*Service, error) {
 	go s.sweep()
 	return s, nil
 }
-func (s *Service) saveLocked(owner, id, kind string, v any) error {
+func (s *Service) saveLocked(owner, id, kind string, v any, actions ...string) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		s.broken = true
@@ -153,6 +154,22 @@ func (s *Service) saveLocked(owner, id, kind string, v any) error {
 	}
 	old := s.revisions[id]
 	r := &domain.MCPRecord{ID: id, OwnerID: owner, Kind: kind, Revision: old + 1, Payload: sealed, ActorID: owner}
+	r.Action = kind + "_updated"
+	if len(actions) > 0 {
+		r.Action = actions[0]
+	}
+	switch value := v.(type) {
+	case *storedConnection:
+		r.State = value.Desired + ":" + value.Health
+	case *storedExecution:
+		r.State = value.State
+	case Policy:
+		if value.Enabled {
+			r.State = "enabled"
+		} else {
+			r.State = "disabled"
+		}
+	}
 	saveCtx, cancel := context.WithTimeout(context.WithoutCancel(s.root), 5*time.Second)
 	defer cancel()
 	if policy, ok := v.(Policy); ok && policy.UpdatedBy != "" {
@@ -185,6 +202,37 @@ func (s *Service) admit(ctx context.Context, sc Scope) error {
 		return ErrDenied
 	}
 	return nil
+}
+
+// networkWork fences shutdown against OAuth work as well as protocol calls.
+func (s *Service) networkWork(parent context.Context, connection string) (context.Context, func(), error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.broken || s.root.Err() != nil {
+		return nil, nil, ErrUnavailable
+	}
+	ctx, cancel := context.WithTimeout(s.root, time.Minute)
+	stop := context.AfterFunc(parent, cancel)
+	if s.authWork == nil {
+		s.authWork = map[string]map[string]context.CancelFunc{}
+	}
+	if s.authWork[connection] == nil {
+		s.authWork[connection] = map[string]context.CancelFunc{}
+	}
+	id := uuid.NewString()
+	s.authWork[connection][id] = cancel
+	s.workers.Add(1)
+	return ctx, func() {
+		stop()
+		cancel()
+		s.mu.Lock()
+		delete(s.authWork[connection], id)
+		if len(s.authWork[connection]) == 0 {
+			delete(s.authWork, connection)
+		}
+		s.mu.Unlock()
+		s.workers.Done()
+	}, nil
 }
 func (s *Service) getLocked(sc Scope, id string) (*storedConnection, error) {
 	if !validScope(sc) || s.closed || s.broken {
@@ -295,6 +343,9 @@ func (s *Service) Create(ctx context.Context, sc Scope, d Draft) (Connection, er
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	n := 0
+	if s.closed || s.broken {
+		return Connection{}, ErrUnavailable
+	}
 	for _, c := range s.connections {
 		if c.Owner == sc.OwnerID && c.Desired != "deleted" {
 			n++
@@ -304,7 +355,7 @@ func (s *Service) Create(ctx context.Context, sc Scope, d Draft) (Connection, er
 		return Connection{}, ErrDenied
 	}
 	c := &storedConnection{Owner: sc.OwnerID, Connection: Connection{ID: uuid.NewString(), OwnerID: sc.OwnerID, Label: d.Label, Domain: d.Domain, Endpoint: d.Endpoint, Transport: d.Transport, Profile: d.Profile, Desired: "draft", Health: "stopped", AuthMode: "none", AuthState: "none", ResultMode: d.ResultMode, Revision: 1, Generation: 1, Items: []Item{}}}
-	if requestErr := s.saveLocked(sc.OwnerID, c.ID, "connection", c); requestErr != nil {
+	if requestErr := s.saveLocked(sc.OwnerID, c.ID, "connection", c, "connection_created"); requestErr != nil {
 		return Connection{}, requestErr
 	}
 	s.connections[c.ID] = c
@@ -358,7 +409,7 @@ func (s *Service) Update(ctx context.Context, sc Scope, id string, revision int6
 		c.AuthState = "none"
 		c.Items = []Item{}
 	}
-	if requestErr := s.saveLocked(sc.OwnerID, id, "connection", c); requestErr != nil {
+	if requestErr := s.saveLocked(sc.OwnerID, id, "connection", c, "settings_updated"); requestErr != nil {
 		return Connection{}, requestErr
 	}
 	return safeConnection(c, true), nil
@@ -418,9 +469,12 @@ func (s *Service) SetCredentials(ctx context.Context, sc Scope, id string, revis
 	c.Desired = "disabled"
 	c.Generation++
 	c.Revision++
-	return s.saveLocked(sc.OwnerID, id, "connection", c)
+	return s.saveLocked(sc.OwnerID, id, "connection", c, "credentials_updated")
 }
 func (s *Service) stopLocked(id string) {
+	for _, cancel := range s.authWork[id] {
+		cancel()
+	}
 	if c := s.connections[id]; c != nil {
 		if runtime, ok := s.protocol.(interface{ Invalidate(string, string) }); ok {
 			runtime.Invalidate(c.Owner, id)
@@ -446,6 +500,13 @@ func (s *Service) stopLocked(id string) {
 func (s *Service) Action(ctx context.Context, sc Scope, id, action string, revision int64) (Connection, error) {
 	if s.admit(ctx, sc) != nil {
 		return Connection{}, ErrDenied
+	}
+	if action == "connect" || action == "reconnect" || action == "check" || action == "refresh_catalog" {
+		var err error
+		revision, err = s.refreshAuth(ctx, sc, id, revision, true)
+		if err != nil {
+			return Connection{}, err
+		}
 	}
 	s.mu.Lock()
 	c, e := s.getLocked(sc, id)
@@ -478,7 +539,7 @@ func (s *Service) Action(ctx context.Context, sc Scope, id, action string, revis
 		if action == "delete" {
 			c.Desired = "deleted"
 		}
-		e = s.saveLocked(sc.OwnerID, id, "connection", c)
+		e = s.saveLocked(sc.OwnerID, id, "connection", c, "connection_"+action)
 		v := safeConnection(c, true)
 		s.mu.Unlock()
 		return v, e
@@ -506,12 +567,12 @@ func (s *Service) Action(ctx context.Context, sc Scope, id, action string, revis
 	s.stopLocked(id)
 	c.Generation++
 	c.Revision++
-	if action != "check" {
+	if action == "connect" || action == "reconnect" {
 		c.Desired = "enabled"
 	}
 	c.Health = "starting"
 	generation := c.Generation
-	if requestErr := s.saveLocked(sc.OwnerID, id, "connection", c); requestErr != nil {
+	if requestErr := s.saveLocked(sc.OwnerID, id, "connection", c, "connection_"+action); requestErr != nil {
 		s.mu.Unlock()
 		return Connection{}, requestErr
 	}
@@ -554,7 +615,7 @@ func (s *Service) Action(ctx context.Context, sc Scope, id, action string, revis
 		}
 		c.Items = items
 	}
-	if requestErr := s.saveLocked(sc.OwnerID, id, "connection", c); requestErr != nil {
+	if requestErr := s.saveLocked(sc.OwnerID, id, "connection", c, "connection_"+action); requestErr != nil {
 		return Connection{}, requestErr
 	}
 	return safeConnection(c, sc.CallerID == "dashboard"), nil
@@ -599,7 +660,7 @@ func (s *Service) Review(ctx context.Context, sc Scope, id string, revision int6
 			it.Effect = r.Effect
 			c.Revision++
 			s.stopLocked(id)
-			return s.saveLocked(sc.OwnerID, id, "connection", c)
+			return s.saveLocked(sc.OwnerID, id, "connection", c, "capability_reviewed")
 		}
 	}
 	return ErrDenied
@@ -651,7 +712,9 @@ func (s *Service) Prepare(ctx context.Context, sc Scope, in Call) (Plan, error) 
 	if e != nil {
 		return Plan{}, e
 	}
-	if !s.policy.Enabled || c.Desired != "enabled" || (c.AuthMode != "none" && c.AuthState != "valid") || c.Health != "ready" || time.Since(c.CheckedAt) > 5*time.Minute {
+	// Invoke revalidates the complete catalog in the dispatch session. An idle
+	// connection does not need a manual check merely because five minutes passed.
+	if !s.policy.Enabled || c.Desired != "enabled" || (c.AuthMode != "none" && c.AuthState != "valid") || c.Health != "ready" {
 		return Plan{}, ErrUnavailable
 	}
 	in.Arguments = append(json.RawMessage(nil), in.Arguments...)
@@ -672,7 +735,11 @@ func (s *Service) Prepare(ctx context.Context, sc Scope, in Call) (Plan, error) 
 	p := &Plan{ID: uuid.NewString(), Owner: sc.OwnerID, Caller: sc.CallerID, Conversation: sc.ConversationID, Call: in, Generation: c.Generation, ConnectionRevision: c.Revision, ExpiresAt: time.Now().Add(5 * time.Minute), RequiresConfirmation: true}
 	// Even read tools can export private text in arguments: baseline exact consent
 	// deliberately avoids claiming arbitrary-text DLP or unlimited read grants.
-	p.Preview = fmt.Sprintf("MCP: %s\n%s · %s\n%s: %s\nArguments must be reviewed in private connection settings. Result: %s. Timeout: %ds.", c.Label, c.Domain, safeOrigin(c.Endpoint), item.Kind, item.Name, c.ResultMode, in.TimeoutSeconds)
+	destination := safeOrigin(c.Endpoint)
+	if c.Transport == "stdio" {
+		destination = "worker profile: " + c.Profile
+	}
+	p.Preview = fmt.Sprintf("MCP: %s\n%s · %s\n%s: %s\nArguments must be reviewed in private connection settings. Result: %s. Timeout: %ds.", c.Label, c.Domain, destination, item.Kind, item.Name, c.ResultMode, in.TimeoutSeconds)
 	h, hashErr := json.Marshal(struct {
 		Call                         Call
 		Owner, Caller, Conversation  string
@@ -705,7 +772,10 @@ func (s *Service) Approve(ctx context.Context, sc Scope, id, hash string, approv
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p := s.plans[id]
-	if p == nil || p.Owner != sc.OwnerID || p.Hash != hash || p.Consumed || time.Now().After(p.ExpiresAt) {
+	if s.closed || s.broken {
+		return ErrUnavailable
+	}
+	if p == nil || !planScope(p, sc) || p.Hash != hash || p.Consumed || time.Now().After(p.ExpiresAt) {
 		return ErrConflict
 	}
 	if !approved {
@@ -714,6 +784,12 @@ func (s *Service) Approve(ctx context.Context, sc Scope, id, hash string, approv
 	}
 	p.Approved = true
 	return nil
+}
+
+// Dashboard is the explicit owner approval bridge for chat/native plans. Other
+// adapters can only approve or execute the conversation that created the plan.
+func planScope(p *Plan, sc Scope) bool {
+	return p.Owner == sc.OwnerID && (sc.CallerID == "dashboard" || p.Caller == sc.CallerID && p.Conversation == sc.ConversationID)
 }
 
 // Plans lists unconsumed plans for the authenticated owner settings screen.
@@ -734,6 +810,22 @@ func (s *Service) Plans(ctx context.Context, sc Scope) ([]Plan, error) {
 
 // Execute journals and dispatches one approved operation without automatic replay.
 func (s *Service) Execute(ctx context.Context, sc Scope, id string) (Execution, error) {
+	return s.execute(ctx, sc, id, nil)
+}
+
+// Start admits and journals synchronously before acknowledging asynchronous work.
+func (s *Service) Start(ctx context.Context, sc Scope, id string) error {
+	admission := make(chan error, 1)
+	go func() {
+		var once sync.Once
+		notify := func(err error) { once.Do(func() { admission <- err }) }
+		_, err := s.execute(ctx, sc, id, func() { notify(nil) })
+		notify(err)
+	}()
+	return <-admission
+}
+
+func (s *Service) execute(ctx context.Context, sc Scope, id string, admitted func()) (Execution, error) {
 	if s.admit(ctx, sc) != nil {
 		return Execution{}, ErrDenied
 	}
@@ -748,7 +840,7 @@ func (s *Service) Execute(ctx context.Context, sc Scope, id string) (Execution, 
 		return v, nil
 	}
 	p := s.plans[id]
-	if p == nil || p.Owner != sc.OwnerID || p.Consumed || !p.Approved || time.Now().After(p.ExpiresAt) {
+	if p == nil || !planScope(p, sc) || p.Consumed || !p.Approved || time.Now().After(p.ExpiresAt) {
 		s.mu.Unlock()
 		return Execution{}, ErrApproval
 	}
@@ -791,7 +883,7 @@ func (s *Service) Execute(ctx context.Context, sc Scope, id string) (Execution, 
 		return Execution{}, ErrConflict
 	}
 	x := &storedExecution{OwnerID: sc.OwnerID, Execution: Execution{ID: id, Owner: sc.OwnerID, ConnectionID: c.ID, ItemID: item.ID, PlanHash: p.Hash, State: "running", SideEffectState: "not_started", CreatedAt: time.Now()}}
-	if requestErr := s.saveLocked(sc.OwnerID, id, "execution", x); requestErr != nil {
+	if requestErr := s.saveLocked(sc.OwnerID, id, "execution", x, "execution_state"); requestErr != nil {
 		s.mu.Unlock()
 		return Execution{}, requestErr
 	}
@@ -803,6 +895,9 @@ func (s *Service) Execute(ctx context.Context, sc Scope, id string) (Execution, 
 	defer cancel()
 	s.active[id] = cancel
 	s.workers.Add(1)
+	if admitted != nil {
+		admitted()
+	}
 	defer s.workers.Done()
 	copyC := runtimeConnection(c)
 	call := p.Call
@@ -817,7 +912,7 @@ func (s *Service) Execute(ctx context.Context, sc Scope, id string) (Execution, 
 		}
 		x.State = "dispatching"
 		x.SideEffectState = "possible"
-		return s.saveLocked(sc.OwnerID, id, "execution", x)
+		return s.saveLocked(sc.OwnerID, id, "execution", x, "execution_state")
 	}
 	raw, toolError, err := s.protocol.Invoke(work, copyC, item, call.Arguments, before)
 	s.mu.Lock()
@@ -844,9 +939,8 @@ func (s *Service) Execute(ctx context.Context, sc Scope, id string) (Execution, 
 			x.SideEffectState = "possible"
 		}
 		if len(raw) > 32<<20 {
-			x.State = "unknown_outcome"
+			x.State = "result_unavailable"
 			x.ErrorCode = "result_too_large"
-			x.SideEffectState = "unknown"
 		} else {
 			bytesUsed := 0
 			for _, meta := range s.artifacts {
@@ -855,10 +949,9 @@ func (s *Service) Execute(ctx context.Context, sc Scope, id string) (Execution, 
 				}
 			}
 			if bytesUsed+len(raw) > 100<<20 {
-				x.State = "unknown_outcome"
+				x.State = "result_unavailable"
 				x.ErrorCode = "artifact_quota"
-				x.SideEffectState = "unknown"
-				if requestErr := s.saveLocked(sc.OwnerID, id, "execution", x); requestErr != nil {
+				if requestErr := s.saveLocked(sc.OwnerID, id, "execution", x, "execution_state"); requestErr != nil {
 					return Execution{}, requestErr
 				}
 				return x.Execution, nil
@@ -875,7 +968,7 @@ func (s *Service) Execute(ctx context.Context, sc Scope, id string) (Execution, 
 	}
 	result := x.Execution
 	x.Text = ""
-	if requestErr := s.saveLocked(sc.OwnerID, id, "execution", x); requestErr != nil {
+	if requestErr := s.saveLocked(sc.OwnerID, id, "execution", x, "execution_state"); requestErr != nil {
 		return Execution{}, requestErr
 	}
 	return result, nil
@@ -895,7 +988,7 @@ func (s *Service) Cancel(ctx context.Context, sc Scope, id string) error {
 	if f := s.active[id]; f != nil {
 		f()
 		x.State = "cancel_requested"
-		return s.saveLocked(sc.OwnerID, id, "execution", x)
+		return s.saveLocked(sc.OwnerID, id, "execution", x, "execution_state")
 	}
 	return nil
 }
@@ -936,6 +1029,9 @@ func (s *Service) SetEnabled(v bool) error { return s.SetEnabledBy(v, "configura
 func (s *Service) SetEnabledBy(v bool, actor string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.closed || s.broken {
+		return ErrUnavailable
+	}
 	if v && !s.deploymentEnabled {
 		return ErrUnavailable
 	}
@@ -945,7 +1041,7 @@ func (s *Service) SetEnabledBy(v bool, actor string) error {
 	for id := range s.connections {
 		s.stopLocked(id)
 	}
-	return s.saveLocked("installation", "mcp-policy", "policy", s.policy)
+	return s.saveLocked("installation", "mcp-policy", "policy", s.policy, "policy_changed")
 }
 
 // Close closes admission, drains active work and releases owned runtime resources.
@@ -1026,57 +1122,58 @@ func (s *Service) sweep() {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 	for {
-		s.mu.Lock()
-		now := time.Now()
-		for id, a := range s.oauthExpiry {
-			if now.After(a.expires) {
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				err := s.repo.DeleteMCPRecord(ctx, a.owner, id)
-				cancel()
-				if err == nil {
-					delete(s.oauthExpiry, id)
-					delete(s.revisions, id)
-				}
-			}
-		}
-		auditCtx, auditCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		if err := s.repo.PruneMCPEvents(auditCtx, now.Add(-30*24*time.Hour)); err != nil {
-			slog.Warn("MCP audit retention cleanup incomplete")
-		}
-		auditCancel()
-		for id, a := range s.artifacts {
-			if now.After(a.expires) {
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				err := s.repo.DeleteMCPRecord(ctx, a.owner, id)
-				cancel()
-				if err == nil {
-					delete(s.artifacts, id)
-					delete(s.revisions, id)
-				}
-			}
-		}
-		for id, p := range s.plans {
-			if now.After(p.ExpiresAt) {
-				delete(s.plans, id)
-			}
-		}
-		for id, x := range s.executions {
-			if !x.FinishedAt.IsZero() && now.Sub(x.FinishedAt) > 30*24*time.Hour {
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				err := s.repo.DeleteMCPRecord(ctx, x.Owner, id)
-				cancel()
-				if err == nil {
-					delete(s.executions, id)
-					delete(s.revisions, id)
-				}
-			}
-		}
-		s.mu.Unlock()
+		s.cleanupExpired()
 		select {
 		case <-s.root.Done():
 			return
 		case <-ticker.C:
 		}
+	}
+}
+
+// Retention I/O never holds the admission mutex. A bounded batch and deadline
+// keep slow storage from freezing disconnect, confirmation or cancellation.
+func (s *Service) cleanupExpired() {
+	type expiredRecord struct{ id, owner string }
+	expired := make([]expiredRecord, 0, 100)
+	now := time.Now()
+	s.mu.Lock()
+	for id, p := range s.plans {
+		if now.After(p.ExpiresAt) {
+			delete(s.plans, id)
+		}
+	}
+	for id, a := range s.oauthExpiry {
+		if now.After(a.expires) && len(expired) < 100 {
+			expired = append(expired, expiredRecord{id, a.owner})
+		}
+	}
+	for id, a := range s.artifacts {
+		if now.After(a.expires) && len(expired) < 100 {
+			expired = append(expired, expiredRecord{id, a.owner})
+		}
+	}
+	for id, x := range s.executions {
+		if !x.FinishedAt.IsZero() && now.Sub(x.FinishedAt) > 30*24*time.Hour && len(expired) < 100 {
+			expired = append(expired, expiredRecord{id, x.Owner})
+		}
+	}
+	s.mu.Unlock()
+	ctx, cancel := context.WithTimeout(s.root, 10*time.Second)
+	defer cancel()
+	for _, record := range expired {
+		if err := s.repo.DeleteMCPRecord(ctx, record.owner, record.id); err != nil {
+			break
+		}
+		s.mu.Lock()
+		delete(s.oauthExpiry, record.id)
+		delete(s.artifacts, record.id)
+		delete(s.executions, record.id)
+		delete(s.revisions, record.id)
+		s.mu.Unlock()
+	}
+	if err := s.repo.PruneMCPEvents(ctx, now.Add(-30*24*time.Hour)); err != nil && ctx.Err() == nil {
+		slog.Warn("MCP audit retention cleanup incomplete")
 	}
 }
 

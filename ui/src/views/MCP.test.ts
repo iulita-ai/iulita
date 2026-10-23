@@ -87,29 +87,36 @@ describe("MCP owner connection controls", () => {
     expect(mcpAPI.action).toHaveBeenCalledWith("c", "disconnect", 4);
     w.unmount();
   });
-  it("shows unknown outcome without a retry control", async () => {
-    vi.mocked(mcpAPI.snapshot).mockResolvedValue({
-      enabled: true,
-      connections: [connection],
-      executions: [
-        {
-          id: "x",
-          connection_id: "c",
-          item_id: "i",
-          state: "unknown_outcome",
-          side_effect_state: "unknown",
-          created_at: "2026-10-23T10:00:00Z",
-        },
-      ],
-    });
-    const w = mount(MCP);
-    await flushPromises();
-    expect(w.text()).toContain("Repeating it may perform the action again");
-    expect(
-      w.findAll("button").some((b) => /retry|repeat/i.test(b.text())),
-    ).toBe(false);
-    w.unmount();
-  });
+  it.each(["unknown_outcome", "result_unavailable"])(
+    "shows %s without a retry control",
+    async (state) => {
+      vi.mocked(mcpAPI.snapshot).mockResolvedValue({
+        enabled: true,
+        connections: [connection],
+        executions: [
+          {
+            id: "x",
+            connection_id: "c",
+            item_id: "i",
+            state,
+            side_effect_state: "unknown",
+            created_at: "2026-10-23T10:00:00Z",
+          },
+        ],
+      });
+      const w = mount(MCP);
+      await flushPromises();
+      expect(w.text()).toContain(
+        state === "unknown_outcome"
+          ? "Repeating it may perform the action again"
+          : "the result could not be saved",
+      );
+      expect(
+        w.findAll("button").some((b) => /retry|repeat/i.test(b.text())),
+      ).toBe(false);
+      w.unmount();
+    },
+  );
   it("keeps execution separate from preparing a plan", async () => {
     vi.mocked(mcpAPI.plans).mockResolvedValue([
       {
@@ -136,4 +143,63 @@ describe("MCP owner connection controls", () => {
     );
     w.unmount();
   });
+});
+
+it("keeps a confirmation bound to the connection that opened it", async () => {
+  const other = {
+    ...structuredClone(connection),
+    id: "other",
+    label: "Work tracker",
+    revision: 9,
+  };
+  vi.mocked(mcpAPI.snapshot).mockResolvedValue({
+    enabled: true,
+    connections: [connection, other],
+    executions: [],
+  });
+  vi.mocked(mcpAPI.connection).mockImplementation(async (id) =>
+    structuredClone(id === "c" ? connection : other),
+  );
+  const w = mount(MCP);
+  await flushPromises();
+  await button(w, "Disconnect").trigger("click");
+  const confirmation = warning.mock.calls[0]![0];
+  await w.findAll(".mcp-row")[1]!.trigger("click");
+  await flushPromises();
+  expect(w.find("h2").text()).toBe("Work tracker");
+  await confirmation.onPositiveClick();
+  await flushPromises();
+  expect(mcpAPI.action).toHaveBeenCalledWith("c", "disconnect", 4);
+  w.unmount();
+});
+
+it("ignores a late connection response after selecting a newer target", async () => {
+  const other = {
+    ...structuredClone(connection),
+    id: "other",
+    label: "Work tracker",
+  };
+  vi.mocked(mcpAPI.snapshot).mockResolvedValue({
+    enabled: true,
+    connections: [connection, other],
+    executions: [],
+  });
+  const w = mount(MCP);
+  await flushPromises();
+  let resolveFirst!: (c: MCPConnection) => void;
+  vi.mocked(mcpAPI.connection).mockImplementation((id) =>
+    id === "c"
+      ? new Promise((resolve) => {
+          resolveFirst = resolve;
+        })
+      : Promise.resolve(structuredClone(other)),
+  );
+  await w.findAll(".mcp-row")[0]!.trigger("click");
+  await w.findAll(".mcp-row")[1]!.trigger("click");
+  await flushPromises();
+  resolveFirst(structuredClone(connection));
+  await flushPromises();
+  expect(w.find("h2").text()).toBe("Work tracker");
+  expect(w.findAll(".mcp-row")[1]!.attributes("aria-current")).toBe("true");
+  w.unmount();
 });

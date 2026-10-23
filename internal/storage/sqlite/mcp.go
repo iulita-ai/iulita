@@ -52,7 +52,7 @@ func (s *Store) SaveMCPRecord(ctx context.Context, r *domain.MCPRecord, expected
 				return errors.New("MCP record revision conflict")
 			}
 		}
-		event := &domain.MCPRecordEvent{OwnerID: r.OwnerID, ActorID: r.ActorID, RecordID: r.ID, Kind: r.Kind, Revision: r.Revision, CreatedAt: time.Now()}
+		event := &domain.MCPRecordEvent{OwnerID: r.OwnerID, ActorID: r.ActorID, RecordID: r.ID, Kind: r.Kind, Action: r.Action, State: r.State, Revision: r.Revision, CreatedAt: time.Now()}
 		_, err := tx.NewInsert().Model(event).Exec(ctx)
 		return err
 	})
@@ -88,6 +88,21 @@ func (s *Store) PruneMCPEvents(ctx context.Context, before time.Time) error {
 }
 
 func (s *Store) migrateMCPIndexes(ctx context.Context) error {
+	var columns []string
+	if err := s.db.NewRaw("SELECT name FROM pragma_table_info('mcp_record_events')").Scan(ctx, &columns); err != nil {
+		return err
+	}
+	present := map[string]bool{}
+	for _, column := range columns {
+		present[column] = true
+	}
+	for _, column := range []string{"action", "state"} {
+		if !present[column] {
+			if _, err := s.db.ExecContext(ctx, "ALTER TABLE mcp_record_events ADD COLUMN "+column+" TEXT NOT NULL DEFAULT ''"); err != nil {
+				return err
+			}
+		}
+	}
 	for _, stmt := range []string{
 		"CREATE INDEX IF NOT EXISTS mcp_records_owner_kind ON mcp_records(owner_id,kind)",
 		"CREATE INDEX IF NOT EXISTS mcp_events_owner_id ON mcp_record_events(owner_id,id)",
