@@ -11,7 +11,7 @@
     </n-page-header>
     <n-alert v-if="error" type="error" role="alert">{{ error }}</n-alert>
     <n-alert :type="state.enabled ? 'success' : 'warning'">{{ t(`remoteAccess.${state.enabled ? 'enabled' : 'disabled'}`) }}. {{ t('remoteAccess.unsupported') }}</n-alert>
-    <n-card v-for="a in pendingApprovals" :key="a.execution_id" :title="t('remoteAccess.pending')"><n-alert type="warning">{{ t('remoteAccess.approvalHint') }}</n-alert><p>{{ a.servers.map((s,i) => `${a.identities[i]?.username}@${s.address}:${s.port}`).join(' → ') }}</p><pre>{{ a.command }}</pre><p>{{ a.plan_hash }} · {{ a.expires_at }}</p><n-space><n-button :disabled="busy" @click="decide(a,false)">{{ t('remoteAccess.cancel') }}</n-button><n-button type="primary" :disabled="busy || !state.enabled" @click="decide(a,true)">{{ t('remoteAccess.approve') }}</n-button></n-space></n-card>
+    <n-card v-for="a in pendingApprovals" :key="a.execution_id" :title="t('remoteAccess.pending')"><n-alert type="warning">{{ t('remoteAccess.approvalHint') }}</n-alert><n-alert v-if="a.model_output" type="warning">{{ t('remoteAccess.modelOutputWarning') }}</n-alert><p>{{ a.servers.map((s,i) => `${a.identities[i]?.username}@${s.address}:${s.port}`).join(' → ') }}</p><pre>{{ a.command }}</pre><p>{{ a.plan_hash }} · {{ a.expires_at }}</p><n-space><n-button :disabled="busy" @click="decide(a,false)">{{ t('remoteAccess.cancel') }}</n-button><n-button type="primary" :disabled="busy || !state.enabled" @click="decide(a,true)">{{ t('remoteAccess.approve') }}</n-button></n-space></n-card>
     <n-tabs v-model:value="tab" type="line">
       <n-tab-pane v-for="kind in collections" :key="kind" :name="kind" :tab="t(`remoteAccess.${kind}`)">
         <n-space vertical>
@@ -39,6 +39,7 @@
               <div v-if="execution.exit_code !== undefined">{{ t('remoteAccess.exitCode') }}: {{ execution.exit_code }}</div>
               <template v-if="pending(execution)">
                 <n-alert type="warning">{{ t('remoteAccess.approvalHint') }}</n-alert>
+                <n-alert v-if="execution.model_output" type="warning">{{ t('remoteAccess.modelOutputWarning') }}</n-alert>
                 <pre>{{ execution.command }}</pre>
                 <small>{{ t('remoteAccess.planHash') }}: {{ execution.plan_hash }}</small>
 
@@ -90,7 +91,10 @@
           <label>{{ t('remoteAccess.capabilities') }}<select v-model="form.capability" required><option value="exec">exec</option><option value="key_install">key_install</option><option value="key_remove">key_remove</option><option v-for="cap in ['file_get','file_put','file_stat','background_install','background_start','background_status','background_cancel','terminal','runbook']" :key="cap" :value="cap">{{ cap }}</option></select></label>
           <label v-if="form.capability?.startsWith('file_') || form.capability?.startsWith('background_')">{{ t('remoteAccess.root') }}<input v-model="form.file_root" placeholder="/home/user/private" required></label>
           <template v-if="form.capability==='runbook'"><label>Runbook<select v-model="form.runbook_id" required><option v-for="book in state.runbooks" :key="book.id" :value="book.id">{{ book.label }} · v{{ book.revision }}</option></select></label><label>{{ t('remoteAccess.maxUses') }}<input v-model.number="form.max_uses" type="number" min="1" max="1000" required></label></template>
-          <label>{{ t('remoteAccess.expires') }}<input v-model="expires" type="datetime-local" required></label>
+          <template v-if="form.capability==='exec'"><label>{{ t('remoteAccess.allowModelOutput') }}<input v-model="form.allow_model_output" type="checkbox" data-testid="grant-model-output"></label><p>{{ t('remoteAccess.modelOutputGrantHint') }}</p></template>
+          <label>{{ t('remoteAccess.permanent') }}<input v-model="form.permanent" type="checkbox" data-testid="grant-permanent"></label>
+          <p v-if="form.permanent">{{ t('remoteAccess.permanentHint') }}</p>
+          <label v-else>{{ t('remoteAccess.expires') }}<input v-model="expires" type="datetime-local" required></label>
         </template>
         <n-space><n-button @click="closeEditor">{{ t('remoteAccess.cancel') }}</n-button><n-button attr-type="submit" type="primary" :loading="busy">{{ t('remoteAccess.save') }}</n-button></n-space>
       </form>
@@ -101,12 +105,13 @@
       <form @submit.prevent="execute" class="remote-form">
         <n-alert type="warning">{{ t('remoteAccess.commandHint') }}</n-alert>
         <label>{{ t('remoteAccess.route') }}<select v-model="runRoute" required><option value="" disabled>—</option><option v-for="route in state.routes.filter(r => r.enabled)" :key="route.id" :value="route.id">{{ routeLabel(route.id) }}</option></select></label>
+        <p>{{ t('remoteAccess.modelOutputChatHint') }}</p>
         <label>{{ t('remoteAccess.command') }}<textarea v-model="command" required rows="6" spellcheck="false"></textarea></label>
         <label>{{ t('remoteAccess.timeout') }}<input v-model.number="timeout" type="number" min="1" max="300" required></label>
         <n-button attr-type="submit" type="primary" :loading="busy">{{ t('remoteAccess.prepare') }}</n-button>
       </form>
     </n-modal>
-    <n-modal v-model:show="showApproval" preset="card" :title="t('remoteAccess.approve')" class="remote-modal"><n-alert type="warning">{{ t('remoteAccess.approvalHint') }}</n-alert><p>{{ approval?.servers.map((s,i) => `${approval?.identities[i]?.username}@${s.address}:${s.port}`).join(' → ') }}</p><pre>{{ approval?.command }}</pre><small>{{ approval?.plan_hash }}</small><n-space><n-button @click="showApproval=false">{{ t('remoteAccess.cancel') }}</n-button><n-button type="primary" :disabled="busy || !state.enabled" @click="confirmExecution">{{ t('remoteAccess.approve') }}</n-button></n-space></n-modal>
+    <n-modal v-model:show="showApproval" preset="card" :title="t('remoteAccess.approve')" class="remote-modal"><n-alert type="warning">{{ t('remoteAccess.approvalHint') }}</n-alert><n-alert v-if="approval?.model_output" type="warning">{{ t('remoteAccess.modelOutputWarning') }}</n-alert><p>{{ approval?.servers.map((s,i) => `${approval?.identities[i]?.username}@${s.address}:${s.port}`).join(' → ') }}</p><pre>{{ approval?.command }}</pre><small>{{ approval?.plan_hash }}</small><n-space><n-button @click="showApproval=false">{{ t('remoteAccess.cancel') }}</n-button><n-button type="primary" :disabled="busy || !state.enabled" @click="confirmExecution">{{ t('remoteAccess.approve') }}</n-button></n-space></n-modal>
     <n-modal v-model:show="showOutput" preset="card" :title="t('remoteAccess.output')" class="remote-modal">
       <n-alert type="warning">{{ t('remoteAccess.outputHint') }}</n-alert>
       <h3>{{ t('remoteAccess.stdout') }}</h3><pre>{{ transcript.stdout }}</pre>
@@ -118,10 +123,10 @@
 
 <script setup lang="ts">
 import RemoteAdvanced from './RemoteAdvanced.vue'
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NAlert, NButton, NCard, NEmpty, NModal, NPageHeader, NPopconfirm, NSpace, NTabPane, NTabs, NTag } from 'naive-ui'
-import { remoteAccessApi, type RemoteCollection, type RemoteSnapshot, type SSHExecution, type SSHHop, type SSHApproval, type SSHKeyOperation } from '../remoteAccessApi'
+import { remoteAccessApi, type RemoteCollection, type RemoteSnapshot, type SSHExecution, type SSHHop, type SSHApproval, type SSHKeyOperation, type SSHExecuteRequest } from '../remoteAccessApi'
 const { t } = useI18n()
 const collections: RemoteCollection[] = ['servers','identities','routes','grants']
 const state = reactive<RemoteSnapshot>({enabled:false,servers:[],identities:[],routes:[],grants:[],executions:[]})
@@ -131,25 +136,28 @@ const editor=ref<RemoteCollection|null>(null), editingID=ref(''), form=ref<Recor
 const password=ref(''),privateKey=ref(''),passphrase=ref(''),fingerprints=ref(''),expires=ref(''),hops=ref<SSHHop[]>([])
 const keyOperations=ref<SSHKeyOperation[]>([]), pendingApprovals=ref<SSHApproval[]>([]), showKey=ref(false),keyForm=reactive({action:'install',route_id:'',identity_id:'',installation_id:'',alternate_id:'',new_route_id:''})
 const showGenerate=ref(false),generateUsername=ref('')
-const showApproval=ref(false),approval=ref<SSHApproval|null>(null), frozenRequest=ref<Record<string,unknown>>({})
+const showApproval=ref(false),approval=ref<SSHApproval|null>(null), frozenRequest=ref<SSHExecuteRequest>({route_id:'',command:''})
 const showRun=ref(false), runRoute=ref(''),command=ref(''),timeout=ref(60),showOutput=ref(false),transcript=ref({stdout:'',stderr:''})
+watch(()=>form.value.capability,cap=>{if(cap!=='exec')form.value.allow_model_output=false})
 const activeCount=computed(()=>state.executions.filter(cancellable).length)
 function pending(e:SSHExecution){return ['pending_approval','awaiting_approval'].includes(e.state)}
 function cancellable(e:SSHExecution){return pending(e)||['running','queued','dispatch_started','approved'].includes(e.state)}
 function itemLabel(item:any){return item.label||item.username||item.id}
 function routeLabel(id?:string){const r=state.routes.find(r=>r.id===id);return r?`${r.label}: ${r.hops.map(h=>{const s=state.servers.find(s=>s.id===h.server_id);const i=state.identities.find(i=>i.id===h.identity_id);return `${i?.username||'?'}@${s?.address||'?'}:${s?.port||22}`}).join(' → ')}`:id||'—'}
-function describe(kind:RemoteCollection,item:any){if(kind==='servers')return `${item.address}:${item.port} · ${(item.host_keys||[]).join(', ')}`;if(kind==='identities')return `${item.username} · ${item.auth_type} · ${item.public_fingerprint||''} ${item.public_key||''}`;if(kind==='routes')return routeLabel(item.id);return `${item.caller_id} · ${routeLabel(item.route_id)} · ${item.capability} · ${item.expires_at||'—'}`}
+function displayExpiry(value?:string){return !value || value.startsWith('0001-') ? '—' : value}
+function localExpiry(value?:string){if(!value || value.startsWith('0001-'))return '';const date=new Date(value);return Number.isNaN(date.getTime())?'':new Date(date.getTime()-date.getTimezoneOffset()*60000).toISOString().slice(0,16)}
+function describe(kind:RemoteCollection,item:any){if(kind==='servers')return `${item.address}:${item.port} · ${(item.host_keys||[]).join(', ')}`;if(kind==='identities')return `${item.username} · ${item.auth_type} · ${item.public_fingerprint||''} ${item.public_key||''}`;if(kind==='routes')return routeLabel(item.id);return `${item.caller_id} · ${routeLabel(item.route_id)} · ${item.capability} · ${item.permanent?t('remoteAccess.permanent'):displayExpiry(item.expires_at)}${item.allow_model_output===true?' · '+t('remoteAccess.modelOutputEnabled'):''}`}
 async function load(){loading.value=true;try{const s=await remoteAccessApi.snapshot();Object.assign(state,{...s,servers:s.servers||[],identities:s.identities||[],routes:s.routes||[],grants:s.grants||[],executions:s.executions||[]});pendingApprovals.value=await remoteAccessApi.approvals();keyOperations.value=await remoteAccessApi.keyOperations();loaded.value=true}catch{error.value=t('remoteAccess.error')}finally{loading.value=false}}
 async function mutate(action:()=>Promise<unknown>){if(busy.value)return;busy.value=true;error.value='';try{await action();await load()}catch{error.value=t('remoteAccess.error')}finally{busy.value=false}}
 function closeEditor(){editor.value=null;password.value='';privateKey.value='';passphrase.value='';form.value={}}
-function openEditor(kind:RemoteCollection,item?:any){closeEditor();editor.value=kind;editingID.value=item?.id||'';form.value=item?JSON.parse(JSON.stringify(item)):{label:'',enabled:true,address:'',port:22,auth_type:'password',username:'',caller_id:'dashboard',route_id:'',capability:'exec'};fingerprints.value=(item?.host_keys||[]).join('\n');hops.value=item?.hops?JSON.parse(JSON.stringify(item.hops)):[{server_id:'',identity_id:''}];expires.value=item?.expires_at?new Date(new Date(item.expires_at).getTime()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16):''}
+function openEditor(kind:RemoteCollection,item?:any){closeEditor();editor.value=kind;editingID.value=item?.id||'';form.value=item?JSON.parse(JSON.stringify(item)):{label:'',enabled:true,address:'',port:22,auth_type:'password',username:'',caller_id:'dashboard',route_id:'',capability:'exec',permanent:false};form.value.permanent=item?.permanent===true;form.value.allow_model_output=item?.allow_model_output===true;fingerprints.value=(item?.host_keys||[]).join('\n');hops.value=item?.hops?JSON.parse(JSON.stringify(item.hops)):[{server_id:'',identity_id:''}];expires.value=localExpiry(item?.expires_at)}
 async function save(){
   if(!editor.value)return
   const kind=editor.value, f=form.value
   let data:Record<string,unknown>={enabled:f.enabled}
   if(kind==='servers')Object.assign(data,{label:f.label,address:f.address,port:f.port,host_keys:fingerprints.value.split(/\n/).map(s=>s.trim()).filter(Boolean),trust_source:f.trust_source})
   if(kind==='routes')Object.assign(data,{label:f.label,hops:hops.value})
-  if(kind==='grants')Object.assign(data,{caller_id:f.caller_id,route_id:f.route_id,capability:f.capability,expires_at:new Date(expires.value).toISOString(),...(f.file_root?{file_root:f.file_root}:{}),...(f.capability==='runbook'?{runbook_id:f.runbook_id,max_uses:f.max_uses}: {})})
+  if(kind==='grants')Object.assign(data,{caller_id:f.caller_id,route_id:f.route_id,capability:f.capability,permanent:f.permanent===true,allow_model_output:f.capability==='exec'&&f.allow_model_output===true,...(f.permanent?{}:{expires_at:new Date(expires.value).toISOString()}),...(f.file_root?{file_root:f.file_root}:{}),...(f.capability==='runbook'?{runbook_id:f.runbook_id,max_uses:f.max_uses}: {})})
   if(kind==='identities'){
     const identity={username:f.username,auth_type:f.auth_type,enabled:f.enabled,...(f.expires_at?{expires_at:f.expires_at}:{})}
     const secret={...(password.value?{password:password.value}:{}),...(privateKey.value?{private_key:privateKey.value}:{}),...(passphrase.value?{passphrase:passphrase.value}:{})}
@@ -162,7 +170,7 @@ async function keyOperation(){await mutate(async()=>{await remoteAccessApi.keyOp
 async function generate(){await mutate(async()=>{await remoteAccessApi.generate(generateUsername.value);generateUsername.value='';showGenerate.value=false})}
 async function toggleEnabled(){await mutate(()=>remoteAccessApi.enabled(!state.enabled))}
 async function execute(){await mutate(async()=>{frozenRequest.value={route_id:runRoute.value,command:command.value,timeout_seconds:timeout.value};approval.value=await remoteAccessApi.preview(frozenRequest.value);showRun.value=false;showApproval.value=true})}
-async function confirmExecution(){if(!approval.value||executing.value)return;const request={...frozenRequest.value,expected_plan_hash:approval.value.plan_hash,approval_id:approval.value.approval_id};showApproval.value=false;approval.value=null;frozenRequest.value={};command.value='';tab.value='executions';executing.value=true;error.value='';try{await remoteAccessApi.execute(request)}catch{error.value=t('remoteAccess.error')}finally{executing.value=false;await load()}}
+async function confirmExecution(){if(!approval.value||executing.value)return;const request={...frozenRequest.value,expected_plan_hash:approval.value.plan_hash,approval_id:approval.value.approval_id};showApproval.value=false;approval.value=null;frozenRequest.value={route_id:'',command:''};command.value='';tab.value='executions';executing.value=true;error.value='';try{await remoteAccessApi.execute(request)}catch{error.value=t('remoteAccess.error')}finally{executing.value=false;await load()}}
 async function cancel(id:string){await mutate(()=>remoteAccessApi.cancel(id))}
 function pastePrivateKey(event:ClipboardEvent){privateKey.value=event.clipboardData?.getData('text/plain')||''}
 async function readPrivateKey(event:Event){const input=event.target as HTMLInputElement;const file=input.files?.[0];if(!file)return;if(file.size>65536){error.value=t('remoteAccess.error');input.value='';return}privateKey.value=await file.text();input.value=''}

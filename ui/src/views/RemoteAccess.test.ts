@@ -36,4 +36,70 @@ describe('Remote SSH dashboard',()=>{
     expect(remoteAccessApi.save).toHaveBeenCalledWith('identities',expect.objectContaining({secret:{private_key:key}}),'i');w.unmount()
   })
 
+  async function editGrant(grant:Record<string,unknown>){
+    vi.mocked(remoteAccessApi.snapshot).mockResolvedValue({...structuredClone(snapshot),grants:[{id:'g',caller_id:'dashboard',route_id:'r',capability:'exec',route_revision:1,enabled:true,...grant}]})
+    const w=mount(RemoteAccess);await flushPromises()
+    await w.findAll('.n-tabs-tab').find(t=>t.text()==='Permissions')!.trigger('click');await flushPromises()
+    await button(w,'Edit').trigger('click');await flushPromises();return w
+  }
+  it('converts a temporary permission to permanent without sending a stale expiration',async()=>{
+    const w=await editGrant({expires_at:'2026-10-22T08:20:00Z'})
+    expect(w.find('input[type="datetime-local"]').attributes('required')).toBeDefined()
+    await w.find('[data-testid=grant-permanent]').setValue(true)
+    expect(w.find('input[type="datetime-local"]').exists()).toBe(false)
+    await w.find('form').trigger('submit');await flushPromises()
+    expect(remoteAccessApi.save).toHaveBeenCalledWith('grants',{enabled:true,caller_id:'dashboard',route_id:'r',capability:'exec',permanent:true,allow_model_output:false},'g');w.unmount()
+  })
+  it('preserves explicit permanent permissions with a backend zero date',async()=>{
+    const w=await editGrant({permanent:true,expires_at:'0001-01-01T00:00:00Z'})
+    expect(w.text()).toContain('No expiration');expect(w.text()).not.toContain('0001-')
+    expect(w.find('input[type="datetime-local"]').exists()).toBe(false)
+    await w.find('form').trigger('submit');await flushPromises()
+    expect(remoteAccessApi.save).toHaveBeenCalledWith('grants',expect.objectContaining({permanent:true}),'g')
+    expect(vi.mocked(remoteAccessApi.save).mock.calls[0]![1]).not.toHaveProperty('expires_at');w.unmount()
+  })
+  it('requires an expiration when changing a permanent permission to temporary',async()=>{
+    const w=await editGrant({permanent:true,expires_at:'0001-01-01T00:00:00Z'})
+    await w.find('[data-testid=grant-permanent]').setValue(false)
+    const date=w.find('input[type="datetime-local"]');expect((date.element as HTMLInputElement).value).toBe('')
+    expect(date.attributes('required')).toBeDefined();await date.setValue('2026-10-22T10:00')
+    await w.find('form').trigger('submit');await flushPromises()
+    expect(remoteAccessApi.save).toHaveBeenCalledWith('grants',expect.objectContaining({permanent:false,expires_at:new Date('2026-10-22T10:00').toISOString()}),'g');w.unmount()
+  })
+  it('defaults new permissions to temporary without inferring permanence from a missing expiry',async()=>{
+    const w=await editGrant({expires_at:'0001-01-01T00:00:00Z'})
+    expect((w.find('[data-testid=grant-permanent]').element as HTMLInputElement).checked).toBe(false)
+    expect((w.find('input[type="datetime-local"]').element as HTMLInputElement).value).toBe('')
+    await button(w,'Cancel').trigger('click');await flushPromises();await button(w,'Add').trigger('click');await flushPromises()
+    expect((w.find('[data-testid=grant-permanent]').element as HTMLInputElement).checked).toBe(false)
+    expect(w.find('input[type="datetime-local"]').attributes('required')).toBeDefined();w.unmount()
+  })
+
+  it('preserves model output consent on permission edits and labels shared permissions',async()=>{
+    const w=await editGrant({permanent:true,allow_model_output:true})
+    expect((w.find('[data-testid=grant-model-output]').element as HTMLInputElement).checked).toBe(true)
+    expect(w.text()).toContain('Model analysis allowed')
+    await w.find('form').trigger('submit');await flushPromises()
+    expect(remoteAccessApi.save).toHaveBeenCalledWith('grants',expect.objectContaining({allow_model_output:true}),'g');w.unmount()
+  })
+  it('does not carry model output consent into other capabilities',async()=>{
+    const w=await editGrant({permanent:true,allow_model_output:true})
+    await w.findAll('select')[1]!.setValue('terminal')
+    await w.find('form').trigger('submit');await flushPromises()
+    expect(remoteAccessApi.save).toHaveBeenCalledWith('grants',expect.objectContaining({capability:'terminal',allow_model_output:false}),'g');w.unmount()
+  })
+  it('keeps dashboard executions private and directs model analysis to chat',async()=>{
+    const w=mount(RemoteAccess);await flushPromises();await w.findAll('.n-tabs-tab').find(t=>t.text()==='Operations')!.trigger('click');await flushPromises();await button(w,'Prepare operation').trigger('click');await flushPromises()
+    expect(w.find('[data-testid=execution-model-output]').exists()).toBe(false)
+    expect(w.text()).toContain('ask the bot in chat')
+    await w.find('select').setValue('r');await w.find('textarea').setValue('uptime');await w.find('form').trigger('submit');await flushPromises()
+    expect(remoteAccessApi.preview).toHaveBeenCalledWith({route_id:'r',command:'uptime',timeout_seconds:60});w.unmount()
+  })
+  it('warns when a pending bot approval shares model output',async()=>{
+    vi.mocked(remoteAccessApi.approvals).mockResolvedValue([{approval_id:'nonce',execution_id:'x',plan_hash:'hash',command:'uptime',servers:snapshot.servers,identities:snapshot.identities,expires_at:'soon',model_output:true}])
+    const w=mount(RemoteAccess);await flushPromises()
+    expect(w.text()).toContain('configured AI provider')
+    expect(w.text()).toContain('Redaction cannot guarantee');w.unmount()
+  })
+
 })

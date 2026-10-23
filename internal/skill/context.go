@@ -19,9 +19,11 @@ const (
 // one skill call can taint later skill calls in the SAME turn (context values
 // are immutable, so a plain value can't flow back up the loop).
 type turnTaint struct {
-	mu               sync.Mutex
-	slackSearchUsed  bool
-	externalDataUsed bool
+	mu                sync.Mutex
+	slackSearchUsed   bool
+	remoteOutputUsed  bool
+	remoteOutputBytes int
+	externalDataUsed  bool
 }
 
 // WithTurnTaint attaches a fresh per-turn taint holder. Call once at turn start.
@@ -58,6 +60,45 @@ func SlackSearchUsedInTurn(ctx context.Context) bool {
 		return t.slackSearchUsed || t.externalDataUsed
 	}
 	return false
+}
+
+// MarkRemoteOutputUsed taints this turn after approved SSH output enters model context.
+// The shared flag is enforced by the main dispatcher, not by model instructions.
+func MarkRemoteOutputUsed(ctx context.Context) {
+	if t, ok := ctx.Value(ctxTurnTaint).(*turnTaint); ok {
+		t.mu.Lock()
+		t.remoteOutputUsed = true
+		t.mu.Unlock()
+	}
+}
+
+// RemoteOutputUsedInTurn reports whether this turn consumed untrusted SSH output.
+func RemoteOutputUsedInTurn(ctx context.Context) bool {
+	if t, ok := ctx.Value(ctxTurnTaint).(*turnTaint); ok {
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		return t.remoteOutputUsed
+	}
+	return false
+}
+
+// ConsumeRemoteOutputBudget bounds all SSH model projections in a turn to 64 KiB.
+// Missing turn state fails closed rather than allowing unlimited direct calls.
+func ConsumeRemoteOutputBudget(ctx context.Context, requested int) int {
+	if requested <= 0 {
+		return 0
+	}
+	if t, ok := ctx.Value(ctxTurnTaint).(*turnTaint); ok {
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		available := 64*1024 - t.remoteOutputBytes
+		if requested > available {
+			requested = available
+		}
+		t.remoteOutputBytes += requested
+		return requested
+	}
+	return 0
 }
 
 // DocumentAttachment holds a file received from a channel, available to skills via context.

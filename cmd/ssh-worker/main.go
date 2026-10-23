@@ -87,7 +87,11 @@ func run() error {
 		if *cert == "" || *tlsKey == "" {
 			return errors.New("TLS certificate/key required unless using a private unix socket")
 		}
-		err = server.ListenAndServeTLS(*cert, *tlsKey)
+		server.TLSConfig, err = workerTLSConfig(*cert, *tlsKey)
+		if err != nil {
+			return err
+		}
+		err = server.ListenAndServeTLS("", "")
 	}
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil

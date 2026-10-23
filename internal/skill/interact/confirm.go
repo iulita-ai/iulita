@@ -14,7 +14,7 @@ type Confirmation struct {
 	Nonce       string    `json:"nonce"`
 	OperationID string    `json:"operation_id"`
 	Fingerprint string    `json:"fingerprint"`
-	Reason      string    `json:"reason"`  // large_download | mutation | insecure_credentials | sensitive_egress
+	Reason      string    `json:"reason"`  // large_download | mutation | ssh_command | insecure_credentials | sensitive_egress
 	Preview     string    `json:"preview"` // safe, sanitized human text
 	MaxBytes    int64     `json:"max_bytes,omitempty"`
 	IssuedAt    time.Time `json:"issued_at"`
@@ -28,6 +28,7 @@ const (
 	ConfirmMCP                = "mcp_operation"
 	ConfirmLargeDownload      = "large_download"
 	ConfirmMutation           = "mutation"
+	ConfirmSSHCommand         = "ssh_command"
 	ConfirmInsecureCredential = "insecure_credentials"
 	ConfirmSensitiveEgress    = "sensitive_egress"
 )
@@ -90,4 +91,10 @@ func ConfirmerFrom(ctx context.Context) ConfirmationAsker {
 		return v
 	}
 	return nil
+}
+
+// PrivateResultDeliverer sends owner-only output directly through the authenticated
+// channel. Its payload must never be returned as a model tool result.
+type PrivateResultDeliverer interface {
+	DeliverPrivateResult(context.Context, Actor, string, string) error
 }

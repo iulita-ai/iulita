@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/iulita-ai/iulita/internal/auth"
@@ -112,7 +113,8 @@ func (s *Server) remotePut(c *fiber.Ctx, kind string) error {
 	if auth.GetClaims(c).Role != domain.RoleAdmin {
 		return fiber.ErrForbidden
 	}
-	id := c.Params("id")
+	// Fiber parameters alias a request buffer; catalog IDs outlive the request.
+	id := strings.Clone(c.Params("id"))
 	switch kind {
 	case "servers":
 		var x remoteaccess.Server

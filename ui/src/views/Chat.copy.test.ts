@@ -49,4 +49,23 @@ describe('Chat copy and text delivery', () => {
     expect(send).toHaveBeenCalledExactlyOnceWith({ remember_message_id: 'translation-one' })
     wrapper.unmount()
   })
+  it('shows private SSH output literally without assistant actions or resending it', async () => {
+    const wrapper = mount(Chat); await flushPromises()
+    const text = '<script>alert(1)</script>\n**stdout**\n<img src=x onerror=alert(1)>\n$HOME'
+    handlers.get('private_result')!({text, message_id:'never-bookmark-this'}); await flushPromises()
+    expect(wrapper.get('.private-result pre').element.textContent).toBe(text)
+    expect(wrapper.find('script').exists()).toBe(false);expect(wrapper.find('img').exists()).toBe(false)
+    expect(wrapper.text()).toContain('If you approved model analysis')
+    expect(wrapper.find('button.bookmark-btn').exists()).toBe(false)
+    expect(wrapper.find('button[aria-label="Copy assistant message"]').exists()).toBe(false)
+    expect(send).not.toHaveBeenCalled();expect(api.getMessages).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+    const fresh=mount(Chat);await flushPromises();expect(fresh.find('.private-result').exists()).toBe(false);fresh.unmount()
+  })
+  it('ignores malformed private result events',async()=>{
+    const wrapper=mount(Chat);await flushPromises()
+    handlers.get('private_result')!(null);handlers.get('private_result')!({text:{html:'untrusted'}});await flushPromises()
+    expect(wrapper.find('.private-result').exists()).toBe(false);expect(send).not.toHaveBeenCalled();wrapper.unmount()
+  })
+
 })

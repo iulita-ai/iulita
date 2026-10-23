@@ -193,3 +193,30 @@ Pre-flight target validation through a proxy is not a connect-time destination
 check inside that proxy. Configure proxy-side destination ACLs and DNS-rebinding
 protection; do not infer them from the application's URL checks. There is no
 direct fallback when the mandatory HTTP-tool proxy is unavailable.
+
+## SSH output and model analysis
+
+SSH output is private by default. In **Remote Access → Permissions**, enable
+**Allow model analysis of command output** only on the intended `remote_exec`
+grant. This does not waive command approval. The bot must request
+`model_output: true`; confirmation states that filtered output will reach the
+configured AI provider and that the final analysis may remain in chat history.
+Dashboard command execution remains private; use the chat for model analysis.
+
+Original stdout/stderr stays encrypted in owner-private artifacts. The model
+receives an explicitly untrusted, transient projection: at most 16 KiB stdout
+and 4 KiB stderr per execution, 32 KiB per tool call and 64 KiB per turn. The
+projection strips terminal controls and masks exact SSH credentials, common
+secret fields, tokens and PEM material. Filtering cannot identify every secret;
+avoid credential dumps, Secrets, kubeconfig, environment variables and full
+manifests. Truncation and redaction are reported. Revoking access or changing the
+approved route/credential policy prevents output release.
+
+After consuming SSH output, the dispatcher permits only further explicitly
+confirmed SSH diagnostics, status/cancellation, time queries and user questions.
+Memory writes, external requests, delegation, schedules, mutating response hooks
+and automatic skill learning are blocked for that turn. Remote text never grants
+permission to run its embedded instructions. Final diagnostic answers are saved
+in normal chat history; this is not a guarantee against every prompt-injection
+technique across later conversations. SFTP, PTY, background jobs, unattended
+runbooks and subagents do not share their output with the model through this mode.

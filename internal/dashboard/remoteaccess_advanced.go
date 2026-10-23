@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -40,7 +41,8 @@ func (s *Server) remotePutRunbook(c *fiber.Ctx) error {
 	if bodyErr := remoteBody(c, &b); bodyErr != nil {
 		return bodyErr
 	}
-	b.ID = c.Params("id")
+	// Catalog IDs must not retain Fiber's reusable request buffer.
+	b.ID = strings.Clone(c.Params("id"))
 	saved, err := s.remoteAccess.PutRunbook(sc, b)
 	if err != nil {
 		return remoteError(err)
@@ -129,7 +131,7 @@ func (s *Server) remoteSchedule(c *fiber.Ctx) error {
 	authorized := false
 	for id := range snapshot.Grants {
 		g := snapshot.Grants[id]
-		if g.Enabled && g.CallerID == "scheduler" && g.RouteID == book.RouteID && g.RunbookID == book.ID && g.RunbookRevision == book.Revision && g.Capability == "runbook" && g.ExpiresAt.After(time.Now()) && g.MaxUses > g.Uses {
+		if g.ActiveAt(time.Now()) && g.CallerID == "scheduler" && g.RouteID == book.RouteID && g.RunbookID == book.ID && g.RunbookRevision == book.Revision && g.Capability == "runbook" && g.MaxUses > g.Uses {
 			authorized = true
 			break
 		}

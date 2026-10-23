@@ -4,6 +4,17 @@ Build locally with `go build ./cmd/ssh-worker` or `docker build -f Dockerfile.ss
 The bot never falls back to in-process SSH or the legacy `shell_exec` tool.
 Configure `[skills.remote_access]` with `worker_url` and `worker_key_file`.
 The feature defaults off; an administrator must enable it in Remote Access.
+Release tags publish the separate multi-architecture image
+`ghcr.io/iulita-ai/iulita-ssh-worker` with the same version tags as the bot, and
+Linux amd64/arm64 worker binaries as release assets. Pin the worker image digest
+from the matching bot release.
+
+Environment overrides are `IULITA_SKILLS_REMOTE_ACCESS_WORKER_URL` and
+`IULITA_SKILLS_REMOTE_ACCESS_WORKER_KEY_FILE`. For a private worker TLS CA, mount
+its public certificate read-only in the bot and set
+`SSL_CERT_DIR=/run/ssh-worker-ca:/etc/ssl/certs` before bot startup. The worker
+certificate must include its configured service DNS name in its SANs; keep normal
+certificate and hostname verification enabled.
 
 Run the worker as a separate non-root user/container without the bot data volume,
 environment, keyring, service-account token, Docker socket, or host namespaces.

@@ -4,12 +4,13 @@ export interface SSHServer { id: string; label: string; address: string; port: n
 export interface SSHIdentity { id: string; username: string; auth_type: string; enabled: boolean; revision?: number; public_key?: string; public_fingerprint?: string }
 export interface SSHHop { server_id: string; identity_id: string }
 export interface SSHRoute { id: string; label: string; hops: SSHHop[]; enabled: boolean; revision?: number }
-export interface SSHGrant { id: string; caller_id: string; route_id: string; capability: string; route_revision: number; enabled: boolean; expires_at?: string; revision?: number }
-export interface SSHExecution { id: string; route_id?: string; state: string; plan_hash?: string; command?: string; created_at?: string; exit_code?: number; error_code?: string; artifact_id?: string; stdout_bytes?: number; stderr_bytes?: number; truncated?: boolean }
+export interface SSHGrant { id: string; caller_id: string; route_id: string; capability: string; route_revision: number; enabled: boolean; permanent?: boolean; allow_model_output?: boolean; expires_at?: string; revision?: number }
+export interface SSHExecution { model_output?: boolean; id: string; route_id?: string; state: string; plan_hash?: string; command?: string; created_at?: string; exit_code?: number; error_code?: string; artifact_id?: string; stdout_bytes?: number; stderr_bytes?: number; truncated?: boolean }
 export interface RemoteSnapshot { enabled: boolean; servers: SSHServer[]; identities: SSHIdentity[]; routes: SSHRoute[]; grants: SSHGrant[]; executions: SSHExecution[]; installations?: SSHInstallation[]; runbooks?: any[]; jobs?: any[] }
 export interface SSHKeyOperation {id:string;action:string;state:string;error_code?:string;installation_id?:string;created_at:string}
 export interface SSHInstallation {id:string;server_id:string;identity_id:string;fingerprint:string;state:string}
-export interface SSHApproval { execution_id:string; approval_id: string; plan_hash: string; command: string; servers: SSHServer[]; identities: SSHIdentity[]; expires_at: string }
+export interface SSHExecuteRequest { route_id: string; command: string; timeout_seconds?: number; model_output?: boolean; expected_plan_hash?: string; approval_id?: string }
+export interface SSHApproval { model_output?: boolean; execution_id:string; approval_id: string; plan_hash: string; command: string; servers: SSHServer[]; identities: SSHIdentity[]; expires_at: string }
 export type RemoteCollection = 'servers' | 'identities' | 'routes' | 'grants'
 
 // SSH mutations must never replay automatically after a timeout or authentication failure.
@@ -32,8 +33,8 @@ export const remoteAccessApi = {
   decide: (id:string, plan_hash:string, approved:boolean) => remoteRequest(`/approvals/${encodeURIComponent(id)}`, 'POST', {plan_hash,approved}),
   keyOperation: (data:unknown) => remoteRequest('/key-operations','POST',data),
   generate: (username: string) => remoteRequest<SSHIdentity>('/identities/generate', 'POST', {username,enabled:true}),
-  preview: (data: unknown) => remoteRequest<SSHApproval>('/executions/preview', 'POST', data),
-  execute: (data: unknown) => remoteRequest<SSHExecution>('/executions', 'POST', data),
+  preview: (data: SSHExecuteRequest) => remoteRequest<SSHApproval>('/executions/preview', 'POST', data),
+  execute: (data: SSHExecuteRequest) => remoteRequest<SSHExecution>('/executions', 'POST', data),
   cancel: (id: string) => remoteRequest(`/executions/${encodeURIComponent(id)}/cancel`, 'POST', {}),
   artifact: (id: string) => remoteRequest<{ stdout: string; stderr: string }>(`/artifacts/${encodeURIComponent(id)}`),
 }

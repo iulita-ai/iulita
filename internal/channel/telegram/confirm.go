@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -10,7 +11,6 @@ import (
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
-	"go.uber.org/zap"
 
 	"github.com/iulita-ai/iulita/internal/skill/interact"
 )
@@ -23,9 +23,11 @@ const confirmPrefix = "cfm:"
 // "G" always (global), "0" deny.
 type pendingConfirm struct {
 	replyCh    chan string
-	expectFrom int64  // Telegram user ID of the requesting principal (0 = any allowed)
+	expectFrom int64  // Nonzero Telegram user ID of the requesting principal
 	domainUser string // domain user ID for the decision actor
 	nonce      string
+	chatID     int64
+	reason     string
 	msgID      int
 	expires    time.Time
 }
@@ -44,8 +46,9 @@ func (cs *confirmState) set(nonce string, pc *pendingConfirm) {
 	cs.mu.Lock()
 	// Concurrent prompt overwrite: a previous pending confirm is superseded —
 	// it must never remain answerable.
-	for _, v := range cs.pending {
-		if v.replyCh != pc.replyCh {
+	for previous, v := range cs.pending {
+		if v.replyCh != pc.replyCh && v.chatID == pc.chatID && v.expectFrom == pc.expectFrom {
+			delete(cs.pending, previous)
 			select {
 			case v.replyCh <- "0":
 			default:
@@ -56,15 +59,27 @@ func (cs *confirmState) set(nonce string, pc *pendingConfirm) {
 	cs.mu.Unlock()
 }
 
-// take removes and returns the one-shot entry (nonce consumed here).
-func (cs *confirmState) take(nonce string) (*pendingConfirm, bool) {
+// takeBound validates platform identity before consuming a one-shot nonce.
+func (cs *confirmState) takeBound(nonce, verdict string, sender, chat int64, message int) (*pendingConfirm, bool) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	pc, ok := cs.pending[nonce]
-	if ok {
-		delete(cs.pending, nonce)
+	if !ok {
+		return nil, false
 	}
-	return pc, ok
+	if !pc.expires.After(time.Now()) {
+		delete(cs.pending, nonce)
+		return nil, false
+	}
+	if sender == 0 || pc.expectFrom == 0 || sender != pc.expectFrom || chat != pc.chatID || message != pc.msgID {
+		return nil, false
+	}
+	validVerdict := verdict == "1" || verdict == "0" || pc.reason == interact.ConfirmMutation && (verdict == "O" || verdict == "G")
+	if !validVerdict {
+		return nil, false
+	}
+	delete(cs.pending, nonce)
+	return pc, true
 }
 
 func (cs *confirmState) abandon(pc *pendingConfirm) {
@@ -80,9 +95,11 @@ func (cs *confirmState) abandon(pc *pendingConfirm) {
 // chat, and the requesting Telegram user (plan §8.3). Free-text approval is
 // deliberately not accepted — only verified callback clicks decide.
 type telegramConfirmer struct {
-	channel *Channel
-	chatID  int64
-	fromTg  int64 // requesting Telegram user captured for this turn
+	channel    *Channel
+	chatID     int64
+	fromTg     int64 // requesting Telegram user captured for this turn
+	approvalMu sync.Mutex
+	approved   map[string]string // execution nonce to verified domain owner
 }
 
 // Confirm sends the inline-keyboard question and waits for the bound click.
@@ -123,6 +140,8 @@ func (tc *telegramConfirmer) Confirm(ctx context.Context, action interact.Confir
 	replyCh := make(chan string, 1)
 	pc := &pendingConfirm{
 		replyCh:    replyCh,
+		chatID:     tc.chatID,
+		reason:     action.Reason,
 		expectFrom: tc.fromTg,
 		domainUser: expect.UserID,
 		nonce:      nonce,
@@ -131,6 +150,20 @@ func (tc *telegramConfirmer) Confirm(ctx context.Context, action interact.Confir
 	}
 	tc.channel.confirms.set(nonce, pc)
 	defer tc.channel.confirms.abandon(pc)
+	status := "⌛ Confirmation expired or cancelled."
+	defer func() {
+		cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, err := tc.channel.bot.EditMessageText(cleanup, &bot.EditMessageTextParams{ChatID: tc.chatID, MessageID: msg.ID, Text: text + "\n\n" + status, ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{}}}); err != nil {
+			// Telegram may reject text edits (including its message length limit).
+			// Clearing the keyboard separately still retires the action visibly.
+			clearctx, clearcancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer clearcancel()
+			if _, clearerr := tc.channel.bot.EditMessageReplyMarkup(clearctx, &bot.EditMessageReplyMarkupParams{ChatID: tc.chatID, MessageID: msg.ID, ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{}}}); clearerr != nil {
+				tc.channel.logger.Warn("could not clear resolved confirmation keyboard")
+			}
+		}
+	}()
 
 	timer := time.NewTimer(time.Until(action.ExpiresAt))
 	defer timer.Stop()
@@ -139,6 +172,13 @@ func (tc *telegramConfirmer) Confirm(ctx context.Context, action interact.Confir
 	case verdict := <-replyCh:
 		switch verdict {
 		case "1", "O", "G":
+			status = "✅ Approved. Executing this operation."
+			tc.approvalMu.Lock()
+			if tc.approved == nil {
+				tc.approved = make(map[string]string)
+			}
+			tc.approved[action.OperationID] = expect.UserID
+			tc.approvalMu.Unlock()
 			decision := interact.Decision{Approved: true, Actor: expect, MaxBytes: action.MaxBytes}
 			if verdict == "O" {
 				decision.Standing = interact.StandingOrigin
@@ -148,6 +188,7 @@ func (tc *telegramConfirmer) Confirm(ctx context.Context, action interact.Confir
 			}
 			return decision, nil
 		default:
+			status = "❌ Denied."
 			return interact.Decision{Approved: false, Actor: expect}, interact.ErrConfirmRejected
 		}
 	case <-timer.C:
@@ -175,32 +216,13 @@ func (c *Channel) HandleConfirmCallback(cq *models.CallbackQuery) bool {
 	chatID := cq.Message.Message.Chat.ID
 
 	// One-shot nonce: consumed atomically; replays answer nothing.
-	pc, ok := c.confirms.take(nonce)
+	pc, ok := c.confirms.takeBound(nonce, verdict, cq.From.ID, chatID, cq.Message.Message.ID)
 	if !ok {
 		_, _ = c.bot.AnswerCallbackQuery(context.Background(), &bot.AnswerCallbackQueryParams{ //nolint:errcheck // ack only
 			CallbackQueryID: cq.ID,
 			Text:            "This confirmation is no longer active.",
 		})
 		return true
-	}
-
-	// Identity binding: the click must come from the requesting Telegram
-	// user in the chat where the question was asked. Another group member's
-	// click never grants consent.
-	if pc.expectFrom != 0 && cq.From.ID != pc.expectFrom {
-		c.logger.Warn("confirmation actor mismatch",
-			zap.Int64("chat_id", chatID),
-			zap.Int64("clicked_by", cq.From.ID),
-			zap.Int64("requested_by", pc.expectFrom))
-		_, _ = c.bot.AnswerCallbackQuery(context.Background(), &bot.AnswerCallbackQueryParams{ //nolint:errcheck
-			CallbackQueryID: cq.ID,
-			Text:            "Only the requesting user can answer this confirmation.",
-		})
-		return true
-	}
-	if chatID != 0 {
-		// The prompt message lives in the requester's chat context.
-		_ = chatID
 	}
 
 	_, _ = c.bot.AnswerCallbackQuery(context.Background(), &bot.AnswerCallbackQueryParams{ //nolint:errcheck // ack
@@ -259,4 +281,21 @@ func shortID(id string) string {
 		return id
 	}
 	return id[:12]
+}
+
+// DeliverPrivateResult sends a plain-text attachment only to the requesting
+// user's private Telegram chat. Group contexts fail closed; never fall back to
+// sending private SSH output to a public chat or the model.
+func (tc *telegramConfirmer) DeliverPrivateResult(ctx context.Context, actor interact.Actor, executionID, text string) error {
+	tc.approvalMu.Lock()
+	owner := tc.approved[executionID]
+	if owner == actor.UserID && actor.UserID != "" {
+		delete(tc.approved, executionID)
+	}
+	tc.approvalMu.Unlock()
+	if actor.UserID == "" || tc.fromTg <= 0 || tc.chatID != tc.fromTg || owner != actor.UserID {
+		return errors.New("private SSH output requires requester private chat")
+	}
+	_, err := tc.channel.bot.SendDocument(ctx, &bot.SendDocumentParams{ChatID: tc.chatID, Document: &models.InputFileUpload{Filename: "ssh-" + executionID + ".txt", Data: strings.NewReader(text)}, Caption: "Original SSH output. Approved model analysis uses a separate filtered, limited copy.", ProtectContent: true})
+	return err
 }

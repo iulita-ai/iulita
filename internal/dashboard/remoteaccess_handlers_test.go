@@ -96,7 +96,8 @@ func TestRemoteAccessDashboardConsentAndIsolation(t *testing.T) {
 	app := fiber.New()
 	app.Use(func(c *fiber.Ctx) error {
 		if c.Get("X-Test-User") != "" {
-			c.Locals(auth.ContextKeyUser, &auth.Claims{UserID: c.Get("X-Test-User"), Role: domain.UserRole(c.Get("X-Test-Role")), RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour))}})
+			// Production JWT decoding owns claim strings; test headers borrow Fiber buffers.
+			c.Locals(auth.ContextKeyUser, &auth.Claims{UserID: strings.Clone(c.Get("X-Test-User")), Role: domain.UserRole(strings.Clone(c.Get("X-Test-Role"))), RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour))}})
 		}
 		return c.Next()
 	})
@@ -135,7 +136,22 @@ func TestRemoteAccessDashboardConsentAndIsolation(t *testing.T) {
 	json.Unmarshal(request("POST", "/identities", "owner", admin, map[string]any{"identity": remoteaccess.Identity{Username: "deploy", AuthType: "password", Enabled: true}, "secret": remoteaccess.Secret{Password: "PASSWORD_CANARY"}}, 200), &identity)
 	var route remoteaccess.Route
 	json.Unmarshal(request("POST", "/routes", "owner", admin, remoteaccess.Route{Hops: []remoteaccess.Hop{{ServerID: server.ID, IdentityID: identity.ID}}, Enabled: true}, 200), &route)
-	request("POST", "/grants", "owner", admin, remoteaccess.Grant{RouteID: route.ID, CallerID: "dashboard", Capability: "exec", ExpiresAt: time.Now().Add(time.Hour), Enabled: true}, 200)
+	var grant remoteaccess.Grant
+	if err := json.Unmarshal(request("POST", "/grants", "owner", admin, remoteaccess.Grant{RouteID: route.ID, CallerID: "dashboard", Capability: "exec", ExpiresAt: time.Now().Add(time.Hour), Enabled: true}, 200), &grant); err != nil {
+		t.Fatal(err)
+	}
+	grant.Permanent = true
+	grant.AllowModelOutput = true
+	request("PUT", "/grants/"+grant.ID, "owner", admin, grant, 403) // Contradictory date and flag.
+	grant.ExpiresAt = time.Time{}
+	request("PUT", "/grants/"+grant.ID, "owner", string(domain.RoleRegular), grant, 403)
+	request("PUT", "/grants/"+grant.ID, "foreign", admin, grant, 403)
+	if err := json.Unmarshal(request("PUT", "/grants/"+grant.ID, "owner", admin, grant, 200), &grant); err != nil {
+		t.Fatal(err)
+	}
+	if !grant.Permanent || !grant.ExpiresAt.IsZero() || !grant.AllowModelOutput {
+		t.Fatal("grant policy did not survive HTTP round trip")
+	}
 	request("POST", "/enabled", "owner", admin, map[string]bool{"enabled": true}, 200)
 	req := remoteaccess.ExecuteRequest{RouteID: route.ID, Command: "uptime", TimeoutSeconds: 60}
 	request("POST", "/executions", "owner", admin, req, 400)
