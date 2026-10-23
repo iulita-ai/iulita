@@ -1,0 +1,4 @@
+# Build the Linux testdata/peer executable as "peer" in the build context first.
+FROM scratch
+COPY peer /peer
+ENTRYPOINT ["/peer"]

@@ -158,5 +158,8 @@ func (p *SDKProtocol) Close() error {
 		p.retire(e)
 	}
 	p.pool.workers.Wait()
+	if transport, ok := p.Transport.(interface{ CloseIdleConnections() }); ok {
+		transport.CloseIdleConnections()
+	}
 	return nil
 }

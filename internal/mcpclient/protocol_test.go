@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -165,7 +166,7 @@ func TestMCPUsesMandatoryProxyWithoutEnvironmentBypass(t *testing.T) {
 		mu.Lock()
 		connects++
 		mu.Unlock()
-		if r.Method != "CONNECT" || r.Host != "fixture.example:443" {
+		if r.Method != "CONNECT" || r.Host != "1.1.1.1:443" {
 			t.Errorf("unexpected proxy destination %s %s", r.Method, r.Host)
 		}
 		http.Error(w, "blocked", http.StatusForbidden)
@@ -176,6 +177,9 @@ func TestMCPUsesMandatoryProxyWithoutEnvironmentBypass(t *testing.T) {
 	protocol, e := NewSDKProtocol(proxy.URL)
 	if e != nil {
 		t.Fatal(e)
+	}
+	protocol.Transport.(*pinnedProxy).lookup = func(context.Context, string) ([]net.IPAddr, error) {
+		return []net.IPAddr{{IP: net.ParseIP("1.1.1.1")}}, nil
 	}
 	defer protocol.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)

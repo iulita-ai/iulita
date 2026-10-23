@@ -394,8 +394,10 @@ worker_url = "" # unix:///run/iulita-ssh/worker.sock or https://worker.example:8
 worker_key_file = "" # private file, same >=32 random bytes as ssh-worker --key-file
 
 # MCP connections: configured by their owner in the dashboard. Secrets stay in
-# encrypted storage. Execution is opt-in; public HTTP requires [proxy].url and
-# matching destination restrictions on that proxy (including OAuth endpoints).
+# encrypted storage. Public HTTP requires [proxy].url. MCP resolves names with
+# the system resolver, rejects non-public/mixed answers and pins the numeric
+# proxy destination, retaining the original TLS name (also for OAuth). It never
+# falls back to a direct connection. Additional proxy-side ACLs are recommended.
 [skills.mcp]
 enabled = false
 allowed_origins = [] # exact https origins, e.g. ["https://mcp.example.org"]
