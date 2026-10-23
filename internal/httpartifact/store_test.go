@@ -326,3 +326,44 @@ func readFull(r io.Reader, buf []byte) (int, error) {
 	}
 	return total, nil
 }
+
+func TestStageAttachmentDurablePrivateOwnerScope(t *testing.T) {
+	s := testStore(t)
+	e, perr := httpfetch.NewEngine(httpfetch.EngineConfig{ProxyURL: "http://127.0.0.1:12345", Policy: httpfetch.Policy{Enabled: true}, Artifacts: s})
+	if perr != nil {
+		t.Fatal(perr)
+	}
+	f := httpfetch.NewFactory(e)
+	data := []byte{'d', 0, 255, 'e'}
+	ctx := httpfetch.WithScope(context.Background(), httpfetch.Scope{UserID: "u1", ChatID: "chat1"})
+	view, err := f.StageAttachment(ctx, data, "../test.torrent", "application/x-bittorrent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := s.Open(ctx, "u1", view.ID)
+	if err != nil {
+		t.Fatal("committed artifact lost:", err)
+	}
+	got, err := io.ReadAll(r)
+	_ = r.Close()
+	if err != nil || !bytes.Equal(got, data) || !view.Sensitive {
+		t.Fatalf("roundtrip %v %v", got, err)
+	}
+	if _, foreignErr := s.Open(ctx, "u2", view.ID); foreignErr == nil {
+		t.Fatal("foreign owner read attachment")
+	}
+	meta, err := s.repo.GetHTTPArtifact(ctx, view.ID)
+	if err != nil || meta.ChatID != "chat1" || meta.Filename != "..test.torrent" || !meta.Sensitive {
+		t.Fatalf("metadata: %+v %v", meta, err)
+	}
+	if _, err := f.StageAttachment(context.Background(), data, "file.torrent", ""); err == nil {
+		t.Fatal("unscoped attachment accepted")
+	}
+	if _, err := f.StageAttachment(ctx, make([]byte, 601), "file.torrent", ""); !errors.Is(err, ErrQuotaExceeded) {
+		t.Fatalf("quota bypass: %v", err)
+	}
+	f.SetEnabled(false)
+	if _, err := f.StageAttachment(ctx, data, "file.torrent", ""); err == nil {
+		t.Fatal("disabled attachment accepted")
+	}
+}

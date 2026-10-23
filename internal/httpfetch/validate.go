@@ -448,6 +448,13 @@ func walkJSONValue(raw json.RawMessage, path string, refs *[]JSONRef) error {
 		if err := json.Unmarshal(raw, &obj); err != nil {
 			return fmt.Errorf("at %s: %w", path, err)
 		}
+		if src, ok := obj["$artifact_base64"]; ok {
+			var ref string
+			if len(obj) != 1 || json.Unmarshal(src, &ref) != nil || strings.TrimSpace(ref) == "" {
+				return fmt.Errorf("at %s: $artifact_base64 must contain exactly one nonempty artifact reference", path)
+			}
+			return nil
+		}
 		_, hasVar := obj["$var"]
 		_, hasCred := obj["credential_ref"]
 		if hasVar || hasCred {

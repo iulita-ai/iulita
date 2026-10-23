@@ -15,6 +15,9 @@ func documentMIME(mimeType, filename string) string {
 	if (mimeType == "" || mimeType == "application/octet-stream") && strings.HasSuffix(strings.ToLower(filename), ".pdf") {
 		return "application/pdf"
 	}
+	if (mimeType == "" || mimeType == "application/octet-stream") && strings.HasSuffix(strings.ToLower(filename), ".torrent") {
+		return "application/x-bittorrent"
+	}
 	return mimeType
 }
 

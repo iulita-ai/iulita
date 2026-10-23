@@ -34,3 +34,15 @@ func TestReadTelegramFileBounds(t *testing.T) {
 type zeroReader struct{}
 
 func (zeroReader) Read(p []byte) (int, error) { clear(p); return len(p), nil }
+
+func TestTorrentDocumentMIME(t *testing.T) {
+	for _, mime := range []string{"", "application/octet-stream", "application/x-bittorrent"} {
+		got := documentMIME(mime, "test.TORRENT")
+		if got != "application/x-bittorrent" || !(&Channel{}).isSupportedDocument(got) {
+			t.Fatalf("torrent rejected: %q", got)
+		}
+	}
+	if (&Channel{}).isSupportedDocument("application/octet-stream") {
+		t.Fatal("arbitrary binary accepted")
+	}
+}

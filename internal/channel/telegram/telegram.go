@@ -786,7 +786,7 @@ func (c *Channel) finalizeStatusMessage(chatID string, entry *statusEntry) {
 // isSupportedDocument returns true if the MIME type is accepted for document forwarding.
 func (c *Channel) isSupportedDocument(mimeType string) bool {
 	switch mimeType {
-	case "application/pdf", "text/plain", "text/csv", "text/markdown", "text/html", "application/json":
+	case "application/pdf", "application/x-bittorrent", "text/plain", "text/csv", "text/markdown", "text/html", "application/json":
 		return true
 	}
 	return false

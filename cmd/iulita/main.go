@@ -1119,7 +1119,9 @@ func main() {
 			if lmerr != nil {
 				logger.Warn("failed to load http skill manifest", zap.Error(lmerr))
 			}
-			registry.RegisterWithManifest(httpfetchskill.New(httpfetch.NewFactory(httpEngine)), httpManifest)
+			httpFactory := httpfetch.NewFactory(httpEngine)
+			registry.RegisterWithManifest(httpfetchskill.New(httpFactory), httpManifest)
+			registry.RegisterWithManifest(httpfetchskill.NewAttachment(httpFactory), httpManifest)
 			httpEngineRef = httpEngine
 			httpToolRegistered = true
 			logger.Info("http_request tool registered",

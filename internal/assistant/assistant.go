@@ -359,7 +359,7 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 	var documents []llm.DocumentAttachment
 	for _, doc := range msg.Documents {
 		// PDFs must pass the bounded local parser, independently of provider support.
-		if strings.EqualFold(doc.MimeType, "application/pdf") {
+		if strings.EqualFold(doc.MimeType, "application/pdf") || isOpaqueDocument(doc) {
 			continue
 		}
 		documents = append(documents, llm.DocumentAttachment{Data: doc.Data, MimeType: doc.MimeType, Filename: doc.Filename})
