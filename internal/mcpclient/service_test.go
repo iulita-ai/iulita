@@ -244,6 +244,42 @@ func TestIsolationConsentAndReplay(t *testing.T) {
 		t.Fatal(snap, e)
 	}
 }
+
+func TestExpiredConsentIsNotAnAccessFailure(t *testing.T) {
+	for _, stage := range []string{"approve", "execute"} {
+		t.Run(stage, func(t *testing.T) {
+			f := fixture(t)
+			c, it := setup(t, f)
+			p := prepare(t, f, c, it)
+			before, err := f.s.Connection(context.Background(), f.sc, c.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.s.mu.Lock()
+			f.s.plans[p.ID].Approved = stage == "execute"
+			f.s.plans[p.ID].ExpiresAt = time.Now().Add(-time.Second)
+			f.s.mu.Unlock()
+			if stage == "approve" {
+				err = f.s.Approve(context.Background(), f.sc, p.ID, p.Hash, true)
+			} else {
+				_, err = f.s.Execute(context.Background(), f.sc, p.ID)
+			}
+			if !errors.Is(err, ErrConfirmationExpired) || f.protocol.calls.Load() != 0 {
+				t.Fatalf("expired consent dispatched or mislabeled: %v", err)
+			}
+			after, err := f.s.Connection(context.Background(), f.sc, c.ID)
+			if err != nil || after.Revision != before.Revision || after.Generation != before.Generation || !after.Items[0].Allowed {
+				t.Fatal("expiry changed connection access", err)
+			}
+			f.s.mu.Lock()
+			_, remains := f.s.plans[p.ID]
+			f.s.mu.Unlock()
+			if remains {
+				t.Fatal("expired plan remains runnable")
+			}
+		})
+	}
+}
 func TestRevokeBeforeAndDuringDispatch(t *testing.T) {
 	t.Run("pending", func(t *testing.T) {
 		f := fixture(t)

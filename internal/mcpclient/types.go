@@ -22,6 +22,14 @@ var (
 	ErrConflict = errors.New("MCP settings changed; review the request again")
 	// ErrApproval requires verified one-shot owner consent before execution.
 	ErrApproval = errors.New("MCP operation requires owner confirmation")
+	// ErrConfirmationExpired reports a consent timeout without dispatch or permission changes.
+	ErrConfirmationExpired = errors.New("MCP confirmation expired; operation was not executed; permissions are unchanged")
+	// ErrConfirmationRejected reports an explicit refusal without dispatch or permission changes.
+	ErrConfirmationRejected = errors.New("MCP confirmation declined; operation was not executed; permissions are unchanged")
+	// ErrConfirmationCancelled reports cancelled consent without dispatch or permission changes.
+	ErrConfirmationCancelled = errors.New("MCP confirmation cancelled; operation was not executed; permissions are unchanged")
+	// ErrConfirmationUnavailable reports a channel failure before dispatch.
+	ErrConfirmationUnavailable = errors.New("MCP confirmation could not be completed; operation was not executed")
 )
 
 // Repository persists encrypted documents with revision fencing and atomic safe audit.

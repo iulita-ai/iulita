@@ -391,3 +391,24 @@ other = "A translation was already attempted in this turn. Send a new request to
 
 [TranslationChannelUnavailable]
 other = "Translation is available in Web Chat, Telegram and Slack."
+
+[MCPConfirmationExpired]
+other = "The MCP confirmation expired. The operation was not executed; connection permissions are unchanged. Would you like a new confirmation?"
+
+[MCPConfirmationRejected]
+other = "You declined the MCP confirmation. The operation was not executed; connection permissions are unchanged."
+
+[MCPConfirmationCancelled]
+other = "The MCP confirmation was cancelled. The operation was not executed; connection permissions are unchanged. Send a new request if you want to try again."
+
+[MCPConfirmationUnavailable]
+other = "MCP is waiting for an exact confirmation, or the confirmation could not be completed. The operation was not executed. Check the confirmation in your private MCP settings."
+
+[MCPExecutionUnverified]
+other = "There is no verified successful MCP result. No result contents are available for this reply. The request was not retried automatically; check its status before retrying."
+
+[MCPNoVerifiedOperation]
+other = "I have not verified the requested MCP operation in this turn. A connection or catalog read is not an execution result. I cannot report success or provide result data."
+
+[MCPPrivateExecution]
+other = "The MCP operation completed successfully. Its result is private and was not provided to the model; view it in MCP settings. Execution:"
