@@ -109,7 +109,7 @@ const inputSchema = `{
           "type": "object",
           "oneOf": [
             {"type": "object", "additionalProperties": false, "required": ["type", "value"], "properties": {"type": {"const": "text"}, "value": {"type": "string"}}},
-            {"type": "object", "additionalProperties": false, "required": ["type", "value"], "properties": {"type": {"const": "json"}, "value": {}}},
+            {"type": "object", "additionalProperties": false, "required": ["type", "value"], "properties": {"type": {"const": "json"}, "value": {"description":"JSON value. Exact {$artifact_base64: artifact_ref} objects insert owner-private attachment bytes as base64; use http_attachment to obtain the reference."}}},
             {"type": "object", "additionalProperties": false, "required": ["type", "value"], "properties": {"type": {"const": "base64"}, "value": {"type": "string"}}},
             {"type": "object", "additionalProperties": false, "required": ["type", "fields"], "properties": {"type": {"const": "form"}, "fields": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["name", "value"], "properties": {"name": {"type": "string"}, "value": {"$ref": "#/definitions/valueExpr"}}}}}},
             {"type": "object", "additionalProperties": false, "required": ["type", "parts"], "properties": {"type": {"const": "multipart"}, "parts": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["name"], "properties": {"name": {"type": "string"}, "value": {"type": "string"}, "artifact_ref": {"type": "string"}, "filename": {"type": "string"}}}}}},

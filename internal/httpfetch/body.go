@@ -356,8 +356,25 @@ func (e *Engine) resolveJSONRefs(ctx context.Context, raw json.RawMessage, state
 }
 
 func (e *Engine) resolveJSONValue(ctx context.Context, v any, state *runState, scope Scope, origin Origin) (any, error) {
+	budget := e.limits.MaxUploadBytes
+	return e.resolveJSONValueBudget(ctx, v, state, scope, origin, &budget)
+}
+
+func (e *Engine) resolveJSONValueBudget(ctx context.Context, v any, state *runState, scope Scope, origin Origin, budget *int64) (any, error) {
 	switch t := v.(type) {
 	case map[string]any:
+		if ref, ok := t["$artifact_base64"].(string); ok && len(t) == 1 {
+			data, _, err := e.readArtifactForUpload(ctx, scope, ref)
+			if err != nil {
+				return nil, err
+			}
+			size := int64(base64.StdEncoding.EncodedLen(len(data)))
+			if size > *budget {
+				return nil, fmt.Errorf("encoded attachment exceeds upload cap")
+			}
+			*budget -= size
+			return base64.StdEncoding.EncodeToString(data), nil
+		}
 		if ref, ok := t["$var"].(string); ok && len(t) == 1 {
 			val, ok := state.vars[ref]
 			if !ok {
@@ -387,7 +404,7 @@ func (e *Engine) resolveJSONValue(ctx context.Context, v any, state *runState, s
 		}
 		out := make(map[string]any, len(t))
 		for k, vv := range t {
-			rv, err := e.resolveJSONValue(ctx, vv, state, scope, origin)
+			rv, err := e.resolveJSONValueBudget(ctx, vv, state, scope, origin, budget)
 			if err != nil {
 				return nil, err
 			}
@@ -397,7 +414,7 @@ func (e *Engine) resolveJSONValue(ctx context.Context, v any, state *runState, s
 	case []any:
 		out := make([]any, len(t))
 		for i, vv := range t {
-			rv, err := e.resolveJSONValue(ctx, vv, state, scope, origin)
+			rv, err := e.resolveJSONValueBudget(ctx, vv, state, scope, origin, budget)
 			if err != nil {
 				return nil, err
 			}

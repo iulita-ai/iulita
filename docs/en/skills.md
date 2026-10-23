@@ -54,6 +54,7 @@ See [Memory and Insights](memory-and-insights.md) for full details.
 |------|-------|-------------|
 | `websearch` | `query`, `count` | Web search via Brave API + DuckDuckGo fallback. 1-10 results. |
 | `webfetch` | `url` | Fetch and summarize a web page. Uses go-readability for content extraction. SSRF-protected. |
+| `http_attachment` | `attachment_index` | Prepare a current-message attachment as a private upload reference, without sending its bytes to the model. |
 | `http_request` | structured plan | Raw HTTP(S) API client (any method, headers, auth, bodies, cookie chains, downloads) through the mandatory system proxy. See below. |
 
 The web search chain is `Brave → DuckDuckGo` via `FallbackSearcher`. DuckDuckGo needs no API key, so web search always works.
@@ -83,6 +84,13 @@ engine executes it under server-side policy. Key guarantees:
   JSON Pointer, headers, or status; cookies stay bound to the exact origin
   that set them. Redirects default to `none`; `same_origin` follows up to 5
   hops on the same origin and never downgrades HTTPS→HTTP.
+- **Incoming uploads.** Telegram accepts `.torrent` files as opaque attachments.
+  `http_attachment` stages a current-message attachment privately and returns
+  an `artifact_ref`. Use it in multipart/artifact bodies, or the exact JSON
+  object `{"$artifact_base64":"REFERENCE"}` for APIs such as Transmission's
+  `torrent-add` (`arguments.metainfo`). The server encodes the bytes; the model
+  does not read or reconstruct them. Storage quotas, owner checks, upload limits
+  and mutation confirmation apply. Bare uploads ask for the desired action.
 - **Downloads.** `response.mode: "download"` streams into owner-scoped
   artifacts (fsync + atomic rename + SQLite commit; TTL 24h; quota-managed)
   and is retrieved from the dashboard **Files** view via a one-time

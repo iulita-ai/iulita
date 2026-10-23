@@ -7,10 +7,18 @@ import (
 	"github.com/iulita-ai/iulita/internal/channel"
 )
 
-// PDF bytes enter only the bounded parser via the skill context.
+// Binary bytes enter only local tools via the skill context.
+func isOpaqueDocument(doc channel.DocumentAttachment) bool {
+	return strings.EqualFold(doc.MimeType, "application/x-bittorrent") || strings.HasSuffix(strings.ToLower(doc.Filename), ".torrent")
+}
+
 func documentMessageText(msg channel.IncomingMessage) string {
 	text := msg.Text
 	for i, doc := range msg.Documents {
+		if isOpaqueDocument(doc) {
+			text += fmt.Sprintf("\n[Binary attachment index %d: use http_attachment to prepare an owner-private artifact_ref, then http_request to upload only to the destination explicitly requested by the user. Bytes are not model-readable. If no destination or action was requested, ask the user what to do. Never fabricate file contents or claim success without a real server result.]", i)
+			continue
+		}
 		if !strings.EqualFold(doc.MimeType, "application/pdf") {
 			continue
 		}
