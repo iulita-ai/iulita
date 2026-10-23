@@ -1138,7 +1138,7 @@
     "endpoint": "Server URL",
     "dataDomain": "Data domain",
     "results": "Result visibility",
-    "draftHint": "Saving a draft does not contact the server. Configure access, check the connection and choose capabilities next. Local stdio profiles are deployment-managed.",
+    "draftHint": "Saving a draft does not contact the server. Configure access, check the connection and choose capabilities next. Remote connections require an HTTPS server URL.",
     "saveDraft": "Save draft",
     "reviewCall": "Prepare a request",
     "prepareHint": "Preparing a request does not execute it. Review the full arguments in the confirmation section.",

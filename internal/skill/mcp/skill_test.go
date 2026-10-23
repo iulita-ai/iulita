@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/iulita-ai/iulita/internal/config"
@@ -24,9 +25,12 @@ func (denialProtocol) Invoke(context.Context, mcpclient.Connection, mcpclient.It
 	return nil, false, errors.New("must not dispatch")
 }
 
-type denialConfirmer struct{}
+type denialConfirmer struct{ preview *string }
 
-func (denialConfirmer) Confirm(_ context.Context, _ interact.Confirmation, actor interact.Actor) (interact.Decision, error) {
+func (c denialConfirmer) Confirm(_ context.Context, request interact.Confirmation, actor interact.Actor) (interact.Decision, error) {
+	if c.preview != nil {
+		*c.preview = request.Preview
+	}
 	return interact.Decision{Actor: actor}, interact.ErrConfirmRejected
 }
 
@@ -68,5 +72,14 @@ func TestExplicitChatDenialRemovesDashboardApproval(t *testing.T) {
 	plans, e := service.Plans(ctx, sc)
 	if e != nil || len(plans) != 0 {
 		t.Fatal("refused request remained in dashboard", plans, e)
+	}
+	var preview string
+	chat = interact.WithConfirmer(chat, denialConfirmer{preview: &preview})
+	action, _ := json.Marshal(map[string]any{"connection_id": c.ID, "action": "check"})
+	if _, e = New(service, "connection_action").Execute(chat, action); !errors.Is(e, mcpclient.ErrDenied) {
+		t.Fatal(e)
+	}
+	if !strings.Contains(preview, "https://fixture.example") || strings.Contains(preview, "/mcp") {
+		t.Fatal("chat confirmation lost its redacted destination", preview)
 	}
 }
