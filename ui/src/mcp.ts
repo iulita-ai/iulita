@@ -16,6 +16,10 @@ export interface MCPConnection {
   label: string;
   data_domain: string;
   endpoint?: string;
+  origin?: string;
+  catalog_included?: boolean;
+  catalog_count?: number;
+  allowed_count?: number;
   transport: string;
   profile?: string;
   desired_state: string;

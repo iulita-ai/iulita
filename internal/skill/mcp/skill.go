@@ -38,11 +38,11 @@ func (s *Skill) Description() string {
 	case "setup_link":
 		return "Open your authenticated MCP settings to configure credentials and permissions. This link contains no authorization token."
 	case "connections":
-		return "List only your own MCP connections and safe status. Connections are isolated by owner and personal/work data domain."
+		return "List your own MCP connection summaries and safe status. origin is only the server origin, not its full endpoint. catalog_count and allowed_count describe the cached catalog; catalog_included=false means items are deliberately omitted, never that the server has no tools. Use mcp_search_tools, mcp_resources or mcp_prompts to inspect permitted capabilities. Connections are isolated by owner and personal/work data domain."
 	case "connection_draft":
 		return "Save an MCP connection draft without contacting its server. Never put credentials in tool input; finish authentication and permissions in MCP settings."
 	case "connection_action":
-		return "Connect, disconnect, check, reconnect or refresh one of your MCP connections after exact owner confirmation. Disconnect persists and does not prove remote work stopped."
+		return "Connect, disconnect, check, reconnect or refresh one of your MCP connections after exact owner confirmation. Returns a metadata summary: catalog_count and allowed_count are authoritative counts; catalog_included=false means descriptors are omitted. Use mcp_search_tools to inspect permitted tools. Disconnect persists and does not prove remote work stopped."
 	case "search_tools":
 		return "Search your locally cached, permitted MCP tool metadata. Does not send the search query to remote servers."
 	case "describe_tool":

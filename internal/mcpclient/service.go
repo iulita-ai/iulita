@@ -265,13 +265,25 @@ func safeConnection(c *storedConnection, detail bool) Connection {
 	v.OwnerID = ""
 	v.Token = ""
 	v.Headers = nil
+	v.Origin = safeOrigin(c.Endpoint)
+	v.CatalogIncluded = detail
+	v.CatalogCount = len(c.Items)
+	v.AllowedCount = 0
+	for index := range c.Items {
+		if c.Items[index].Allowed {
+			v.AllowedCount++
+		}
+	}
+	if !detail {
+		// Summaries expose counts and an origin, never a truncated endpoint or
+		// an apparently empty catalog. Descriptors remain behind explicit reads.
+		v.Endpoint = ""
+		v.Items = nil
+		return v
+	}
 	v.Items = append([]Item(nil), c.Items...)
 	for i := range v.Items {
 		v.Items[i].Descriptor = append(json.RawMessage(nil), c.Items[i].Descriptor...)
-	}
-	if !detail {
-		v.Endpoint = safeOrigin(c.Endpoint)
-		v.Items = nil
 	}
 	return v
 }

@@ -62,25 +62,29 @@ func ScopeFrom(ctx context.Context) (Scope, bool) {
 
 // Connection describes a private connection without exporting authentication material.
 type Connection struct {
-	ID         string            `json:"id"`
-	OwnerID    string            `json:"-"`
-	Label      string            `json:"label"`
-	Domain     string            `json:"data_domain"`
-	Endpoint   string            `json:"endpoint,omitempty"`
-	Transport  string            `json:"transport"`
-	Profile    string            `json:"profile,omitempty"`
-	AuthMode   string            `json:"auth_mode"`
-	Token      string            `json:"-"`
-	Headers    map[string]string `json:"-"`
-	Desired    string            `json:"desired_state"`
-	Health     string            `json:"runtime_state"`
-	AuthState  string            `json:"auth_state"`
-	Revision   int64             `json:"revision"`
-	Generation int64             `json:"generation"`
-	CheckedAt  time.Time         `json:"checked_at"`
-	ErrorCode  string            `json:"error_code,omitempty"`
-	ResultMode string            `json:"result_mode"`
-	Items      []Item            `json:"items"`
+	ID              string            `json:"id"`
+	OwnerID         string            `json:"-"`
+	Label           string            `json:"label"`
+	Domain          string            `json:"data_domain"`
+	Endpoint        string            `json:"endpoint,omitempty"`
+	Origin          string            `json:"origin,omitempty"`
+	CatalogIncluded bool              `json:"catalog_included"`
+	CatalogCount    int               `json:"catalog_count"`
+	AllowedCount    int               `json:"allowed_count"`
+	Transport       string            `json:"transport"`
+	Profile         string            `json:"profile,omitempty"`
+	AuthMode        string            `json:"auth_mode"`
+	Token           string            `json:"-"`
+	Headers         map[string]string `json:"-"`
+	Desired         string            `json:"desired_state"`
+	Health          string            `json:"runtime_state"`
+	AuthState       string            `json:"auth_state"`
+	Revision        int64             `json:"revision"`
+	Generation      int64             `json:"generation"`
+	CheckedAt       time.Time         `json:"checked_at"`
+	ErrorCode       string            `json:"error_code,omitempty"`
+	ResultMode      string            `json:"result_mode"`
+	Items           []Item            `json:"items"`
 }
 
 // storedConnection explicitly includes secrets only inside the encrypted record.

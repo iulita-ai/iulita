@@ -35,6 +35,33 @@ func (f *fixtureProtocol) Discover(context.Context, Connection) ([]Item, error) 
 	return []Item{it}, e
 }
 
+func TestConnectionSummaryDoesNotDescribeAnOmittedCatalogAsEmpty(t *testing.T) {
+	f := fixture(t)
+	c, _ := setup(t, f)
+	snapshot, err := f.s.Snapshot(context.Background(), f.sc)
+	if err != nil || len(snapshot.Connections) != 1 {
+		t.Fatal(snapshot, err)
+	}
+	summary := snapshot.Connections[0]
+	if summary.CatalogIncluded || summary.CatalogCount != 1 || summary.AllowedCount != 1 || summary.Items != nil {
+		t.Fatalf("catalog summary lost discovery/permission state: %+v", summary)
+	}
+	if summary.Endpoint != "" || summary.Origin != "https://fixture.example" {
+		t.Fatalf("origin was advertised as a complete endpoint: %+v", summary)
+	}
+	body, err := json.Marshal(summary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), `"endpoint"`) || strings.Contains(string(body), `"descriptor"`) || strings.Contains(string(body), `"fixture.example/mcp"`) {
+		t.Fatal("metadata summary disclosed endpoint path or descriptors")
+	}
+	detail, err := f.s.Connection(context.Background(), f.sc, c.ID)
+	if err != nil || !detail.CatalogIncluded || detail.CatalogCount != 1 || detail.AllowedCount != 1 || detail.Endpoint != "https://fixture.example/mcp" || len(detail.Items) != 1 {
+		t.Fatalf("owner details lost actual endpoint or catalog: %+v %v", detail, err)
+	}
+}
+
 func TestDeploymentOriginsMustBeExactPublicHTTPSOrigins(t *testing.T) {
 	f := fixture(t)
 	for _, origin := range []string{"http://fixture.example", "https://fixture.example/", "https://fixture.example/path", "https://fixture.example?x=y", "https://FIXTURE.example", "https://localhost", "https://127.0.0.1", "https://fixture.example:8443"} {
