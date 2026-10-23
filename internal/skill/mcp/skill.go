@@ -250,7 +250,11 @@ func (s *Skill) Execute(ctx context.Context, input json.RawMessage) (string, err
 		if e != nil {
 			return "", e
 		}
-		preview := "MCP " + in.Action + ": " + c.Label + " · " + c.Domain + " · " + c.Endpoint + ". Disconnect retains credentials and cannot prove remote work stopped."
+		destination := c.Endpoint
+		if destination == "" {
+			destination = c.Origin
+		}
+		preview := "MCP " + in.Action + ": " + c.Label + " · " + c.Domain + " · " + destination + ". Disconnect retains credentials and cannot prove remote work stopped."
 		if requestErr := confirm(ctx, sc, uuid.NewString(), c.ID+":"+time.Now().Format(time.RFC3339Nano), preview); requestErr != nil {
 			return "", requestErr
 		}
