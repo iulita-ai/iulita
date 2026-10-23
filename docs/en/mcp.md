@@ -58,6 +58,17 @@ If an execution reports `unknown_outcome`, investigate the remote server before
 repeating it: the original operation may have completed. Iulita does not
 silently replay such operations. Results are private by default.
 
+An expired, cancelled or declined confirmation means the operation was not
+executed; it does not revoke connection permissions or OAuth authorization.
+Request a fresh confirmation to try again. Chat stops on these outcomes rather
+than automatically retrying or asking you to broaden access.
+
+For an explicit MCP execution request, chat requires an actual invocation result
+from the current turn. Connection and catalog reads do not count as execution.
+Private results are reported as execution metadata; their contents are not
+invented or summarized by the model. Allow bounded text in the connection's
+result visibility setting if you want the assistant to analyze returned content.
+
 ## Upgrade and rollback
 
 Back up the application database and encryption key before upgrading. Keep the

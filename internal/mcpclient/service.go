@@ -799,8 +799,12 @@ func (s *Service) Approve(ctx context.Context, sc Scope, id, hash string, approv
 	if s.closed || s.broken {
 		return ErrUnavailable
 	}
-	if p == nil || !planScope(p, sc) || p.Hash != hash || p.Consumed || time.Now().After(p.ExpiresAt) {
+	if p == nil || !planScope(p, sc) || p.Hash != hash || p.Consumed {
 		return ErrConflict
+	}
+	if time.Now().After(p.ExpiresAt) {
+		delete(s.plans, id)
+		return ErrConfirmationExpired
 	}
 	if !approved {
 		delete(s.plans, id)
@@ -867,9 +871,14 @@ func (s *Service) execute(ctx context.Context, sc Scope, id string, admitted fun
 		return v, nil
 	}
 	p := s.plans[id]
-	if p == nil || !planScope(p, sc) || p.Consumed || !p.Approved || time.Now().After(p.ExpiresAt) {
+	if p == nil || !planScope(p, sc) || p.Consumed || !p.Approved {
 		s.mu.Unlock()
 		return Execution{}, ErrApproval
+	}
+	if time.Now().After(p.ExpiresAt) {
+		delete(s.plans, id)
+		s.mu.Unlock()
+		return Execution{}, ErrConfirmationExpired
 	}
 	c, e := s.getLocked(sc, p.Call.ConnectionID)
 	if e != nil {

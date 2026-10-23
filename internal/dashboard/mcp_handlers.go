@@ -32,6 +32,8 @@ func mcpError(e error) error {
 		return fiber.NewError(409, e.Error())
 	case errors.Is(e, mcpclient.ErrConflict):
 		return fiber.NewError(409, e.Error())
+	case errors.Is(e, mcpclient.ErrConfirmationExpired):
+		return fiber.NewError(409, e.Error())
 	case errors.Is(e, mcpclient.ErrApproval):
 		return fiber.NewError(403, e.Error())
 	case errors.Is(e, mcpclient.ErrInvalid):
