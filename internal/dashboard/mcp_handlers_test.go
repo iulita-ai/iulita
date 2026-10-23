@@ -70,6 +70,7 @@ func TestMCPDashboardOwnerAndAdminIsolation(t *testing.T) {
 		return b
 	}
 	request("GET", "", "", "", "", 401)
+	request("POST", "/connections", "owner", "regular", `{"label":"Local denied","transport":"stdio","profile":"fixture","data_domain":"personal"}`, 503)
 	body := request("POST", "/connections", "owner", "regular", `{"label":"Owner private","endpoint":"https://fixture.example/mcp","data_domain":"personal"}`, 201)
 	var c mcpclient.Connection
 	_ = json.Unmarshal(body, &c)
@@ -77,6 +78,13 @@ func TestMCPDashboardOwnerAndAdminIsolation(t *testing.T) {
 	own := request("GET", "", "owner", "regular", "", 200)
 	if !strings.Contains(string(own), "Owner private") {
 		t.Fatal(string(own))
+	}
+	var snapshot mcpclient.Snapshot
+	if err := json.Unmarshal(own, &snapshot); err != nil || snapshot.StdioEnabled {
+		t.Fatal("remote-only API advertised local transport", err)
+	}
+	if !strings.Contains(string(own), `"stdio_enabled":false`) {
+		t.Fatal("remote-only capability missing from snapshot")
 	}
 	other := request("GET", "", "other", "admin", "", 200)
 	if strings.Contains(string(other), "Owner private") {

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import MCP from "./MCP.vue";
+import { NSelect } from "naive-ui";
 import { mcpAPI } from "../api";
 import type { MCPConnection } from "../mcp";
 const { warning } = vi.hoisted(() => ({ warning: vi.fn() }));
@@ -66,6 +67,30 @@ beforeEach(() => {
   vi.mocked(mcpAPI.connection).mockResolvedValue(structuredClone(connection));
 });
 describe("MCP owner connection controls", () => {
+  it.each([false, undefined])(
+    "offers only remote transport when stdio capability is %s",
+    async (stdio_enabled) => {
+      vi.mocked(mcpAPI.snapshot).mockResolvedValue({
+        enabled: true,
+        stdio_enabled,
+        connections: [structuredClone(connection)],
+        executions: [],
+      });
+      const w = mount(MCP);
+      await flushPromises();
+      await button(w, "Add connection").trigger("click");
+      await flushPromises();
+      const transport = w
+        .findAllComponents(NSelect)
+        .find((select) =>
+          select.props("options")?.some((option) => option.value === "http"),
+        );
+      expect(transport?.props("options")).toEqual([
+        expect.objectContaining({ value: "http" }),
+      ]);
+      w.unmount();
+    },
+  );
   it("shows unreviewed descriptors as escaped text without executing or granting anything", async () => {
     const w = mount(MCP);
     await flushPromises();

@@ -191,9 +191,10 @@ type Policy struct {
 
 // Snapshot returns only the authenticated owner connection and operation metadata.
 type Snapshot struct {
-	Enabled     bool         `json:"enabled"`
-	Connections []Connection `json:"connections"`
-	Executions  []Execution  `json:"executions"`
+	StdioEnabled bool         `json:"stdio_enabled"`
+	Enabled      bool         `json:"enabled"`
+	Connections  []Connection `json:"connections"`
+	Executions   []Execution  `json:"executions"`
 }
 
 // Protocol separates wire transport from authorization and durable dispatch.
@@ -204,6 +205,9 @@ type Protocol interface {
 
 // Options supplies deployment-owned dependencies and destination restrictions.
 type Options struct {
+	// StdioEnabled is reserved for isolated broker integrations. The application
+	// does not enable it: its released control plane is remote HTTPS only.
+	StdioEnabled     bool
 	Repository       Repository
 	Vault            Vault
 	Protocol         Protocol

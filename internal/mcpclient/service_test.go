@@ -18,19 +18,93 @@ import (
 )
 
 type fixtureProtocol struct {
-	calls   atomic.Int32
-	invoked chan struct{}
-	release chan struct{}
-	changed bool
+	calls       atomic.Int32
+	discoveries atomic.Int32
+	invoked     chan struct{}
+	release     chan struct{}
+	changed     bool
 }
 
 func (f *fixtureProtocol) Discover(context.Context, Connection) ([]Item, error) {
+	f.discoveries.Add(1)
 	name := "fixture"
 	if f.changed {
 		name = "changed"
 	}
 	it, e := item("tool", map[string]any{"name": name, "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"message": map[string]any{"type": "string"}}, "required": []string{"message"}, "additionalProperties": false}})
 	return []Item{it}, e
+}
+
+func TestDeploymentOriginsMustBeExactPublicHTTPSOrigins(t *testing.T) {
+	f := fixture(t)
+	for _, origin := range []string{"http://fixture.example", "https://fixture.example/", "https://fixture.example/path", "https://fixture.example?x=y", "https://FIXTURE.example", "https://localhost", "https://127.0.0.1", "https://fixture.example:8443"} {
+		t.Run(origin, func(t *testing.T) {
+			service, err := New(Options{Repository: f.s.repo, Vault: f.s.vault, Protocol: f.protocol, LockPath: filepath.Join(t.TempDir(), "origin.lock"), Enabled: true, AllowedOrigins: []string{origin}})
+			if service != nil {
+				if closeErr := service.Close(); closeErr != nil {
+					t.Fatal(closeErr)
+				}
+			}
+			if !errors.Is(err, ErrInvalid) {
+				t.Fatalf("invalid deployment origin accepted: %v", err)
+			}
+		})
+	}
+}
+
+func TestRemoteOnlyRejectsLocalCreationUpdatesAndSavedConnections(t *testing.T) {
+	f := fixture(t)
+	ctx := context.Background()
+	snap, err := f.s.Snapshot(ctx, f.sc)
+	if err != nil || snap.StdioEnabled {
+		t.Fatal("local transport advertised by remote deployment", err)
+	}
+	draft := Draft{Label: "Local", Transport: "stdio", Profile: "fixture", Domain: "personal", ResultMode: "private"}
+	if _, createErr := f.s.Create(ctx, f.sc, draft); !errors.Is(createErr, ErrUnavailable) {
+		t.Fatal("local connection admitted", createErr)
+	}
+	c, err := f.s.Create(ctx, f.sc, Draft{Label: "Remote", Endpoint: "https://fixture.example/mcp", Domain: "personal"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.Update(ctx, f.sc, c.ID, c.Revision, draft); !errors.Is(err, ErrUnavailable) {
+		t.Fatal("local transport update admitted", err)
+	}
+	// Also fence a catalog persisted by an earlier opt-in broker deployment.
+	f.s.mu.Lock()
+	f.s.connections[c.ID].Transport = "stdio"
+	f.s.connections[c.ID].Profile = "fixture"
+	f.s.connections[c.ID].Desired = "enabled"
+	f.s.connections[c.ID].Health = "ready"
+	f.s.mu.Unlock()
+	for _, action := range []string{"check", "connect", "reconnect", "refresh_catalog"} {
+		if _, err := f.s.Action(ctx, f.sc, c.ID, action, c.Revision); !errors.Is(err, ErrUnavailable) {
+			t.Fatal(action, err)
+		}
+	}
+	if _, err := f.s.Prepare(ctx, f.sc, Call{ConnectionID: c.ID}); !errors.Is(err, ErrUnavailable) {
+		t.Fatal("saved local connection admitted an execution plan", err)
+	}
+	if f.protocol.discoveries.Load() != 0 || f.protocol.calls.Load() != 0 {
+		t.Fatal("disabled local transport reached the protocol")
+	}
+}
+
+func TestCancelledCallerCannotDispatchApprovedPlan(t *testing.T) {
+	f := fixture(t)
+	c, it := setup(t, f)
+	p := prepare(t, f, c, it)
+	if err := f.s.Approve(context.Background(), f.sc, p.ID, p.Hash, true); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := f.s.Execute(ctx, f.sc, p.ID); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	if f.protocol.calls.Load() != 0 {
+		t.Fatal("cancelled turn dispatched an external operation")
+	}
 }
 func (f *fixtureProtocol) Invoke(ctx context.Context, _ Connection, _ Item, _ json.RawMessage, before func() error) (payload json.RawMessage, toolError bool, callErr error) {
 	if e := before(); e != nil {

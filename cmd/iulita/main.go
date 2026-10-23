@@ -43,7 +43,6 @@ import (
 	"github.com/iulita-ai/iulita/internal/llm/onnx"
 	openaillm "github.com/iulita-ai/iulita/internal/llm/openai"
 	"github.com/iulita-ai/iulita/internal/mcpclient"
-	"github.com/iulita-ai/iulita/internal/mcpworker"
 	"github.com/iulita-ai/iulita/internal/metrics"
 	"github.com/iulita-ai/iulita/internal/mobile"
 	"github.com/iulita-ai/iulita/internal/mobile/assistanttools"
@@ -96,7 +95,6 @@ import (
 	"github.com/iulita-ai/iulita/internal/version"
 	"github.com/iulita-ai/iulita/internal/web"
 	"github.com/iulita-ai/iulita/ui"
-	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // registrySkillChecker adapts skill.Registry to dashboard.SkillEnabledChecker.
@@ -1153,23 +1151,7 @@ func main() {
 		if mcpErr != nil {
 			mcpProtocol = &mcpclient.SDKProtocol{}
 		}
-		if cfg.Skills.MCP.WorkerURL != "" {
-			workerInfo, workerErr := os.Stat(cfg.Skills.MCP.WorkerKeyFile)
-			if workerErr != nil || workerInfo.Mode().Perm()&0o077 != 0 {
-				logger.Fatal("MCP worker key must be private (0600)")
-			}
-			workerKey, workerErr := os.ReadFile(cfg.Skills.MCP.WorkerKeyFile)
-			if workerErr != nil {
-				logger.Fatal("MCP worker key unavailable")
-			}
-			worker, workerErr := mcpworker.NewClient(cfg.Skills.MCP.WorkerURL, workerKey)
-			if workerErr != nil {
-				logger.Fatal("invalid MCP worker configuration")
-			}
-			mcpProtocol.Stdio = func(workctx context.Context, c mcpclient.Connection) (sdkmcp.Transport, error) {
-				return worker.Transport(workctx, c.OwnerID, c.ID, c.Generation, c.Profile, c.Token)
-			}
-		}
+
 		mcpService, mcpErr = mcpclient.New(mcpclient.Options{Repository: store, Vault: credStore, Protocol: mcpProtocol, Root: ctx, LockPath: filepath.Join(paths.DataDir, "mcp.lock"), Enabled: cfg.Skills.MCP.Enabled, AllowedOrigins: cfg.Skills.MCP.AllowedOrigins, PrincipalChecker: func(checkctx context.Context, owner string) bool {
 			u, e := store.GetUser(checkctx, owner)
 			return e == nil && u != nil && !u.Disabled && !u.MustChangePass

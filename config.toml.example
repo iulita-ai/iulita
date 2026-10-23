@@ -393,7 +393,8 @@ enabled = false
 worker_url = "" # unix:///run/iulita-ssh/worker.sock or https://worker.example:8443
 worker_key_file = "" # private file, same >=32 random bytes as ssh-worker --key-file
 
-# MCP connections: configured by their owner in the dashboard. Secrets stay in
+# Remote HTTPS MCP only; no local processes or MCP worker are started.
+# Connections are configured by their owner in the dashboard. Secrets stay in
 # encrypted storage. Public HTTP requires [proxy].url. MCP resolves names with
 # the system resolver, rejects non-public/mixed answers and pins the numeric
 # proxy destination, retaining the original TLS name (also for OAuth). It never
@@ -402,5 +403,6 @@ worker_key_file = "" # private file, same >=32 random bytes as ssh-worker --key-
 enabled = false
 allowed_origins = [] # exact https origins, e.g. ["https://mcp.example.org"]
 oauth_redirect = "" # public HTTPS /api/mcp/oauth/callback
-worker_url = "" # optional isolated stdio broker, never the main application
-worker_key_file = "" # private 0600 HMAC key shared only with that broker
+
+# Environment: IULITA_SKILLS_MCP_ALLOWED_ORIGINS is a JSON array of origins.
+# Example: ["https://mcp.example.org"] (no trailing slash or path).

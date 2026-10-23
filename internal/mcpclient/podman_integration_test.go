@@ -51,7 +51,7 @@ func TestRealPodmanServiceExecution(t *testing.T) {
 	protocol := &SDKProtocol{Stdio: func(ctx context.Context, c Connection) (sdk.Transport, error) {
 		return worker.Transport(ctx, c.OwnerID, c.ID, c.Generation, c.Profile, c.Token)
 	}}
-	service, err := New(Options{Repository: f.repo, Vault: f.vault, Protocol: protocol, LockPath: filepath.Join(f.path, "mcp.lock"), Enabled: true})
+	service, err := New(Options{StdioEnabled: true, Repository: f.repo, Vault: f.vault, Protocol: protocol, LockPath: filepath.Join(f.path, "mcp.lock"), Enabled: true})
 	if err != nil {
 		t.Fatal(err)
 	}

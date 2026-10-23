@@ -47,6 +47,7 @@ export interface MCPPlan {
   call: { connection_id: string; item_id: string; arguments: unknown };
 }
 export interface MCPSnapshot {
+  stdio_enabled?: boolean;
   enabled: boolean;
   connections: MCPConnection[];
   executions: MCPExecution[];

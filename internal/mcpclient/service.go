@@ -32,6 +32,7 @@ type Service struct {
 	policy            Policy
 	deploymentOrigins []string
 	deploymentEnabled bool
+	stdioEnabled      bool
 	principal         func(context.Context, string) bool
 	connections       map[string]*storedConnection
 	executions        map[string]*storedExecution
@@ -56,11 +57,16 @@ func New(o Options) (*Service, error) {
 	if o.Repository == nil || o.Vault == nil || !o.Vault.EncryptionEnabled() || o.Protocol == nil || o.LockPath == "" {
 		return nil, ErrUnavailable
 	}
+	for _, origin := range o.AllowedOrigins {
+		if _, err := validateEndpoint(origin); err != nil || origin != safeOrigin(origin) {
+			return nil, ErrInvalid
+		}
+	}
 	if o.Root == nil {
 		o.Root = context.Background()
 	}
 	root, cancel := context.WithCancel(o.Root)
-	s := &Service{artifacts: map[string]artifactInfo{}, oauthExpiry: map[string]artifactInfo{}, deploymentEnabled: o.Enabled, cancel: cancel, repo: o.Repository, vault: o.Vault, protocol: o.Protocol, root: root, lock: flock.New(o.LockPath), principal: o.PrincipalChecker, deploymentOrigins: append([]string(nil), o.AllowedOrigins...), connections: map[string]*storedConnection{}, executions: map[string]*storedExecution{}, plans: map[string]*Plan{}, active: map[string]context.CancelFunc{}, probes: map[string]context.CancelFunc{}, refreshing: map[string]chan struct{}{}, revisions: map[string]int64{}, policy: Policy{Enabled: o.Enabled, AllowedOrigins: append([]string(nil), o.AllowedOrigins...), Revision: 1}}
+	s := &Service{artifacts: map[string]artifactInfo{}, oauthExpiry: map[string]artifactInfo{}, deploymentEnabled: o.Enabled, stdioEnabled: o.StdioEnabled, cancel: cancel, repo: o.Repository, vault: o.Vault, protocol: o.Protocol, root: root, lock: flock.New(o.LockPath), principal: o.PrincipalChecker, deploymentOrigins: append([]string(nil), o.AllowedOrigins...), connections: map[string]*storedConnection{}, executions: map[string]*storedExecution{}, plans: map[string]*Plan{}, active: map[string]context.CancelFunc{}, probes: map[string]context.CancelFunc{}, refreshing: map[string]chan struct{}{}, revisions: map[string]int64{}, policy: Policy{Enabled: o.Enabled, AllowedOrigins: append([]string(nil), o.AllowedOrigins...), Revision: 1}}
 	ok, err := s.lock.TryLock()
 	if err != nil || !ok {
 		cancel()
@@ -277,7 +283,7 @@ func (s *Service) Snapshot(ctx context.Context, sc Scope) (Snapshot, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := Snapshot{Enabled: s.policy.Enabled && !s.broken && !s.closed, Connections: []Connection{}, Executions: []Execution{}}
+	out := Snapshot{StdioEnabled: s.stdioEnabled, Enabled: s.policy.Enabled && !s.broken && !s.closed, Connections: []Connection{}, Executions: []Execution{}}
 	for _, c := range s.connections {
 		if c.Owner == sc.OwnerID && c.Desired != "deleted" {
 			out.Connections = append(out.Connections, safeConnection(c, false))
@@ -327,6 +333,9 @@ func (s *Service) Create(ctx context.Context, sc Scope, d Draft) (Connection, er
 	if d.Transport != "http" && d.Transport != "stdio" {
 		return Connection{}, ErrInvalid
 	}
+	if d.Transport == "stdio" && !s.stdioEnabled {
+		return Connection{}, ErrUnavailable
+	}
 	if d.Transport == "http" {
 		if _, e := validateEndpoint(d.Endpoint); e != nil {
 			return Connection{}, e
@@ -370,6 +379,9 @@ func (s *Service) Update(ctx context.Context, sc Scope, id string, revision int6
 	}
 	if strings.TrimSpace(d.Label) == "" || len(d.Label) > 120 || (d.Domain != "personal" && d.Domain != "work" && d.Domain != "other") || (d.ResultMode != "private" && d.ResultMode != "model") {
 		return Connection{}, ErrInvalid
+	}
+	if d.Transport == "stdio" && !s.stdioEnabled {
+		return Connection{}, ErrUnavailable
 	}
 	if d.Transport == "http" {
 		if _, e := validateEndpoint(d.Endpoint); e != nil {
@@ -556,7 +568,7 @@ func (s *Service) Action(ctx context.Context, sc Scope, id, action string, revis
 		s.mu.Unlock()
 		return Connection{}, ErrInvalid
 	}
-	if !s.policy.Enabled || s.broken || s.closed {
+	if !s.policy.Enabled || s.broken || s.closed || c.Transport == "stdio" && !s.stdioEnabled {
 		s.mu.Unlock()
 		return Connection{}, ErrUnavailable
 	}
@@ -714,7 +726,7 @@ func (s *Service) Prepare(ctx context.Context, sc Scope, in Call) (Plan, error) 
 	}
 	// Invoke revalidates the complete catalog in the dispatch session. An idle
 	// connection does not need a manual check merely because five minutes passed.
-	if !s.policy.Enabled || c.Desired != "enabled" || (c.AuthMode != "none" && c.AuthState != "valid") || c.Health != "ready" {
+	if !s.policy.Enabled || c.Transport == "stdio" && !s.stdioEnabled || c.Desired != "enabled" || (c.AuthMode != "none" && c.AuthState != "valid") || c.Health != "ready" {
 		return Plan{}, ErrUnavailable
 	}
 	in.Arguments = append(json.RawMessage(nil), in.Arguments...)
@@ -826,6 +838,9 @@ func (s *Service) Start(ctx context.Context, sc Scope, id string) error {
 }
 
 func (s *Service) execute(ctx context.Context, sc Scope, id string, admitted func()) (Execution, error) {
+	if err := ctx.Err(); err != nil {
+		return Execution{}, err
+	}
 	if s.admit(ctx, sc) != nil {
 		return Execution{}, ErrDenied
 	}
@@ -849,7 +864,7 @@ func (s *Service) execute(ctx context.Context, sc Scope, id string, admitted fun
 		s.mu.Unlock()
 		return Execution{}, e
 	}
-	if !s.policy.Enabled || c.Generation != p.Generation || c.Revision != p.ConnectionRevision || c.Desired != "enabled" {
+	if !s.policy.Enabled || c.Transport == "stdio" && !s.stdioEnabled || c.Generation != p.Generation || c.Revision != p.ConnectionRevision || c.Desired != "enabled" {
 		s.mu.Unlock()
 		return Execution{}, ErrConflict
 	}
@@ -907,7 +922,7 @@ func (s *Service) execute(ctx context.Context, sc Scope, id string, admitted fun
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		current, er := s.getLocked(sc, copyC.ID)
-		if er != nil || !s.policy.Enabled || current.Generation != gen || current.Revision != p.ConnectionRevision || current.Desired != "enabled" || work.Err() != nil {
+		if er != nil || !s.policy.Enabled || current.Generation != gen || current.Revision != p.ConnectionRevision || current.Desired != "enabled" || work.Err() != nil || ctx.Err() != nil {
 			return ErrDenied
 		}
 		x.State = "dispatching"

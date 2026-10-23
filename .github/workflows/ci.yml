@@ -60,6 +60,9 @@ jobs:
       - name: Check mobile persistence races
         run: go test -race -p 2 ./internal/mobile/...
 
+      - name: Check MCP control-plane races
+        run: go test -race -p 2 ./internal/mcpclient ./internal/skill/mcp
+
       - name: Upload Go coverage to Codecov
         uses: codecov/codecov-action@v5
         with:

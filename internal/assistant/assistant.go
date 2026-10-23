@@ -4,14 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
-
-	"strconv"
 
 	"github.com/iulita-ai/iulita/internal/agent"
 	"github.com/iulita-ai/iulita/internal/channel"

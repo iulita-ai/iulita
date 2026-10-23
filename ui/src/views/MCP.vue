@@ -487,7 +487,7 @@ const draft = ref({
 });
 const transportOptions = computed(() => [
   { value: "http", label: t("mcp.remote") },
-  { value: "stdio", label: t("mcp.local") },
+  ...(snapshot.value.stdio_enabled ? [{ value: "stdio", label: t("mcp.local") }] : []),
 ]);
 function newDraft() {
   error.value = "";
