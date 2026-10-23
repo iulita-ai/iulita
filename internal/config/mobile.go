@@ -4,6 +4,10 @@ import "fmt"
 
 func mobileEnvironmentKey(name string) (string, bool) {
 	switch name {
+	case "IULITA_SKILLS_MCP_ALLOWED_ORIGINS":
+		return "skills.mcp.allowed_origins", true
+	case "IULITA_SKILLS_MCP_OAUTH_REDIRECT":
+		return "skills.mcp.oauth_redirect", true
 	case "IULITA_SKILLS_REMOTE_ACCESS_WORKER_URL":
 		return "skills.remote_access.worker_url", true
 	case "IULITA_SKILLS_REMOTE_ACCESS_WORKER_KEY_FILE":

@@ -23,6 +23,9 @@ type Confirmation struct {
 
 // ConfirmReason values (shared with the HTTP engine).
 const (
+	// MCP always uses exact one-shot approvals; HTTP standing-origin/global
+	// consent buttons must never be offered for MCP operations.
+	ConfirmMCP                = "mcp_operation"
 	ConfirmLargeDownload      = "large_download"
 	ConfirmMutation           = "mutation"
 	ConfirmSSHCommand         = "ssh_command"

@@ -135,6 +135,8 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 		{(*domain.HTTPArtifact)(nil), "http_artifacts"},
 		// HTTP tool: standing mutation approvals ("always allow") (additive).
 		{(*domain.HTTPStandingGrant)(nil), "http_standing_grants"},
+		{(*domain.MCPRecord)(nil), "mcp_records"},
+		{(*domain.MCPRecordEvent)(nil), "mcp_record_events"},
 	}
 
 	// Rename legacy "dreams" table to "insights" (preserves existing data).
@@ -148,6 +150,10 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("creating %s table: %w", m.name, err)
 		}
+	}
+
+	if err := s.migrateMCPIndexes(ctx); err != nil {
+		return fmt.Errorf("creating MCP indexes: %w", err)
 	}
 
 	if _, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS account_directives(user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,content TEXT NOT NULL,updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)`); err != nil {

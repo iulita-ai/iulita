@@ -19,6 +19,7 @@ function sidebarEn() {
         { text: 'Channels', link: '/en/channels' },
         { text: 'Mobile, CLI & service API', link: '/en/mobile-api' },
         { text: 'Skills', link: '/en/skills' },
+        { text: 'Remote MCP', link: '/en/mcp' },
         { text: 'Scheduler', link: '/en/scheduler' },
       ]
     },
@@ -60,6 +61,7 @@ function sidebarRu() {
         { text: 'Каналы', link: '/ru/channels' },
         { text: 'API: mobile, CLI и service', link: '/ru/mobile-api' },
         { text: 'Навыки', link: '/ru/skills' },
+        { text: 'Удалённые MCP (EN)', link: '/en/mcp' },
         { text: 'Планировщик', link: '/ru/scheduler' },
       ]
     },

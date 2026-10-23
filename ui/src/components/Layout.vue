@@ -108,6 +108,7 @@ const menuOptions = computed<MenuOption[]>(() => {
     items.push({ label: t('nav.tasks'), key: 'tasks', icon: renderIcon(CheckmarkDoneOutline) })
   }
   items.push(
+    { label: t('nav.mcp'), key: 'mcp', icon: renderIcon(ExtensionPuzzleOutline) },
     { label: t('nav.facts'), key: 'facts', icon: renderIcon(BulbOutline) },
     { label: t('nav.insights'), key: 'insights', icon: renderIcon(NuclearOutline) },
     { label: t('nav.files'), key: 'files', icon: renderIcon(DownloadOutline) },

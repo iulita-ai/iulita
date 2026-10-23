@@ -23,6 +23,7 @@ type turnTaint struct {
 	slackSearchUsed   bool
 	remoteOutputUsed  bool
 	remoteOutputBytes int
+	externalDataUsed  bool
 }
 
 // WithTurnTaint attaches a fresh per-turn taint holder. Call once at turn start.
@@ -56,7 +57,7 @@ func SlackSearchUsedInTurn(ctx context.Context) bool {
 	if t, ok := ctx.Value(ctxTurnTaint).(*turnTaint); ok {
 		t.mu.Lock()
 		defer t.mu.Unlock()
-		return t.slackSearchUsed
+		return t.slackSearchUsed || t.externalDataUsed
 	}
 	return false
 }
@@ -166,4 +167,14 @@ func RemoteCallerFrom(ctx context.Context) string {
 		return ""
 	}
 	return v
+}
+
+// MarkExternalDataUsed records lower-trust MCP content so existing outbound
+// publication guards also require explicit approval for derived content.
+func MarkExternalDataUsed(ctx context.Context) {
+	if t, ok := ctx.Value(ctxTurnTaint).(*turnTaint); ok {
+		t.mu.Lock()
+		t.externalDataUsed = true
+		t.mu.Unlock()
+	}
 }

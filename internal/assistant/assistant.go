@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,6 +19,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/eventbus"
 	"github.com/iulita-ai/iulita/internal/i18n"
 	"github.com/iulita-ai/iulita/internal/llm"
+	"github.com/iulita-ai/iulita/internal/mcpclient"
 	"github.com/iulita-ai/iulita/internal/skill"
 	"github.com/iulita-ai/iulita/internal/skill/interact"
 	"github.com/iulita-ai/iulita/internal/storage"
@@ -199,6 +201,12 @@ func (a *Assistant) HandleMessage(ctx context.Context, msg channel.IncomingMessa
 		effectiveUserID = msg.UserID
 	}
 	ctx = skill.WithUserID(ctx, effectiveUserID)
+	// MCP accepts only proven private legacy routes. Unknown channel formats fail closed.
+	privateMCP := msg.ChatID == "web:"+effectiveUserID
+	if id, err := strconv.ParseInt(msg.ChatID, 10, 64); err == nil && id > 0 && msg.ChatID == msg.UserID {
+		privateMCP = true
+	}
+	ctx = mcpclient.WithScope(ctx, mcpclient.Scope{OwnerID: effectiveUserID, CallerID: "main", ConversationID: msg.ChatID, Private: privateMCP})
 
 	// Inject user role for admin-gated skills.
 	if effectiveUserID != "" {

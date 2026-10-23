@@ -42,6 +42,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/llm/ollama"
 	"github.com/iulita-ai/iulita/internal/llm/onnx"
 	openaillm "github.com/iulita-ai/iulita/internal/llm/openai"
+	"github.com/iulita-ai/iulita/internal/mcpclient"
 	"github.com/iulita-ai/iulita/internal/metrics"
 	"github.com/iulita-ai/iulita/internal/mobile"
 	"github.com/iulita-ai/iulita/internal/mobile/assistanttools"
@@ -67,6 +68,7 @@ import (
 	httpfetchskill "github.com/iulita-ai/iulita/internal/skill/httpfetch"
 	insightskill "github.com/iulita-ai/iulita/internal/skill/insights"
 	localeskill "github.com/iulita-ai/iulita/internal/skill/locale"
+	mcpskill "github.com/iulita-ai/iulita/internal/skill/mcp"
 	"github.com/iulita-ai/iulita/internal/skill/memory"
 	"github.com/iulita-ai/iulita/internal/skill/orchestrate"
 	"github.com/iulita-ai/iulita/internal/skill/pdfreader"
@@ -1142,6 +1144,35 @@ func main() {
 		logger.Info("web search: DDG only (no Brave API key)")
 	}
 
+	// MCP metadata management remains available while execution is disabled.
+	var mcpService *mcpclient.Service
+	if credStore.EncryptionEnabled() {
+		mcpProtocol, mcpErr := mcpclient.NewSDKProtocol(cfg.Proxy.URL)
+		if mcpErr != nil {
+			mcpProtocol = &mcpclient.SDKProtocol{}
+		}
+
+		mcpService, mcpErr = mcpclient.New(mcpclient.Options{Repository: store, Vault: credStore, Protocol: mcpProtocol, Root: ctx, LockPath: filepath.Join(paths.DataDir, "mcp.lock"), Enabled: cfg.Skills.MCP.Enabled, AllowedOrigins: cfg.Skills.MCP.AllowedOrigins, PrincipalChecker: func(checkctx context.Context, owner string) bool {
+			u, e := store.GetUser(checkctx, owner)
+			return e == nil && u != nil && !u.Disabled && !u.MustChangePass
+		}})
+		if mcpErr != nil {
+			logger.Fatal("cannot initialize MCP service")
+		}
+		defer func() {
+			if closeErr := mcpService.Close(); closeErr != nil {
+				logger.Warn("MCP shutdown incomplete")
+			}
+		}()
+		for index, action := range mcpskill.Actions {
+			if index == 0 {
+				registry.RegisterWithManifest(mcpskill.New(mcpService, action), mcpskill.Manifest())
+			} else {
+				registry.RegisterInGroup(mcpskill.New(mcpService, action), "mcp")
+			}
+		}
+	}
+
 	// Native SSH is registered only with an explicitly configured isolated worker.
 	var remoteAccessService *remoteaccess.Service
 	if cfg.Skills.RemoteAccess.WorkerURL != "" {
@@ -2159,10 +2190,11 @@ func main() {
 			TodoProviders:     todoProviders,
 			CredentialManager: credStore,
 			RemoteAccess:      remoteAccessService,
-			Embedder:          embedder,
-			HTTPArtifacts:     httpArtifactStore, // nil unless downloads enabled + auth wired
-			StandingGrants:    store,
-			ModelManager:      modelManager, ModelHTTPClient: llmHTTPClient, LegacyModelSettings: legacySettings, LegacyClassifierActive: legacyClassifierActive,
+			MCP:               mcpService, MCPOAuthRedirect: cfg.Skills.MCP.OAuthRedirect,
+			Embedder:       embedder,
+			HTTPArtifacts:  httpArtifactStore, // nil unless downloads enabled + auth wired
+			StandingGrants: store,
+			ModelManager:   modelManager, ModelHTTPClient: llmHTTPClient, LegacyModelSettings: legacySettings, LegacyClassifierActive: legacyClassifierActive,
 		})
 		wg.Add(1)
 		go func() {

@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	httpengine "github.com/iulita-ai/iulita/internal/httpfetch"
+	"github.com/iulita-ai/iulita/internal/mcpclient"
 	"github.com/iulita-ai/iulita/internal/mobile/conversations"
 	"github.com/iulita-ai/iulita/internal/mobile/engine"
 	"github.com/iulita-ai/iulita/internal/mobile/publictools"
@@ -21,6 +22,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/skill/craft"
 	"github.com/iulita-ai/iulita/internal/skill/google"
 	httpskill "github.com/iulita-ai/iulita/internal/skill/httpfetch"
+	mcpskill "github.com/iulita-ai/iulita/internal/skill/mcp"
 	"github.com/iulita-ai/iulita/internal/skill/slack"
 	"github.com/iulita-ai/iulita/internal/skill/slackpost"
 	"github.com/iulita-ai/iulita/internal/skill/todoist"
@@ -167,6 +169,7 @@ func Catalog(registry *skill.Registry, memoryTriggers ...string) engine.CatalogF
 					}
 					// Owner only. Deliberately no legacy ChatID or fallback identity.
 					ctx = skill.WithUserID(ctx, f.OwnerID)
+					ctx = mcpclient.WithScope(ctx, mcpclient.Scope{OwnerID: f.OwnerID, CallerID: "native", ConversationID: f.ConversationID, Private: true})
 					ctx = google.WithAccountPrincipal(ctx, f.OwnerID)
 					if name == "http_request" {
 						ctx = httpengine.WithScope(ctx, httpengine.Scope{UserID: f.OwnerID, NativeConversation: f.ConversationID, NativeGeneration: f.Generation, ChannelInstance: "mobile:" + f.ConversationID, Caller: httpengine.Caller{ID: "http_request", Kind: httpengine.CallerTool}, Mode: httpengine.ModeInteractive})
@@ -218,7 +221,7 @@ func Catalog(registry *skill.Registry, memoryTriggers ...string) engine.CatalogF
 					out = append(out, t)
 				default:
 					switch s.(type) {
-					case *google.MailSkill, *google.CalendarSkill, *google.ContactsSkill, *google.TasksSkill, *craft.SearchSkill, *craft.ReadSkill, *craft.WriteSkill, *craft.TasksSkill, *todoist.Skill, *slack.SearchSkill, *slackpost.PostSkill, *httpskill.Skill, *askuser.Skill:
+					case *google.MailSkill, *google.CalendarSkill, *google.ContactsSkill, *google.TasksSkill, *craft.SearchSkill, *craft.ReadSkill, *craft.WriteSkill, *craft.TasksSkill, *todoist.Skill, *slack.SearchSkill, *slackpost.PostSkill, *httpskill.Skill, *askuser.Skill, *mcpskill.Skill:
 						out = append(out, t)
 					}
 				}

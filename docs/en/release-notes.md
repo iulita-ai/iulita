@@ -6,6 +6,19 @@ container or binary.
 
 
 
+## Unreleased: remote MCP client
+
+Owner-managed remote HTTPS MCP connections add reviewed tools, resources and
+prompts to chat and the dashboard. Exact one-use approvals, encrypted credentials,
+private results and durable execution states protect each operation. Deployment
+configuration controls execution and permitted server origins; proxy-only egress
+rejects private DNS answers and pins destinations.
+
+Local stdio servers and Podman MCP workers are disabled in the application. SSH
+worker packaging and existing mobile contracts are retained. See the
+[remote MCP guide](./mcp) for configuration, permissions and rollback preparation.
+This section describes source changes and does not announce a published release.
+
 ## v0.51.0: Telegram PDF summaries and saved facts
 
 [v0.51.0](https://github.com/iulita-ai/iulita/releases/tag/v0.51.0) adds

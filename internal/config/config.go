@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -282,7 +283,16 @@ type RemoteAccessConfig struct {
 	WorkerKeyFile string `koanf:"worker_key_file"`
 }
 
+// MCPConfig controls owner-managed MCP connections. Network destinations are
+// deployment-owned; the dashboard cannot broaden this allowlist.
+type MCPConfig struct {
+	Enabled        bool     `koanf:"enabled"`
+	AllowedOrigins []string `koanf:"allowed_origins"`
+	OAuthRedirect  string   `koanf:"oauth_redirect"`
+}
+
 type SkillsConfig struct {
+	MCP          MCPConfig            `koanf:"mcp"`
 	RemoteAccess RemoteAccessConfig   `koanf:"remote_access"`
 	Translate    TranslationConfig    `koanf:"translate"`
 	Dir          string               `koanf:"dir"`
@@ -489,7 +499,7 @@ func Load(path string, paths *Paths) (*Config, *koanf.Koanf, bool, error) {
 
 	// Layer 3: environment variables
 	if err := k.Load(env.Provider("IULITA_", ".", func(s string) string {
-		// Native backend leaves contain underscores. Preserve their complete koanf key;
+		// Native backend and infrastructure leaves contain underscores. Preserve their complete koanf key;
 		// the legacy underscore-to-dot mapping otherwise produces chat.enabled.
 		if key, ok := mobileEnvironmentKey(s); ok {
 			return key
@@ -499,6 +509,18 @@ func Load(path string, paths *Paths) (*Config, *koanf.Koanf, bool, error) {
 			"_", ".")
 	}), nil); err != nil {
 		return nil, nil, false, fmt.Errorf("loading env vars: %w", err)
+	}
+
+	// MCP infrastructure is deployment-owned. Decode its slice explicitly rather
+	// than flattening underscore leaves or treating JSON as a single origin.
+	if raw, ok := os.LookupEnv("IULITA_SKILLS_MCP_ALLOWED_ORIGINS"); ok {
+		var origins []string
+		if len(raw) > 16384 || json.Unmarshal([]byte(raw), &origins) != nil || origins == nil || len(origins) > 32 {
+			return nil, nil, false, fmt.Errorf("IULITA_SKILLS_MCP_ALLOWED_ORIGINS must be a JSON array of at most 32 HTTPS origins")
+		}
+		if err := k.Load(confmap.Provider(map[string]interface{}{"skills.mcp.allowed_origins": origins}, "."), nil); err != nil {
+			return nil, nil, false, fmt.Errorf("loading MCP origin configuration: %w", err)
+		}
 	}
 
 	// Layer 4: keyring secrets
