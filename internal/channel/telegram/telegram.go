@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-telegram/bot"
@@ -35,30 +36,45 @@ type TranscriptionProvider interface {
 
 // Channel implements channel.InputChannel for Telegram.
 type Channel struct {
-	bot              *bot.Bot
-	http             *http.Client // shared client for file downloads
-	instanceID       string       // channel instance slug (e.g., "tg-config")
-	allowedIDs       map[int64]struct{}
-	clearFn          ClearFunc
-	commands         map[string]CommandFunc
-	commandOrder     []models.BotCommand
-	debounceWindow   time.Duration
-	rateLimiter      *ratelimit.Limiter    // nil = no rate limiting
-	userResolver     channel.UserResolver  // nil = no user resolution (backward compat)
-	store            storage.Repository    // nil = no locale lookup
-	transcriber      TranscriptionProvider // nil = voice messages ignored
-	prompts          *promptState          // interactive skill prompts
-	rememberSvc      bookmark.Service      // nil = no bookmark feature
-	remembers        *rememberState        // pending bookmark buttons
-	statusMsgs       *statusState          // live status messages per chat
-	sentMsgs         *sentTracker          // recent sent texts (🔖 reactions, /clear deletes)
-	draftStreaming   bool                  // experimental sendMessageDraft streaming
-	locLimiter       *ratelimit.Limiter    // outbound location sends: 10/hour/chat (set in New)
-	confirms         *confirmState         // identity-bound security confirmations
-	confirmSendersMu sync.Mutex
-	confirmSenders   map[string]int64 // chatID → Telegram user who started the turn
-	logger           *zap.Logger
-	wg               sync.WaitGroup // tracks in-flight message processing
+	bot                *bot.Bot
+	http               *http.Client // shared client for file downloads
+	botID              int64
+	preferredUsername  string
+	verifiedAliases    []string
+	username           string
+	day                *DayController
+	weather            *WeatherController
+	inlineTest         bool
+	testEnvironment    bool
+	topicsEnabled      bool
+	instanceID         string // channel instance slug (e.g., "tg-config")
+	allowedIDs         map[int64]struct{}
+	clearFn            ClearFunc
+	compactFn          func(context.Context, string) (string, error)
+	commands           map[string]CommandFunc
+	commandOrder       []models.BotCommand
+	debounceWindow     time.Duration
+	rateLimiter        *ratelimit.Limiter    // nil = no rate limiting
+	userResolver       channel.UserResolver  // nil = no user resolution (backward compat)
+	store              storage.Repository    // nil = no locale lookup
+	transcriber        TranscriptionProvider // nil = voice messages ignored
+	prompts            *promptState          // interactive skill prompts
+	rememberSvc        bookmark.Service      // nil = no bookmark feature
+	remembers          *rememberState        // pending bookmark buttons
+	statusMsgs         *statusState          // live status messages per chat
+	sentMsgs           *sentTracker          // recent sent texts (🔖 reactions, /clear deletes)
+	draftStreaming     bool                  // experimental sendMessageDraft streaming
+	locLimiter         *ratelimit.Limiter    // outbound location sends: 10/hour/chat (set in New)
+	confirms           *confirmState         // identity-bound security confirmations
+	confirmSendersMu   sync.Mutex
+	confirmSenders     map[string]int64 // chatID → Telegram user who started the turn
+	logger             *zap.Logger
+	topicMutationMu    sync.Mutex
+	topicDeletionFn    func(context.Context, string) error
+	topicSyncMu        sync.Mutex
+	topicSyncCursor    string
+	topicProbeDisabled atomic.Bool
+	wg                 sync.WaitGroup // tracks in-flight message processing
 }
 
 // SetRateLimiter attaches a per-chat rate limiter. Nil disables limiting.
@@ -75,6 +91,9 @@ func (c *Channel) SetUserResolver(ur channel.UserResolver) {
 func (c *Channel) SetStore(s storage.Repository) {
 	c.store = s
 }
+
+// SetCompactFunc installs the current-conversation compaction handler.
+func (c *Channel) SetCompactFunc(fn func(context.Context, string) (string, error)) { c.compactFn = fn }
 
 // SetTranscriber attaches a voice message transcription provider.
 func (c *Channel) SetTranscriber(t TranscriptionProvider) {
@@ -102,6 +121,14 @@ func (c *Channel) RegisterCommand(name, description string, fn CommandFunc) {
 
 // New creates a new Telegram channel.
 func New(token string, allowedIDs []int64, clearFn ClearFunc, debounceWindow time.Duration, httpClient *http.Client, logger *zap.Logger) (*Channel, error) {
+	return newChannel(token, allowedIDs, clearFn, debounceWindow, httpClient, logger, false)
+}
+
+// NewTest uses Telegram's isolated test transport. Never reuse production bot credentials.
+func NewTest(token string, allowedIDs []int64, clearFn ClearFunc, debounceWindow time.Duration, httpClient *http.Client, logger *zap.Logger) (*Channel, error) {
+	return newChannel(token, allowedIDs, clearFn, debounceWindow, httpClient, logger, true)
+}
+func newChannel(token string, allowedIDs []int64, clearFn ClearFunc, debounceWindow time.Duration, httpClient *http.Client, logger *zap.Logger, test bool) (*Channel, error) {
 	client := httpClient
 	if client == nil {
 		client = &http.Client{Timeout: 100 * time.Second}
@@ -109,10 +136,14 @@ func New(token string, allowedIDs []int64, clearFn ClearFunc, debounceWindow tim
 	opts := []bot.Option{
 		// Long-poll window for getUpdates; the client must outlive it.
 		bot.WithHTTPClient(60*time.Second, client),
+		bot.WithAllowedUpdates(telegramAllowedUpdates()),
 		// Sequential dispatch: preserves the per-update ordering semantics
 		// the debounce/prompt state machines rely on.
 		bot.WithNotAsyncHandlers(),
 		bot.WithWorkers(1),
+	}
+	if test {
+		opts = append(opts, bot.UseTestEnvironment())
 	}
 	b, err := bot.New(token, opts...)
 	if err != nil {
@@ -131,29 +162,41 @@ func New(token string, allowedIDs []int64, clearFn ClearFunc, debounceWindow tim
 	logger.Info("telegram bot authorized", zap.String("username", me.Username))
 
 	return &Channel{
-		bot:            b,
-		http:           client,
-		allowedIDs:     allowed,
-		clearFn:        clearFn,
-		commands:       make(map[string]CommandFunc),
-		debounceWindow: debounceWindow,
-		prompts:        newPromptState(),
-		remembers:      newRememberState(),
-		statusMsgs:     newStatusState(),
-		confirms:       newConfirmState(),
-		confirmSenders: make(map[string]int64),
-		sentMsgs:       newSentTracker(),
-		locLimiter:     ratelimit.New(MaxLocationSendsPerHour, time.Hour),
-		logger:         logger,
+		bot:             b,
+		testEnvironment: test,
+		topicsEnabled:   me.HasTopicsEnabled,
+		username:        me.Username,
+		botID:           me.ID,
+		http:            client,
+		allowedIDs:      allowed,
+		clearFn:         clearFn,
+		commands:        make(map[string]CommandFunc),
+		debounceWindow:  debounceWindow,
+		prompts:         newPromptState(),
+		remembers:       newRememberState(),
+		statusMsgs:      newStatusState(),
+		confirms:        newConfirmState(),
+		confirmSenders:  make(map[string]int64),
+		sentMsgs:        newSentTracker(),
+		locLimiter:      ratelimit.New(MaxLocationSendsPerHour, time.Hour),
+		logger:          logger,
 	}, nil
 }
 
 func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) error {
 	// Register commands in Telegram's menu (the "/" button).
-	if len(c.commandOrder) > 0 {
+	{
 		allCmds := append([]models.BotCommand{
+			{Command: "topic", Description: "List topics / Список тем"},
 			{Command: "clear", Description: i18n.Tl(i18n.ResolveLocale("", "en"), "TelegramClearCommand")},
+			{Command: "compact", Description: "Compact topic context / Сжать контекст темы"},
 		}, c.commandOrder...)
+		if c.day != nil {
+			allCmds = append(allCmds, models.BotCommand{Command: "day", Description: "My day / Мой день"})
+		}
+		if c.weather != nil {
+			allCmds = append(allCmds, models.BotCommand{Command: "weather", Description: "Weather / Погода"})
+		}
 		if _, err := c.bot.SetMyCommands(ctx, &bot.SetMyCommandsParams{Commands: allCmds}); err != nil {
 			c.logger.Error("failed to set bot commands menu", zap.Error(err))
 		} else {
@@ -163,7 +206,14 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 
 	// processMsg handles a (possibly debounced/merged) message.
 	processMsg := func(msg channel.IncomingMessage) {
-		tgChatID, _ := strconv.ParseInt(msg.ChatID, 10, 64)
+		target, routeErr := c.resolveTarget(ctx, msg.ChatID)
+		if routeErr != nil {
+			c.finishTopicSeed(ctx, msg, "discarded")
+			c.logger.Warn("Telegram route unavailable")
+			return
+		}
+		tgChatID := target.ChatID
+		defer c.finishTopicSeed(ctx, msg, "processed")
 
 		// Pre-register replyTo for status message threading.
 		c.statusMsgs.setReplyTo(msg.ChatID, msg.MessageID)
@@ -181,6 +231,13 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 		c.wg.Done()
 		c.setReaction(tgChatID, msg.MessageID, "")
 
+		// A local pause/delete may have happened while the model or tool was
+		// running. Revalidate immediately before publishing the final answer.
+		target, routeErr = c.resolveTarget(ctx, msg.ChatID)
+		if routeErr != nil {
+			c.deleteStatusMessage(msg.ChatID, tgChatID)
+			return
+		}
 		// Check if remember skill was used (skip bookmark button if so).
 		skipBookmark := false
 		if entry, ok := c.statusMsgs.get(msg.ChatID); ok {
@@ -199,40 +256,61 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 		// Secret-looking replies (keys, tokens, passwords) go out as ephemeral
 		// messages: visible to the recipient only, no bookmark/copy buttons,
 		// not left lingering in the chat (Bot API 10.2).
-		if matched, pattern := security.Contains(response); matched && err == nil {
+		if matched, pattern := responseSensitivity(response); matched && err == nil {
 			c.logger.Info("reply contains suspected secret, sending ephemeral",
 				zap.String("chat_id", msg.ChatID), zap.String("pattern", pattern))
 			uid, parseErr := strconv.ParseInt(msg.UserID, 10, 64)
-			if parseErr != nil {
-				uid = tgChatID // DM fallback: chat == user
+			if parseErr != nil || uid <= 0 {
+				c.logger.Warn("sensitive reply has no verified recipient")
+				return
 			}
 			if presentation.Verbatim() {
-				c.sendVerbatimResponse(handlerCtx, tgChatID, response, msg.MessageID, uid)
+				if sendErr := c.sendVerbatimResponse(handlerCtx, tgChatID, response, msg.MessageID, uid, target.ThreadID); sendErr != nil {
+					localeCtx := i18n.WithLocale(handlerCtx, i18n.ResolveLocale(msg.Locale, msg.LanguageCode))
+					c.sendSingleMessage(tgChatID, i18n.T(localeCtx, "TelegramErrorResponse"), msg.MessageID, target.ThreadID)
+				}
 			} else {
-				_, _ = c.sendEphemeralHTML(tgChatID, uid, toTelegramHTML(response), msg.MessageID) //nolint:errcheck // logged inside
+				if sendErr := c.sendEphemeralHTML(tgChatID, uid, toTelegramHTML(response), msg.MessageID, target.ThreadID); sendErr != nil {
+					localeCtx := i18n.WithLocale(handlerCtx, i18n.ResolveLocale(msg.Locale, msg.LanguageCode))
+					c.sendSingleMessage(tgChatID, i18n.T(localeCtx, "TelegramErrorResponse"), msg.MessageID, target.ThreadID)
+				}
 			}
 			return
 		}
 
 		if presentation.Verbatim() && err == nil {
-			c.sendVerbatimResponse(handlerCtx, tgChatID, response, msg.MessageID, 0)
+			c.noteFailure("Telegram verbatim delivery failed", c.sendVerbatimResponse(handlerCtx, tgChatID, response, msg.MessageID, 0, target.ThreadID))
+			return
+		}
+		if err == nil {
+			if weather := presentation.WeatherCard(); weather != nil && c.sendWeather(handlerCtx, msg.ChatID, msg.ResolvedUserID, i18n.ResolveLocale(msg.Locale, msg.LanguageCode).String(), weather, response) {
+				return
+			}
+		}
+
+		if err == nil && c.sendRichQuoteReply(handlerCtx, target, response, msg.Quote, msg.ChatID, msg.ResolvedUserID, msg.Locale, !skipBookmark, msg.MessageID) {
 			return
 		}
 
 		if c.rememberSvc != nil && response != "" && !skipBookmark && err == nil {
 			c.sendResponseWithBookmark(tgChatID, response, msg.MessageID, msg.ChatID, msg.ResolvedUserID, msg.Locale)
 		} else {
-			c.sendResponse(tgChatID, response, msg.MessageID)
+			c.sendResponse(tgChatID, response, msg.MessageID, target.ThreadID)
 		}
 	}
 
 	debounce := newDebouncer(c.debounceWindow, processMsg)
+	debounce.onDiscard = func(msg channel.IncomingMessage) { c.finishTopicSeed(ctx, msg, "cleared") }
 	if c.debounceWindow > 0 {
 		c.logger.Info("message debouncing enabled", zap.Duration("window", c.debounceWindow))
 	}
 
 	// Health monitor: periodic bot.GetMe() check.
 	go c.healthMonitor(ctx)
+	go c.runDayDelivery(ctx)
+	syncCtx, stopTopicSync := context.WithCancel(ctx)
+	topicSyncDone := make(chan struct{})
+	go func() { defer close(topicSyncDone); c.runTopicDeletionSync(syncCtx) }()
 
 	// Cleanup stale remember entries.
 	go c.remembers.startCleanup(ctx)
@@ -240,6 +318,13 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 	// dispatch processes one update. Reaction updates are handled inline; the
 	// library's long-poll loop owns fetching and offset management.
 	dispatch := func(update models.Update) {
+		if c.handleUnavailableWidgetSurface(ctx, &update) {
+			return
+		}
+		if update.WidgetQuery != nil {
+			c.handleDayWidgetQuery(ctx, update.WidgetQuery)
+			return
+		}
 		// Handle inline keyboard callback queries (bookmark + interactive prompts).
 		if update.CallbackQuery != nil {
 			if c.isAllowed(update.CallbackQuery.From.ID) {
@@ -249,6 +334,9 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 				}
 				// Bookmark button takes priority.
 				if c.rememberSvc != nil && c.HandleRememberCallback(update.CallbackQuery) {
+					return
+				}
+				if c.handleDayCallback(ctx, update.CallbackQuery) {
 					return
 				}
 				if c.prompts.HandleCallback(c.bot, update.CallbackQuery) {
@@ -276,64 +364,71 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 			return
 		}
 
-		hasText := update.Message.Text != ""
+		hasText := update.Message.Text != "" || update.Message.RichMessage != nil
 		hasPhoto := len(update.Message.Photo) > 0
 		hasDocument := update.Message.Document != nil
 		hasVoice := update.Message.Voice != nil
 		hasAudio := update.Message.Audio != nil
 		hasLocation := update.Message.Location != nil || update.Message.Venue != nil
-		if !hasUpdateContent(update.Message) {
+		hasTopicMetadata := update.Message.ForumTopicCreated != nil || update.Message.ForumTopicEdited != nil
+		if !hasUpdateContent(update.Message) && update.Message.RichMessage == nil && !hasTopicMetadata {
 			return
 		}
 
+		if update.Message.From == nil {
+			return
+		}
 		userID := update.Message.From.ID
 		if !c.isAllowed(userID) {
 			c.logger.Warn("unauthorized user", zap.Int64("user_id", userID))
 			return
 		}
 
-		chatID := strconv.FormatInt(update.Message.Chat.ID, 10)
+		chatID, routeErr := c.conversationFor(ctx, update.Message)
+		if routeErr != nil {
+			c.logger.Warn("Telegram route lookup failed")
+			return
+		}
 		// Bind later security confirmations in this chat to this sender.
 		c.RecordTurnSender(chatID, userID)
 
-		// Handle /clear command.
-		if update.Message.Text == "/clear" {
-			c.handleClear(ctx, update.Message.Chat.ID, chatID)
-			return
-		}
-
-		// Handle registered commands.
-		if strings.HasPrefix(update.Message.Text, "/") {
-			cmd := strings.Fields(update.Message.Text)[0]
-			if fn, ok := c.commands[cmd]; ok {
-				resp := fn(ctx, chatID)
-				if resp != "" {
-					c.sendResponse(update.Message.Chat.ID, resp, 0)
-				}
-				return
-			}
-		}
-
 		// Check if this text should be routed to a pending interactive prompt.
-		if hasText && c.prompts.HandleText(update.Message.Chat.ID, update.Message.Text) {
+		if hasText && c.prompts.HandleTextBound(update.Message.Chat.ID, update.Message.MessageThreadID, userID, update.Message.Text) {
 			return
 		}
 
 		// Extract text: Text for text messages, Caption for photo/document messages.
-		text := update.Message.Text
+		text, quote := normalizedTelegramContent(update.Message)
+		var paymentEntities []security.TextEntity
+		entities := update.Message.Entities
+		if update.Message.Text == "" {
+			entities = update.Message.CaptionEntities
+		}
+		for _, entity := range entities {
+			paymentEntities = append(paymentEntities, security.TextEntity{Type: string(entity.Type), Offset: entity.Offset, Length: entity.Length})
+		}
+		if update.Message.RichMessage == nil {
+			text = security.RedactPaymentEntities(text, paymentEntities)
+		}
+		if quote != nil {
+			quote.Text = security.RedactPaymentData(quote.Text)
+		}
 		if text == "" && (hasPhoto || hasDocument) {
 			text = update.Message.Caption
 		}
 
 		msg := channel.IncomingMessage{
-			ChatID:            chatID,
-			UserID:            strconv.FormatInt(userID, 10),
-			ChannelInstanceID: c.instanceID,
-			UserName:          update.Message.From.Username,
-			Text:              text,
-			LanguageCode:      update.Message.From.LanguageCode,
-			MessageID:         update.Message.ID,
-			Caps:              channel.CapStreaming | channel.CapMarkdown | channel.CapTyping | channel.CapButtons | channel.CapLocations | channel.CapVerbatim,
+			ChatID:             chatID,
+			ChannelType:        "telegram",
+			ProvenPrivateRoute: update.Message.Chat.Type == models.ChatTypePrivate && userID == update.Message.Chat.ID,
+			Quote:              quote,
+			UserID:             strconv.FormatInt(userID, 10),
+			ChannelInstanceID:  c.instanceID,
+			UserName:           update.Message.From.Username,
+			Text:               text,
+			LanguageCode:       update.Message.From.LanguageCode,
+			MessageID:          update.Message.ID,
+			Caps:               channel.CapStreaming | channel.CapMarkdown | channel.CapTyping | channel.CapButtons | channel.CapLocations | channel.CapVerbatim,
 		}
 
 		// Resolve iulita user from channel binding.
@@ -342,7 +437,7 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 			if err != nil {
 				c.logger.Warn("user resolution failed", zap.Error(err), zap.String("user_id", msg.UserID))
 				localeCtx := i18n.WithLocale(ctx, i18n.ResolveLocale("", msg.LanguageCode))
-				c.sendSingleMessage(update.Message.Chat.ID, i18n.T(localeCtx, "TelegramRegistrationNotAllowed"), 0)
+				c.sendSingleMessage(update.Message.Chat.ID, i18n.T(localeCtx, "TelegramRegistrationNotAllowed"), 0, update.Message.MessageThreadID)
 				return
 			}
 			msg.ResolvedUserID = resolvedID
@@ -352,6 +447,83 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 				if locale, err := c.store.GetChannelLocale(ctx, "telegram", msg.UserID); err == nil {
 					msg.Locale = locale
 				}
+			}
+		}
+
+		if err := c.persistRoute(ctx, chatID, update.Message, func() string {
+			if msg.ResolvedUserID != "" {
+				return msg.ResolvedUserID
+			}
+			return msg.UserID
+		}()); err != nil {
+			c.logger.Warn("Telegram route persistence failed")
+			return
+		}
+		if hasTopicMetadata {
+			c.recordTopicMetadata(ctx, update.Message, chatID, msg.ResolvedUserID)
+			return
+		}
+		if c.handleTopicLifecycle(ctx, update.Message, chatID, msg.ResolvedUserID) {
+			return
+		}
+		if _, routeErr := c.resolveTarget(ctx, chatID); routeErr != nil {
+			// Lifecycle commands above remain usable even while the ordinary route is paused.
+			notice := fmt.Sprintf("Iulita приостановлена в этой теме или тема недоступна. Возобновить из основного чата: /topic resume %d / Iulita is paused or this topic is unavailable; use resume from the root chat.", update.Message.MessageThreadID)
+			c.sendSingleMessage(update.Message.Chat.ID, notice, update.Message.ID, update.Message.MessageThreadID)
+			return
+		}
+		if c.handleDayCommand(ctx, update.Message) {
+			return
+		}
+		if c.handleWeatherCommand(ctx, update.Message) {
+			return
+		}
+		// Handle /clear command.
+		if cmd, ok := c.commandName(update.Message.Text); ok && cmd == "/clear" {
+			private := update.Message.Chat.Type == models.ChatTypePrivate && update.Message.From.ID == update.Message.Chat.ID
+			if !private {
+				return
+			}
+			commandCtx := i18n.WithLocale(ctx, i18n.ResolveLocale(msg.Locale, msg.LanguageCode))
+			work := func() {
+				debounce.control(chatID, true, func() { c.handleClear(commandCtx, update.Message.Chat.ID, chatID) })
+			}
+			if c.topicsEnabled {
+				debounce.control("topic-prepare:"+strconv.FormatInt(update.Message.Chat.ID, 10), false, work)
+			} else {
+				work()
+			}
+			return
+		}
+		if cmd, ok := c.commandName(update.Message.Text); ok && cmd == "/compact" {
+			if update.Message.Chat.Type != models.ChatTypePrivate || update.Message.From.ID != update.Message.Chat.ID {
+				return
+			}
+			commandCtx := i18n.WithLocale(ctx, i18n.ResolveLocale(msg.Locale, msg.LanguageCode))
+			work := func() {
+				debounce.control(chatID, false, func() { c.handleCompact(commandCtx, update.Message.Chat.ID, chatID) })
+			}
+			if c.topicsEnabled {
+				debounce.control("topic-prepare:"+strconv.FormatInt(update.Message.Chat.ID, 10), false, work)
+			} else {
+				work()
+			}
+			return
+		}
+
+		// Handle registered commands.
+		if strings.HasPrefix(update.Message.Text, "/") {
+			cmd := strings.Fields(update.Message.Text)[0]
+			cmd, addressed := c.commandName(cmd)
+			if !addressed {
+				return
+			}
+			if fn, ok := c.commands[cmd]; ok {
+				resp := fn(ctx, chatID)
+				if resp != "" {
+					c.sendResponse(update.Message.Chat.ID, resp, 0, update.Message.MessageThreadID)
+				}
+				return
 			}
 		}
 
@@ -393,17 +565,17 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 			localeCtx := i18n.WithLocale(ctx, i18n.ResolveLocale(msg.Locale, msg.LanguageCode))
 			mimeType := documentMIME(doc.MimeType, doc.FileName)
 			if !c.isSupportedDocument(mimeType) {
-				c.sendSingleMessage(update.Message.Chat.ID, i18n.T(localeCtx, "TelegramDocumentUnsupported"), 0)
+				c.sendSingleMessage(update.Message.Chat.ID, i18n.T(localeCtx, "TelegramDocumentUnsupported"), 0, update.Message.MessageThreadID)
 				return
 			}
 			if doc.FileSize > maxTelegramFileBytes {
-				c.sendSingleMessage(update.Message.Chat.ID, i18n.T(localeCtx, "TelegramDocumentTooLarge"), 0)
+				c.sendSingleMessage(update.Message.Chat.ID, i18n.T(localeCtx, "TelegramDocumentTooLarge"), 0, update.Message.MessageThreadID)
 				return
 			}
 			data, err := c.downloadFile(ctx, doc.FileID)
 			if err != nil {
 				c.logger.Warn("document download failed", zap.Error(err), zap.String("chat_id", chatID))
-				c.sendSingleMessage(update.Message.Chat.ID, i18n.T(localeCtx, "TelegramDocumentDownloadFailed"), 0)
+				c.sendSingleMessage(update.Message.Chat.ID, i18n.T(localeCtx, "TelegramDocumentDownloadFailed"), 0, update.Message.MessageThreadID)
 				return
 			}
 			msg.Documents = []channel.DocumentAttachment{{Data: data, MimeType: mimeType, Filename: doc.FileName}}
@@ -481,11 +653,31 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 		if c.rateLimiter != nil && !c.rateLimiter.Allow(chatID) {
 			c.logger.Warn("rate limit exceeded", zap.String("chat_id", chatID), zap.Int64("user_id", userID))
 			localeCtx := i18n.WithLocale(ctx, i18n.ResolveLocale(msg.Locale, msg.LanguageCode))
-			c.sendSingleMessage(update.Message.Chat.ID, i18n.T(localeCtx, "TelegramRateLimited"), 0)
+			c.sendSingleMessage(update.Message.Chat.ID, i18n.T(localeCtx, "TelegramRateLimited"), 0, update.Message.MessageThreadID)
 			return
 		}
 
-		debounce.add(msg)
+		msg.Text = security.RedactPaymentData(msg.Text)
+		if c.topicsEnabled && update.Message.MessageThreadID == 0 && update.Message.Chat.Type == models.ChatTypePrivate && !strings.HasPrefix(strings.TrimSpace(msg.Text), "/") {
+			source := *update.Message
+			actor := *update.Message.From
+			source.From = &actor
+			// Keep non-idempotent setup ordered without holding the polling
+			// dispatcher: approval/cancel callbacks must remain responsive.
+			debounce.control("topic-prepare:"+strconv.FormatInt(update.Message.Chat.ID, 10), false, func() {
+				if c.prepareTopicTurn(ctx, &source, &msg) {
+					debounce.add(msg)
+				}
+			})
+			return
+		}
+		if c.topicsEnabled && update.Message.Chat.Type == models.ChatTypePrivate {
+			// Follow-ups join the same ingress lane so the initial copied seed
+			// reaches its topic queue before a fast reply, clear, or compact.
+			debounce.control("topic-prepare:"+strconv.FormatInt(update.Message.Chat.ID, 10), false, func() { debounce.add(msg) })
+		} else {
+			debounce.add(msg)
+		}
 	}
 
 	c.bot.RegisterHandlerMatchFunc(func(*models.Update) bool { return true },
@@ -494,6 +686,8 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 	// Long-polling loop owned by the library (Bot API 10.3 models decode all
 	// update types natively, including message_reaction).
 	c.bot.Start(ctx)
+	stopTopicSync()
+	<-topicSyncDone
 
 	c.logger.Info("shutdown: flushing pending debounced messages")
 	debounce.flushAll()
@@ -504,6 +698,14 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 }
 
 func (c *Channel) handleClear(ctx context.Context, tgChatID int64, chatID string) {
+	target, routeErr := c.resolveTarget(ctx, chatID)
+	if routeErr != nil {
+		return
+	}
+	if c.topicsEnabled && target.ThreadID == 0 {
+		c.sendSingleMessage(tgChatID, "Откройте тему и отправьте /clear. Контекст других тем не изменится / Open a topic and send /clear; other topics stay unchanged", 0)
+		return
+	}
 	// Use default locale context (will be resolved from DB if needed).
 	localeCtx := ctx
 	if c.store != nil {
@@ -514,24 +716,29 @@ func (c *Channel) handleClear(ctx context.Context, tgChatID int64, chatID string
 	if err := c.clearFn(ctx, chatID); err != nil {
 		c.logger.Error("failed to clear history", zap.Error(err), zap.String("chat_id", chatID))
 		_, _ = c.bot.SendMessage(ctx, &bot.SendMessageParams{ //nolint:errcheck // best-effort notify
-			ChatID: tgChatID,
-			Text:   i18n.T(localeCtx, "TelegramHistoryClearFailed"),
+			ChatID:          tgChatID,
+			MessageThreadID: target.ThreadID,
+			Text:            i18n.T(localeCtx, "TelegramHistoryClearFailed"),
 		})
 		return
 	}
 	// Natively delete the bot's own messages from the last 48 hours.
-	c.deleteBotMessages(tgChatID)
+	if currentTarget, err := c.resolveTarget(ctx, chatID); err == nil && currentTarget.ThreadID == 0 {
+		c.deleteBotMessages(tgChatID)
+	}
 	_, _ = c.bot.SendMessage(ctx, &bot.SendMessageParams{ //nolint:errcheck // best-effort notify
-		ChatID: tgChatID,
-		Text:   i18n.T(localeCtx, "TelegramHistoryCleared"),
+		ChatID:          tgChatID,
+		MessageThreadID: target.ThreadID,
+		Text:            i18n.T(localeCtx, "TelegramHistoryCleared"),
 	})
 }
 
 // SendMessage sends a proactive message to a chat (reminders, agent job
 // results). These are rare, attention-worthy pings, so they carry the 🎉
 // effect. Implements channel.MessageSender.
-func (c *Channel) SendMessage(_ context.Context, chatID, text string) error {
-	tgChatID, err := strconv.ParseInt(chatID, 10, 64)
+func (c *Channel) SendMessage(ctx context.Context, chatID, text string) error {
+	target, err := c.resolveTarget(ctx, chatID)
+	tgChatID := target.ChatID
 	if err != nil {
 		return fmt.Errorf("invalid chat ID: %w", err)
 	}
@@ -541,139 +748,56 @@ func (c *Channel) SendMessage(_ context.Context, chatID, text string) error {
 			// replyTo stays 0 for proactive messages
 			rt = 0
 		}
-		_, _ = c.sendHTML(tgChatID, chunk, rt, nil, effectParty) //nolint:errcheck // best-effort proactive push
+		if _, err := c.sendHTML(tgChatID, chunk, rt, nil, effectParty, target.ThreadID); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
 // sendResponse splits long messages into chunks and sends each as HTML.
 // replyTo is the message ID to reply to (0 = no reply).
-func (c *Channel) sendResponse(chatID int64, text string, replyTo int) {
+func (c *Channel) sendResponse(chatID int64, text string, replyTo int, threadID ...int) {
 	for i, chunk := range telegramHTMLChunks(text) {
 		// Only reply-to the first chunk.
 		rt := 0
 		if i == 0 {
 			rt = replyTo
 		}
-		_, _ = c.sendHTML(chatID, chunk, rt, nil, "") //nolint:errcheck // sendHTML logs failures
+		_, _ = c.sendHTML(chatID, chunk, rt, nil, "", threadID...) //nolint:errcheck // sendHTML logs failures
 	}
 }
 
 // sendSingleMessage sends a plain (non-markdown) message, HTML-escaped.
 // replyTo is the message ID to reply to (0 = no reply).
-func (c *Channel) sendSingleMessage(chatID int64, text string, replyTo int) {
-	_, _ = c.sendHTML(chatID, escapeHTML(text), replyTo, nil, "") //nolint:errcheck // sendHTML logs failures
+func (c *Channel) sendSingleMessage(chatID int64, text string, replyTo int, threadID ...int) {
+	_, _ = c.sendHTML(chatID, escapeHTML(text), replyTo, nil, "", threadID...) //nolint:errcheck // sendHTML logs failures
 }
 
 // StartStream sends an initial message and returns edit/done functions for streaming.
 // Implements channel.StreamingSender.
-func (c *Channel) StartStream(_ context.Context, chatID string, replyTo int) (func(string), func(string), error) {
-	tgChatID, err := strconv.ParseInt(chatID, 10, 64)
-	if err != nil {
-		return nil, nil, fmt.Errorf("invalid chat ID: %w", err)
-	}
-
-	var msgID int
-	var lastEdit time.Time
-	// Experimental draft streaming: partials render client-side; the final
-	// message replaces the draft. Any draft failure degrades to the classic
-	// placeholder-message path transparently.
-	draftID := ""
-	if c.draftStreaming {
-		draftID = "draft-" + generateNonce()
-	}
-
-	if draftID == "" {
-		// Reuse the status message if it was consumed by stream_start AND the task was quick.
-		// For long tasks (>30s), keep the status message as a separate log and send fresh response.
-		if entry, ok := c.statusMsgs.get(chatID); ok && entry.isConsumed() && !entry.isLongTask() {
-			msgID = entry.getMsgID()
-			c.statusMsgs.remove(chatID)
-			// Edit status message to streaming placeholder.
-			_, _ = c.bot.EditMessageText(context.Background(), &bot.EditMessageTextParams{ //nolint:errcheck // best-effort placeholder
-				ChatID:    tgChatID,
-				MessageID: msgID,
-				Text:      "...",
-			})
-		} else {
-			// For long tasks: finalize the status message with total time, then send fresh response.
-			if entry, ok := c.statusMsgs.get(chatID); ok && entry.isConsumed() {
-				c.finalizeStatusMessage(chatID, entry)
-			}
-			p := &bot.SendMessageParams{ChatID: tgChatID, Text: "..."}
-			if replyTo > 0 {
-				p.ReplyParameters = &models.ReplyParameters{MessageID: replyTo}
-			}
-			sent, sendErr := c.bot.SendMessage(context.Background(), p)
-			if sendErr != nil {
-				return nil, nil, fmt.Errorf("sending initial stream message: %w", sendErr)
-			}
-			msgID = sent.ID
-		}
-	}
-
-	editFn := func(text string) {
-		if time.Since(lastEdit) < 1500*time.Millisecond {
-			return // coalesce edits
-		}
-		if draftID != "" {
-			if _, derr := c.bot.SendMessageDraft(context.Background(), &bot.SendMessageDraftParams{
-				ChatID:  tgChatID,
-				DraftID: draftID,
-				Text:    text,
-			}); derr == nil {
-				lastEdit = time.Now()
-				return
-			} else {
-				c.logger.Debug("draft streaming failed, falling back to placeholder edits", zap.Error(derr))
-				draftID = ""
-				if sent, sendErr := c.bot.SendMessage(context.Background(), &bot.SendMessageParams{ChatID: tgChatID, Text: "..."}); sendErr == nil {
-					msgID = sent.ID
-				}
-			}
-		}
-		if msgID == 0 {
-			return
-		}
-		if _, eerr := c.bot.EditMessageText(context.Background(), &bot.EditMessageTextParams{
-			ChatID:    tgChatID,
-			MessageID: msgID,
-			Text:      text,
-		}); eerr != nil {
-			c.logger.Debug("stream edit failed", zap.Error(eerr))
-		}
-		lastEdit = time.Now()
-	}
-
-	doneFn := func(text string) {
-		if draftID != "" {
-			// Final message replaces the draft bubble.
-			_, _ = c.sendHTML(tgChatID, toTelegramHTML(text), replyTo, nil, "") //nolint:errcheck // sendHTML logs failures
-			return
-		}
-		if msgID == 0 {
-			return
-		}
-		c.editHTML(tgChatID, msgID, toTelegramHTML(text), "")
-		c.sentMsgs.record(tgChatID, msgID, text)
-	}
-
-	return editFn, doneFn, nil
+func (c *Channel) StartStream(ctx context.Context, chatID string, replyTo int) (editFn, doneFn func(string), err error) {
+	return c.bufferedStream(ctx, chatID, replyTo, "")
 }
 
 // NotifyStatus sends a live status message to the chat, or updates it in-place.
 // Implements channel.StatusNotifier.
-func (c *Channel) NotifyStatus(_ context.Context, chatID string, event channel.StatusEvent) error {
-	tgChatID, parseErr := strconv.ParseInt(chatID, 10, 64)
+func (c *Channel) NotifyStatus(ctx context.Context, chatID string, event channel.StatusEvent) error {
+	target, parseErr := c.resolveTarget(ctx, chatID)
+	tgChatID := target.ChatID
 	if parseErr != nil {
 		return nil //nolint:nilerr // non-numeric chatIDs are silently ignored (not a Telegram chat)
 	}
 
 	// Handle special event types before formatting.
+	if event.Type == "context_compressed" {
+		_, err := c.bot.SendMessage(ctx, &bot.SendMessageParams{ChatID: tgChatID, MessageThreadID: target.ThreadID, Text: event.Data["text"]})
+		return err
+	}
 
 	// stream_start: atomically mark the status message as consumed (streaming will take over).
 	if event.Type == "stream_start" {
-		c.statusMsgs.getAndMarkConsumed(chatID)
+		// Buffered provider streaming publishes only through processMsg finalization.
 		return nil
 	}
 
@@ -696,7 +820,7 @@ func (c *Channel) NotifyStatus(_ context.Context, chatID string, event channel.S
 	entry, exists := c.statusMsgs.get(chatID)
 	if !exists || entry.msgID == 0 {
 		// Send initial status message (entry may be a pre-created placeholder with replyTo).
-		p := &bot.SendMessageParams{ChatID: tgChatID, Text: line}
+		p := &bot.SendMessageParams{ChatID: tgChatID, MessageThreadID: target.ThreadID, Text: line}
 		// Preserve reply threading from the pre-registered replyTo.
 		if entry != nil && entry.replyTo > 0 {
 			p.ReplyParameters = &models.ReplyParameters{MessageID: entry.replyTo}
@@ -877,3 +1001,6 @@ func (c *Channel) isAllowed(userID int64) bool {
 	_, ok := c.allowedIDs[userID]
 	return ok
 }
+
+// SetDayController attaches owner-scoped day sources and action settings.
+func (c *Channel) SetDayController(day *DayController) { c.day = day }

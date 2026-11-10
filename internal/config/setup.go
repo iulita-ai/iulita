@@ -596,6 +596,9 @@ func GenerateDefaultConfig(paths *Paths) (string, error) {
 	b.WriteString("\n")
 
 	b.WriteString("[telegram]\n")
+	b.WriteString("# Day cards and confirmed actions are enabled by default; set false to disable.\n")
+	fmt.Fprintf(&b, "day_widgets = %t\n", cfg.Telegram.DayWidgets)
+	fmt.Fprintf(&b, "day_actions = %t\n", cfg.Telegram.DayActions)
 	b.WriteString("# Set via IULITA_TELEGRAM_TOKEN env var or system keyring\n")
 	b.WriteString("# token = \"\"\n")
 	b.WriteString("# allowed_ids = []\n")

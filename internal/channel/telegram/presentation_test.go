@@ -83,3 +83,43 @@ func TestVerbatimDeliveryFailureDoesNotRetryOrExposeEphemeralPublicly(t *testing
 		t.Fatal("failed ephemeral delivery retried or sent later chunks")
 	}
 }
+
+func TestEphemeralHTMLFailureNeverFallsBackAndRequiresActor(t *testing.T) {
+	calls := 0
+	b, err := bot.New("123:fixture", bot.WithSkipGetMe(), bot.WithHTTPClient(time.Second, &http.Client{Transport: presentationTransport(func(req *http.Request) (*http.Response, error) {
+		calls++
+		if err := req.ParseMultipartForm(1 << 20); err != nil {
+			t.Fatal(err)
+		}
+		if req.FormValue("ephemeral_message_parameters") == "" {
+			t.Fatal("public attempt")
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"ok":false,"error_code":400,"description":"rejected"}`)), Header: http.Header{}}, nil
+	})}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := &Channel{bot: b, logger: zap.NewNop(), sentMsgs: newSentTracker()}
+	if err := c.sendEphemeralHTML(-42, 0, "private", 0); err == nil || calls != 0 {
+		t.Fatal("missing actor accepted")
+	}
+	if err := c.sendEphemeralHTML(-42, 73, "private", 0); err == nil || calls != 1 {
+		t.Fatal("failed delivery did not fail closed")
+	}
+	if len(c.sentMsgs.msgs) != 0 {
+		t.Fatal("sensitive cache populated")
+	}
+}
+func TestSensitiveVerbatimNeverEntersBookmarkCache(t *testing.T) {
+	b, err := bot.New("123:fixture", bot.WithSkipGetMe(), bot.WithHTTPClient(time.Second, &http.Client{Transport: presentationTransport(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"ok":true,"result":{"message_id":123}}`)), Header: http.Header{}}, nil
+	})}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := &Channel{bot: b, logger: zap.NewNop(), sentMsgs: newSentTracker()}
+	c.sendVerbatimResponse(context.Background(), 42, "token=abcdefghijk", 0, 73)
+	if _, ok := c.sentMsgs.text(42, 123); ok {
+		t.Fatal("private response can be bookmarked through reaction")
+	}
+}

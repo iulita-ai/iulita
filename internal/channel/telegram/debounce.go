@@ -10,10 +10,13 @@ import (
 
 // debouncer buffers rapid messages from the same chat and merges them before processing.
 type debouncer struct {
-	mu      sync.Mutex
-	buffers map[string]*chatBuffer
-	window  time.Duration
-	handler func(channel.IncomingMessage) // called with merged message
+	mu        sync.Mutex
+	buffers   map[string]*chatBuffer
+	window    time.Duration
+	handler   func(channel.IncomingMessage) // called with merged message
+	tails     map[string]chan struct{}
+	wg        sync.WaitGroup
+	onDiscard func(channel.IncomingMessage)
 }
 
 type chatBuffer struct {
@@ -29,6 +32,7 @@ func newDebouncer(window time.Duration, handler func(channel.IncomingMessage)) *
 		buffers: make(map[string]*chatBuffer),
 		window:  window,
 		handler: handler,
+		tails:   make(map[string]chan struct{}),
 	}
 }
 
@@ -37,20 +41,26 @@ func newDebouncer(window time.Duration, handler func(channel.IncomingMessage)) *
 // events for interactive prompts).
 func (d *debouncer) add(msg channel.IncomingMessage) {
 	if d.window <= 0 {
-		go d.handler(msg)
+		d.mu.Lock()
+		d.enqueueLocked(msg.ChatID, func() { d.handler(msg) })
+		d.mu.Unlock()
 		return
 	}
 
+	key := msg.ChatID
+	if msg.ChannelType == "telegram" && !msg.ProvenPrivateRoute {
+		key += "\x00" + msg.UserID
+	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	buf, ok := d.buffers[msg.ChatID]
+	buf, ok := d.buffers[key]
 	if !ok {
 		buf = &chatBuffer{}
 		buf.timer = time.AfterFunc(d.window, func() {
-			d.flush(msg.ChatID)
+			d.flush(key)
 		})
-		d.buffers[msg.ChatID] = buf
+		d.buffers[key] = buf
 	} else {
 		buf.timer.Reset(d.window)
 	}
@@ -65,25 +75,75 @@ func (d *debouncer) flush(chatID string) {
 		return
 	}
 	delete(d.buffers, chatID)
-	d.mu.Unlock()
-
 	merged := mergeMessages(buf.messages)
-	d.handler(merged)
+	d.enqueueLocked(merged.ChatID, func() { d.handler(merged) })
+	d.mu.Unlock()
 }
+
+// control orders a context command after already accepted turns without
+// blocking the Telegram dispatcher (which must keep serving approval clicks).
+// Clear discards an unprocessed debounce burst; compact processes it first.
+func (d *debouncer) control(chatID string, discard bool, fn func()) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if buf := d.buffers[chatID]; buf != nil {
+		buf.timer.Stop()
+		delete(d.buffers, chatID)
+		if discard && d.onDiscard != nil {
+			merged := mergeMessages(buf.messages)
+			d.enqueueLocked(chatID, func() { d.onDiscard(merged) })
+		} else if !discard {
+			merged := mergeMessages(buf.messages)
+			d.enqueueLocked(chatID, func() { d.handler(merged) })
+		}
+	}
+	d.enqueueLocked(chatID, fn)
+}
+
+func (d *debouncer) enqueueLocked(key string, fn func()) {
+	previous := d.tails[key]
+	done := make(chan struct{})
+	d.tails[key] = done
+	d.wg.Add(1)
+	go func() {
+		defer d.wg.Done()
+		if previous != nil {
+			<-previous
+		}
+		defer func() {
+			close(done)
+			d.mu.Lock()
+			if d.tails[key] == done {
+				delete(d.tails, key)
+			}
+			d.mu.Unlock()
+		}()
+		fn()
+	}()
+}
+
+func (d *debouncer) wait() { d.wg.Wait() }
 
 // flushAll flushes all pending debounced messages immediately.
 // Called during shutdown to avoid losing buffered messages.
 func (d *debouncer) flushAll() {
-	d.mu.Lock()
-	ids := make([]string, 0, len(d.buffers))
-	for id, buf := range d.buffers {
-		ids = append(ids, id)
-		buf.timer.Stop()
-	}
-	d.mu.Unlock()
-
-	for _, id := range ids {
-		d.flush(id)
+	for {
+		d.mu.Lock()
+		for id, buf := range d.buffers {
+			buf.timer.Stop()
+			delete(d.buffers, id)
+			merged := mergeMessages(buf.messages)
+			d.enqueueLocked(merged.ChatID, func() { d.handler(merged) })
+		}
+		d.mu.Unlock()
+		d.wait()
+		// A queued topic preparation may have enqueued a new debounced turn.
+		d.mu.Lock()
+		empty := len(d.buffers) == 0 && len(d.tails) == 0
+		d.mu.Unlock()
+		if empty {
+			return
+		}
 	}
 }
 
@@ -98,19 +158,30 @@ func mergeMessages(msgs []channel.IncomingMessage) channel.IncomingMessage {
 	// to be dropped here, which mis-scoped facts and degraded response
 	// language on merged bursts.
 	merged := channel.IncomingMessage{
-		ChatID:            msgs[0].ChatID,
-		UserID:            msgs[0].UserID,
-		ChannelInstanceID: msgs[0].ChannelInstanceID,
-		UserName:          msgs[0].UserName,
-		LanguageCode:      msgs[0].LanguageCode,
-		Locale:            msgs[0].Locale,
-		Caps:              msgs[0].Caps,
-		ResolvedUserID:    msgs[0].ResolvedUserID,
-		MessageID:         msgs[0].MessageID,
+		ChannelType:        msgs[0].ChannelType,
+		ChatID:             msgs[0].ChatID,
+		UserID:             msgs[0].UserID,
+		ChannelInstanceID:  msgs[0].ChannelInstanceID,
+		UserName:           msgs[0].UserName,
+		LanguageCode:       msgs[0].LanguageCode,
+		Locale:             msgs[0].Locale,
+		Caps:               msgs[0].Caps,
+		ResolvedUserID:     msgs[0].ResolvedUserID,
+		MessageID:          msgs[0].MessageID,
+		ProvenPrivateRoute: msgs[0].ProvenPrivateRoute,
+		Quote:              msgs[0].Quote,
 	}
 
 	var texts []string
 	for _, m := range msgs {
+		if len(m.RelatedMessageIDs) > 0 {
+			merged.RelatedMessageIDs = append(merged.RelatedMessageIDs, m.RelatedMessageIDs...)
+		} else if m.MessageID > 0 {
+			merged.RelatedMessageIDs = append(merged.RelatedMessageIDs, m.MessageID)
+		}
+		if !m.ProvenPrivateRoute || m.ChannelType != merged.ChannelType || m.ChatID != merged.ChatID || m.UserID != merged.UserID || m.ResolvedUserID != merged.ResolvedUserID || m.ChannelInstanceID != merged.ChannelInstanceID {
+			merged.ProvenPrivateRoute = false
+		}
 		if m.Text != "" {
 			texts = append(texts, m.Text)
 		}

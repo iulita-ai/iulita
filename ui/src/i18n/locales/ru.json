@@ -63,6 +63,7 @@
     "changePasswordFailed": "Не удалось сменить пароль"
   },
   "dashboard": {
+    "openTelegramTopic": "Открыть эту тему в Telegram",
     "title": "Панель",
     "allChats": "Все чаты",
     "messages": "Сообщения",

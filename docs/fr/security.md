@@ -165,3 +165,8 @@ Fenetre fixe : nombre total d'actions LLM/outils par heure a travers tous les ch
 - **Detection de code** : rejette les competences avec des fichiers de code sauf si correctement isolees
 - **Scan d'injection de prompt** : avertit sur les motifs suspects dans le corps de la competence
 - **Taille max d'archive** : configurable (defaut 50 Mo pour ClawhHub)
+
+
+## Telegram : mise à jour du code
+
+Les changements Telegram non encore publiés sont décrits dans le [guide complet en anglais](../en/telegram.md) : sujets et contexte, `/day`, météo, actions privées, alias et limites production/serveur de test. Les nouvelles cartes proposent EN/RU ; les autres langues utilisent le repli anglais.

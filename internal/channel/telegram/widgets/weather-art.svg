@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 120">
+<g class="sun" stroke="#FFD571" stroke-width="4" stroke-linecap="round"><path d="M101 7v8m0 43v8M72 36h-8m74 0h-8M81 16l-6-6m46 46 6 6m-46-6-6 6m46-46 6-6"/><circle cx="101" cy="36" r="19" fill="#FFD571"/></g>
+<g class="moon" fill="#D6E7F4"><path d="M113 13a26 26 0 1 0 19 41 27 27 0 0 1-19-41"/><circle cx="60" cy="18" r="2"/><circle cx="141" cy="27" r="2"/></g>
+<g class="cloud"><path d="M28 79c-18-1-21-24-6-31 0-22 33-30 43-9 15-11 36-2 37 15 26-2 33 26 10 31H35z" fill="#BFD4E0"/><path d="M40 76c-17-1-21-22-7-30 0-22 32-27 42-8 16-10 36 0 36 16 24-1 26 25 5 28H45z" fill="#F8FBFF"/></g>
+<g class="rain"><path d="m49 91-7 14m31-14-7 14m31-14-7 14" stroke="#0E7F7A" stroke-width="5" stroke-linecap="round"/></g>
+<g class="snow"><path d="M49 91v16m-7-12 14 8m0-8-14 8m36-12v16m-7-12 14 8m0-8-14 8m36-12v16m-7-12 14 8m0-8-14 8" fill="none" stroke="#65A8CA" stroke-width="2.4" stroke-linecap="round"/></g>
+<g class="storm"><path d="m79 74-15 25 17-3-6 22 29-34-18 3 8-13z" fill="#FFD571"/></g>
+<g class="fog"><path d="M30 91h94m-84 12h72" stroke="#7D9DAE" stroke-width="5" stroke-linecap="round"/></g>
+<g class="unknown"><circle cx="82" cy="56" r="29" fill="#D5DEDF"/><path d="M67 56h30" stroke="#718C92" stroke-width="4" stroke-linecap="round"/></g>
+</svg>

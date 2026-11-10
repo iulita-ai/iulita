@@ -271,3 +271,10 @@ IULITA_PROXY_URL           → proxy.url
 3. **פורמט**: `base64(12-byte-nonce ‖ ciphertext)`
 4. **הצפנה אוטומטית**: מפתחות שהוכרזו כ-`secret_keys` ב-SKILL.md תמיד מוצפנים
 5. **אף פעם לא דולפים**: API לוח הבקרה מחזיר ערכים ריקים למפתחות מוצפנים
+
+
+## Telegram: עדכון קוד
+
+שינויי Telegram שטרם פורסמו מתוארים ב[מדריך המלא באנגלית](../en/telegram.md): נושאים והקשר, `/day`, מזג אוויר, פעולות פרטיות, שמות נוספים ומגבלות ייצור/שרת בדיקה. הכרטיסים החדשים כוללים EN/RU; שפות אחרות משתמשות באנגלית.
+
+`telegram.day_widgets` ו-`telegram.day_actions` מופעלות כברירת מחדל גם בעדכון ללא המפתחות; false מפורש נשמר. אלה הגדרות כלליות הדורשות הפעלה מחדש, עם `IULITA_TELEGRAM_DAY_WIDGETS` / `IULITA_TELEGRAM_DAY_ACTIONS`. פרטי aliases, preferred_username ו-test_environment במדריך EN.

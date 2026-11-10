@@ -271,3 +271,10 @@ Les valeurs de configuration secretes en BDD sont chiffrees :
 3. **Format** : `base64(nonce-12-octets ‖ texte-chiffre)`
 4. **Chiffrement automatique** : les cles declarees comme `secret_keys` dans SKILL.md sont toujours chiffrees
 5. **Jamais divulguees** : l'API du tableau de bord retourne des valeurs vides pour les cles chiffrees
+
+
+## Telegram : mise à jour du code
+
+Les changements Telegram non encore publiés sont décrits dans le [guide complet en anglais](../en/telegram.md) : sujets et contexte, `/day`, météo, actions privées, alias et limites production/serveur de test. Les nouvelles cartes proposent EN/RU ; les autres langues utilisent le repli anglais.
+
+`telegram.day_widgets` et `telegram.day_actions` sont activés par défaut, même après mise à jour sans ces clés ; false explicite reste effectif. Ces réglages globaux nécessitent un redémarrage ; variables : `IULITA_TELEGRAM_DAY_WIDGETS` / `IULITA_TELEGRAM_DAY_ACTIONS`. Alias, preferred_username et test_environment sont détaillés dans le guide EN.

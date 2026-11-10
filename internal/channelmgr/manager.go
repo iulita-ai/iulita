@@ -62,11 +62,14 @@ type SlackGuardrails struct {
 // TelegramInstanceConfig is the JSON stored in channel_instances.config for Telegram channels
 // created via the dashboard. Config-sourced channels use config.toml values directly.
 type TelegramInstanceConfig struct {
-	Token          string  `json:"token"`
-	AllowedIDs     []int64 `json:"allowed_ids"`
-	DebounceWindow string  `json:"debounce_window"`
-	RateLimit      int     `json:"rate_limit"`
-	RateWindow     string  `json:"rate_window"`
+	TestEnvironment   bool     `json:"test_environment,omitempty"`
+	Aliases           []string `json:"aliases,omitempty"`
+	PreferredUsername string   `json:"preferred_username,omitempty"`
+	Token             string   `json:"token"`
+	AllowedIDs        []int64  `json:"allowed_ids"`
+	DebounceWindow    string   `json:"debounce_window"`
+	RateLimit         int      `json:"rate_limit"`
+	RateWindow        string   `json:"rate_window"`
 }
 
 // CommandRegistrar is called once for each new Telegram channel instance to register slash commands.
@@ -109,14 +112,17 @@ type Config struct {
 	ClearFn func(ctx context.Context, chatID string) error
 
 	// Config-sourced Telegram settings (from config.toml).
-	ConfigToken      string
-	ConfigAllowedIDs []int64
-	ConfigDebounce   time.Duration
-	ConfigRateLimit  int
-	ConfigRateWindow time.Duration
+	ConfigAliases           []string
+	ConfigPreferredUsername string
+	ConfigToken             string
+	ConfigAllowedIDs        []int64
+	ConfigDebounce          time.Duration
+	ConfigRateLimit         int
+	ConfigRateWindow        time.Duration
 
 	// DraftStreaming enables experimental sendMessageDraft reply streaming.
-	ConfigDraftStreaming bool
+	ConfigTestEnvironment bool
+	ConfigDraftStreaming  bool
 
 	// Transcriber for voice messages (nil = disabled).
 	Transcriber telegram.TranscriptionProvider
@@ -145,15 +151,18 @@ type Manager struct {
 	slackWriteMu       sync.Mutex         // serializes recomputeSlackWrite (snapshot+notify atomic)
 
 	// Config-sourced Telegram settings.
-	configTokenMu    sync.RWMutex // protects configToken independently from mu
-	configToken      string
-	configAllowedIDs []int64
-	configDebounce   time.Duration
-	configRateLimit  int
-	configRateWindow time.Duration
+	configTokenMu           sync.RWMutex // protects configToken independently from mu
+	configToken             string
+	configAliases           []string
+	configPreferredUsername string
+	configAllowedIDs        []int64
+	configDebounce          time.Duration
+	configRateLimit         int
+	configRateWindow        time.Duration
 
-	transcriber    telegram.TranscriptionProvider
-	draftStreaming bool
+	transcriber     telegram.TranscriptionProvider
+	testEnvironment bool
+	draftStreaming  bool
 
 	bookmarkSvc       bookmark.Service       // nil = no bookmark feature
 	commandRegistrar  CommandRegistrar       // set via SetCommandRegistrar
@@ -171,22 +180,25 @@ type Manager struct {
 // New creates a new Manager with the given configuration.
 func New(cfg Config) *Manager {
 	return &Manager{
-		running:            make(map[string]*ManagedChannel),
-		store:              cfg.Store,
-		cfgStore:           cfg.CfgStore,
-		credentialResolver: cfg.CredentialResolver,
-		httpClient:         cfg.HTTPClient,
-		userResolver:       cfg.UserResolver,
-		clearFn:            cfg.ClearFn,
-		configToken:        cfg.ConfigToken,
-		configAllowedIDs:   cfg.ConfigAllowedIDs,
-		configDebounce:     cfg.ConfigDebounce,
-		configRateLimit:    cfg.ConfigRateLimit,
-		configRateWindow:   cfg.ConfigRateWindow,
-		transcriber:        cfg.Transcriber,
-		draftStreaming:     cfg.ConfigDraftStreaming,
-		bus:                cfg.Bus,
-		logger:             cfg.Logger,
+		running:                 make(map[string]*ManagedChannel),
+		store:                   cfg.Store,
+		cfgStore:                cfg.CfgStore,
+		credentialResolver:      cfg.CredentialResolver,
+		httpClient:              cfg.HTTPClient,
+		userResolver:            cfg.UserResolver,
+		clearFn:                 cfg.ClearFn,
+		configToken:             cfg.ConfigToken,
+		configAliases:           cfg.ConfigAliases,
+		configPreferredUsername: cfg.ConfigPreferredUsername,
+		configAllowedIDs:        cfg.ConfigAllowedIDs,
+		configDebounce:          cfg.ConfigDebounce,
+		configRateLimit:         cfg.ConfigRateLimit,
+		configRateWindow:        cfg.ConfigRateWindow,
+		transcriber:             cfg.Transcriber,
+		testEnvironment:         cfg.ConfigTestEnvironment,
+		draftStreaming:          cfg.ConfigDraftStreaming,
+		bus:                     cfg.Bus,
+		logger:                  cfg.Logger,
 	}
 }
 
@@ -560,6 +572,9 @@ func (m *Manager) NotifyStatus(ctx context.Context, chatID string, event channel
 		}
 	}
 
+	if strings.HasPrefix(chatID, "tgconv:") {
+		return fmt.Errorf("telegram conversation route unavailable")
+	}
 	// Slack: chatID starts with "slack:" (public channel) or matched via DB lookup above.
 	if strings.HasPrefix(chatID, "slack:") {
 		var slackNotifier channel.StatusNotifier
@@ -615,6 +630,13 @@ func (m *Manager) findRunningForChat(ctx context.Context, chatID string) *Manage
 // PrompterFor returns a PromptAsker for the given chatID by delegating to the
 // appropriate running channel. Implements interact.PromptAskerFactory.
 func (m *Manager) PrompterFor(chatID string) interact.PromptAsker {
+	if strings.HasPrefix(chatID, "tgconv:") {
+		mc := m.findRunningForChat(context.Background(), chatID)
+		if mc == nil || mc.tg == nil {
+			return nil
+		}
+		return mc.tg.PrompterFor(chatID)
+	}
 	// Try console first (chatID == "console").
 	if con := m.GetConsole(); con != nil {
 		if p := con.PrompterFor(chatID); p != nil {
@@ -651,6 +673,13 @@ func (m *Manager) PrompterFor(chatID string) interact.PromptAsker {
 // calls fail with "no safe confirmation channel" even on channels that do
 // support consent (Telegram/Slack/Webchat/Console all implement it).
 func (m *Manager) ConfirmerFor(chatID string) interact.ConfirmationAsker {
+	if strings.HasPrefix(chatID, "tgconv:") {
+		mc := m.findRunningForChat(context.Background(), chatID)
+		if mc == nil || mc.tg == nil {
+			return nil
+		}
+		return mc.tg.ConfirmerFor(chatID)
+	}
 	if con := m.GetConsole(); con != nil {
 		if c := con.ConfirmerFor(chatID); c != nil {
 			return c
@@ -855,11 +884,14 @@ func (m *Manager) restartInstance(ctx context.Context, instance domain.ChannelIn
 
 func (m *Manager) createTelegramChannel(instance domain.ChannelInstance) (*telegram.Channel, error) {
 	var (
-		token      string
-		allowedIDs []int64
-		debounce   time.Duration
-		rateLimit  int
-		rateWindow time.Duration
+		token             string
+		testEnvironment   bool
+		aliases           []string
+		preferredUsername string
+		allowedIDs        []int64
+		debounce          time.Duration
+		rateLimit         int
+		rateWindow        time.Duration
 	)
 
 	if instance.Source == domain.ChannelSourceConfig {
@@ -867,6 +899,9 @@ func (m *Manager) createTelegramChannel(instance domain.ChannelInstance) (*teleg
 		m.configTokenMu.RLock()
 		token = m.configToken
 		m.configTokenMu.RUnlock()
+		aliases = m.configAliases
+		preferredUsername = m.configPreferredUsername
+		testEnvironment = m.testEnvironment
 		allowedIDs = m.configAllowedIDs
 		debounce = m.configDebounce
 		rateLimit = m.configRateLimit
@@ -887,7 +922,10 @@ func (m *Manager) createTelegramChannel(instance domain.ChannelInstance) (*teleg
 			return nil, fmt.Errorf("parsing channel config JSON: %w", err)
 		}
 
+		testEnvironment = tgCfg.TestEnvironment
 		token = tgCfg.Token
+		aliases = tgCfg.Aliases
+		preferredUsername = tgCfg.PreferredUsername
 
 		// Try credential binding if no embedded token.
 		if token == "" && m.credentialResolver != nil {
@@ -917,9 +955,20 @@ func (m *Manager) createTelegramChannel(instance domain.ChannelInstance) (*teleg
 	}
 
 	clearFn := telegram.ClearFunc(m.clearFn)
-	tg, err := telegram.New(token, allowedIDs, clearFn, debounce, m.httpClient, m.logger)
+	factory := telegram.New
+	if testEnvironment {
+		factory = telegram.NewTest
+	}
+	tg, err := factory(token, allowedIDs, clearFn, debounce, m.httpClient, m.logger)
 	if err != nil {
 		return nil, err
+	}
+
+	// BotFather may promote a secondary username to getMe.Username. Always
+	// discover the numeric bot's complete active-name set to preserve old links
+	// and addressed commands even when no explicit alias config was added.
+	if err := tg.ConfigureAliases(context.Background(), aliases, preferredUsername); err != nil {
+		m.logger.Warn("Telegram alias discovery failed; retaining canonical username")
 	}
 
 	tg.SetDraftStreaming(m.draftStreaming)
@@ -1044,6 +1093,19 @@ func (m *Manager) createSlackChannel(instance domain.ChannelInstance) (*slackch.
 
 // lookupInstanceForChat finds the channel_instance_id stored in user_channels for this chatID.
 func (m *Manager) lookupInstanceForChat(ctx context.Context, chatID string) string {
+	if strings.HasPrefix(chatID, "tgconv:") || isNumericTelegramChat(chatID) {
+		if routes, ok := m.store.(interface {
+			GetTelegramRoute(context.Context, string) (*domain.TelegramConversationRoute, error)
+		}); ok {
+			r, err := routes.GetTelegramRoute(ctx, chatID)
+			if err == nil && r != nil {
+				return r.InstanceID
+			}
+		}
+		if strings.HasPrefix(chatID, "tgconv:") {
+			return ""
+		}
+	}
 	id, err := m.store.GetChannelInstanceIDByChat(ctx, chatID)
 	if err != nil {
 		m.logger.Debug("failed to look up channel instance for chat",
@@ -1092,6 +1154,10 @@ func (m *Manager) senderFor(ctx context.Context, chatID string) channel.Streamin
 		if ok {
 			return channelSender(mc)
 		}
+		return nil
+	}
+	if strings.HasPrefix(chatID, "tgconv:") {
+		return nil
 	}
 	return m.firstRunning()
 }
@@ -1128,4 +1194,18 @@ func (m *Manager) SendToInstance(ctx context.Context, instance, chat, text strin
 		return fmt.Errorf("channel instance unavailable")
 	}
 	return sender.SendMessage(ctx, chat, text)
+}
+
+func isNumericTelegramChat(id string) bool {
+	n, err := strconv.ParseInt(id, 10, 64)
+	return err == nil && n != 0
+}
+
+// TelegramTopicLink returns an owner-checked link via the route's exact bot.
+func (m *Manager) TelegramTopicLink(ctx context.Context, conversation, owner string) (string, error) {
+	mc := m.findRunningForChat(ctx, conversation)
+	if mc == nil || mc.tg == nil {
+		return "", fmt.Errorf("telegram topic unavailable")
+	}
+	return mc.tg.TopicLink(ctx, conversation, owner)
 }

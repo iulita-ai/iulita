@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/uptrace/bun"
+
 	"github.com/iulita-ai/iulita/internal/domain"
 )
 
@@ -18,20 +20,24 @@ func (s *Store) SaveFact(ctx context.Context, f *domain.Fact) error {
 	if f.LastAccessedAt.IsZero() {
 		f.LastAccessedAt = f.CreatedAt
 	}
-	_, err := s.db.NewInsert().Model(f).Exec(ctx)
+	err := s.withConversationWrite(ctx, f.ChatID, func(db bun.IDB) error { _, e := db.NewInsert().Model(f).Exec(ctx); return e })
 	if err != nil {
 		return fmt.Errorf("inserting fact: %w", err)
 	}
 
 	// Auto-embed in background if embedding is configured.
 	if s.embedFunc != nil && f.ID > 0 {
-		go func(id int64, content string) {
-			bgCtx := context.Background()
+		go func(parentCtx context.Context, id int64, content, chat string) {
+			bgCtx, cancelEmbedding := context.WithTimeout(context.WithoutCancel(parentCtx), 30*time.Second)
+			defer cancelEmbedding()
+			if e := conversationAvailable(bgCtx, s.db, chat); e != nil {
+				return
+			}
 			vecs, err := s.embedFunc(bgCtx, []string{content})
 			if err == nil && len(vecs) > 0 {
 				s.SaveFactVector(bgCtx, id, vecs[0])
 			}
-		}(f.ID, f.Content)
+		}(ctx, f.ID, f.Content, f.ChatID)
 	}
 
 	return nil
@@ -104,19 +110,19 @@ func (s *Store) DeleteFactByID(ctx context.Context, id int64) error {
 }
 
 func (s *Store) UpdateFactContent(ctx context.Context, id int64, content string) error {
-	res, err := s.db.NewUpdate().
-		Model((*domain.Fact)(nil)).
-		Where(legacyChatPredicate).
-		Set("content = ?", content).
-		Set("last_accessed_at = ?", time.Now()).
-		Where("id = ?", id).
-		Exec(ctx)
+	err := s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		f := new(domain.Fact)
+		if e := tx.NewSelect().Model(f).Where("id = ?", id).Scan(ctx); e != nil {
+			return e
+		}
+		if e := conversationAvailable(ctx, tx, f.ChatID); e != nil {
+			return e
+		}
+		_, e := tx.NewUpdate().Model((*domain.Fact)(nil)).Set("content = ?", content).Set("last_accessed_at = ?", time.Now()).Where("id = ?", id).Exec(ctx)
+		return e
+	})
 	if err != nil {
 		return fmt.Errorf("updating fact content: %w", err)
-	}
-	rows, _ := res.RowsAffected()
-	if rows == 0 {
-		return fmt.Errorf("fact #%d not found", id)
 	}
 
 	// Re-embed if embedding is configured.

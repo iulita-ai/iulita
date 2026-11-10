@@ -25,7 +25,7 @@ Web Chat ────┼→ Channel Manager → Assistant → LLM Provider Chain
 3. **Clean architecture** — domain models → interfaces → implementations → orchestrator
 4. **Multi-channel, single identity** — facts and insights are shared across all channels via user_id
 5. **Zero-config local install** — works out of the box with just an API key
-6. **Hot-reloadable** — skills, config, and even Telegram token can change at runtime without restart
+6. **Selective hot reload** — supported skill/configuration settings and the Telegram token can change at runtime; restart-only settings, including Telegram day widgets/actions, require an application restart
 
 ## Component Map
 
@@ -127,8 +127,8 @@ Assistant — Phase 2: Enrichment
     │ send "processing" status event
     ▼
 Assistant — Phase 3: History & Compression
-    │ load last 50 messages
-    │ if tokens > 80% context window → compress older half
+    │ load full verified private-topic history; bounded history elsewhere
+    │ if tokens > 80% context window → bounded summary + recent tail
     ▼
 Assistant — Phase 4: Context Data
     │ load directive, recent facts, relevant insights
@@ -336,3 +336,12 @@ not ordinary transcripts, facts, embeddings or persistent response caches.
 Account authority reads use a separate read-only SQLite pool so pending writers
 cannot starve an active reservation holder. See [the API guide](mobile-api.md)
 for registrations, revocation, backup, acceptance gates and current availability.
+
+
+## Telegram conversation architecture
+
+Verified private Telegram topics use opaque conversation IDs with a separately persisted bot/instance/owner/chat/thread route. Full persisted topic history is admitted to context; other channels keep their bounded history policy. Conversation lanes serialize turns, clear and compaction, while topic deletion cancels active runs and fences late storage/tool/delivery operations.
+
+Native card data travels through a trusted request-local presentation carrier, not through model-generated HTML. Static embedded templates consume bounded typed state; private day-card updates use chat state and durable delivery receipts. The model can still synthesize the companion to a weather card. Callback ownership is captured from the initiating actor and never inferred from a later sender or forwarded widget.
+
+For user behavior and the production/test-server distinction, see the [Telegram guide](telegram.md).

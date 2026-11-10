@@ -8,7 +8,7 @@ Chaque canal declare ses capacites via un masque de bits sur chaque message :
 
 | Capacite | Console | Telegram | WebChat |
 |----------|---------|----------|---------|
-| Streaming | via bubbletea | Oui (base sur l'edition) | Oui (WebSocket) |
+| Streaming | via bubbletea | Réponse finale en tampon | Oui (WebSocket) |
 | Markdown | via glamour | Oui | HTML |
 | Reactions | Non | Non | Non |
 | Boutons | Non | Oui (clavier en ligne) | Oui |
@@ -70,92 +70,13 @@ En mode console, le serveur s'execute en arriere-plan :
 
 ## Telegram
 
-Bot Telegram complet avec streaming, regroupement et invites interactives.
+Le [guide complet Telegram (EN)](../en/telegram.md) décrit les changements du code non encore publiés : sujets privés, cartes du jour et météo, alias, citations et callbacks personnels.
 
-### Configuration
+Configurez le jeton et `telegram.allowed_ids`, puis activez les sujets dans BotFather. Un message ordinaire à la racine crée un sujet ; `/topic` liste les sujets connus. `/clear` et `/compact` concernent le contexte courant. `/topic pause` suspend Iulita sans fermer le sujet ; `/topic delete` demande confirmation et annule le travail local lié, sans supprimer les tâches externes.
 
-1. Creez un bot via [@BotFather](https://t.me/BotFather)
-2. Definissez le jeton : `iulita init` (trousseau) ou variable d'environnement `IULITA_TELEGRAM_TOKEN`
-3. Optionnel : definissez `telegram.allowed_ids` pour restreindre l'acces a des IDs Telegram specifiques
+Utilisez `/day`, `/day text`, `/weather London 4` ou `/weather text London 4`. `telegram.day_widgets` et `telegram.day_actions` sont activés par défaut, y compris après mise à jour sans ces clés ; false explicite est conservé. Ces réglages nécessitent un redémarrage. Les actions demandent la confirmation du propriétaire.
 
-### Fonctionnalites
-
-- **Liste blanche d'utilisateurs** : `allowed_ids` restreint qui peut discuter avec le bot. Vide = autoriser tous (avertissement journalise)
-- **Regroupement de messages** : les messages rapides du meme chat sont fusionnes (fenetre configurable)
-- **Editions en streaming** : les reponses apparaissent progressivement via `EditMessageText` (limite a 1 edition/1.5s)
-- **Decoupage de messages** : les messages de plus de 4000 caracteres sont divises aux limites de paragraphe/ligne/mot, en preservant les blocs de code
-- **Thread de reponse** : le premier morceau repond au message de l'utilisateur ; les morceaux suivants sont independants
-- **Indicateur de saisie** : action `ChatTyping` envoyee toutes les 4 secondes pendant le traitement
-- **Surveillance de la sante** : `GetMe()` appele toutes les 60 secondes pour detecter les problemes de connectivite
-- **Invites interactives** : claviers en ligne pour les interactions de competences (localisation meteo, etc.)
-- **Support multimedia** : photos (plus grande taille), documents (limite 30 Mo), voix/audio (avec transcription)
-- **Commandes integrees** : `/clear` (effacer l'historique), commandes enregistrees personnalisees
-- **Bouton de signet** : bouton 💾 de clavier en ligne sur chaque reponse de l'assistant ; un clic sauvegarde la reponse complete comme fait avec raffinement LLM en arriere-plan
-- **Messages de statut en temps reel** : mises a jour du statut pendant l'execution des outils et l'orchestration des agents, affichant la competence en cours et la progression des agents
-
-### Pipeline de traitement des messages
-
-```
-Mise a jour Telegram entrante
-    │
-    ├── Requete callback ?
-    │   ├── "noop" → acquitter silencieusement
-    │   ├── "remember:*" → gestionnaire de signets (sauvegarder fait + retour ✅)
-    │   └── autre → router vers le gestionnaire d'invites
-    ├── Pas un message ? → ignorer
-    ├── Utilisateur pas dans la liste blanche ? → rejeter
-    ├── Commande /clear ? → traiter directement
-    ├── Commande enregistree ? → router vers le gestionnaire
-    ├── Invite active ? → router le texte vers l'invite
-    │
-    ▼
-Construire IncomingMessage
-    │ Caps = Streaming | Markdown | Typing | Buttons
-    │
-    ├── Resoudre l'utilisateur (plateforme → UUID iulita)
-    ├── Rechercher la locale dans la BDD
-    ├── Telecharger le media (photo/document/voix)
-    ├── Verifier la limite de debit
-    │
-    ▼
-Regroupement
-    │ fusionner les messages rapides (texte joint avec \n)
-    │ le minuteur se reinitialise a chaque nouveau message
-    │
-    ▼
-Gestionnaire (Assistant.HandleMessage)
-```
-
-### Regroupeur
-
-Le regroupeur fusionne les messages rapides du meme chat pour eviter plusieurs appels LLM :
-
-- Chaque `chatID` possede un tampon avec un minuteur `time.AfterFunc`
-- L'ajout d'un message reinitialise le minuteur
-- Lorsque le minuteur expire, tous les messages tamponnes sont fusionnes :
-  - Textes joints avec `"\n"`
-  - Images et documents concatenes
-  - Metadonnees du premier message preservees
-- Si `debounce_window = 0`, les messages sont traites immediatement (non bloquant)
-- `flushAll()` traite les tampons restants lors de l'arret
-
-### Decoupage de messages
-
-Les reponses longues sont decoupees en morceaux compatibles Telegram (4000 caracteres max) :
-
-1. Essayer de decouper aux limites de paragraphe (`\n\n`)
-2. Essayer de decouper aux limites de ligne (`\n`)
-3. Essayer de decouper aux limites de mot (` `)
-4. Decoupage brut en dernier recours
-5. **Gestion des blocs de code** : si le decoupage se fait a l'interieur d'un bloc ``` , le fermer avec ``` et le rouvrir dans le morceau suivant
-
-### Configuration
-
-| Cle | Defaut | Description |
-|-----|--------|-------------|
-| `telegram.token` | — | Jeton du bot (rechargeable a chaud) |
-| `telegram.allowed_ids` | `[]` | Liste blanche d'IDs utilisateur (vide = autoriser tous) |
-| `telegram.debounce_window` | 2s | Fenetre de regroupement des messages |
+Les réponses sont mises en mémoire tampon jusqu'au contrôle final de confidentialité. Aucun fragment non vérifié n'est publié. L'échec d'un envoi privé sensible ne déclenche pas un envoi ordinaire de ces données. Le regroupement sépare utilisateurs et sujets. Les widgets de production restent privés ; inline/shared nécessitent le serveur de test Telegram. Voir le guide EN pour la voix, les citations rich, la disponibilité et la récupération.
 
 ## WebChat
 

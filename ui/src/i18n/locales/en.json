@@ -63,6 +63,7 @@
     "changePasswordFailed": "Failed to change password"
   },
   "dashboard": {
+    "openTelegramTopic": "Open this topic in Telegram",
     "title": "Dashboard",
     "allChats": "All chats",
     "messages": "Messages",

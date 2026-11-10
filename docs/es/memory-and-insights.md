@@ -67,7 +67,7 @@ Ademas del flujo de "recordar" basado en chat, los usuarios pueden marcar cualqu
 
 ### Como Funciona
 
-1. **Telegram**: un boton 💾 de teclado inline aparece debajo de cada respuesta del asistente (incluyendo mensajes de multiples fragmentos)
+1. **Telegram**: las respuestas no sensibles compatibles pueden ofrecer 💾; no todas las respuestas ni tarjetas incluyen este control.
 2. **WebChat**: un icono 💾 aparece al pasar el raton sobre los mensajes del asistente
 3. Al hacer clic en el boton se guarda **inmediatamente** la respuesta completa como dato con `source_type="bookmark"`
 4. Una tarea del planificador en segundo plano (`bookmark.refine`) envia el contenido a un LLM para resumirlo
@@ -308,3 +308,8 @@ Parsea el markdown, crea nuevos datos (los IDs originales se descartan — SQLit
 | `skills.insights.quality_threshold` | 0 | Puntuacion minima de calidad (0 = aceptar todas) |
 | `embedding.model` | `KnightsAnalytics/all-MiniLM-L6-v2` | Nombre del modelo ONNX |
 | `embedding.enabled` | true | Habilitar embeddings ONNX |
+
+
+## Telegram: actualización del código
+
+Los cambios de Telegram aún no publicados se describen en la [guía completa en inglés](../en/telegram.md): temas y contexto, `/day`, tarjetas de tiempo, acciones privadas, alias y límites production/test-server. Las nuevas tarjetas tienen textos EN/RU; otros idiomas usan el fallback inglés.

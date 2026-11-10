@@ -297,3 +297,12 @@ initialization. UI/Vision flags remain blocked by the native acceptance gate.
 See [the API operator guide](mobile-api.md). Do not route it through legacy
 WebChat or reuse dashboard/worker tokens. Keep mobile DBs and realm keys in the
 backup plan; restoration requires an explicit signing-epoch invalidation.
+
+
+## Telegram upgrade and readiness
+
+Builds with the new Telegram integration enable `day_widgets` and `day_actions` by default even when an old configuration omits them; explicit false is retained. Back up the database, upgrade the binary/image and restart after changing these switches. Do not rename topic routes or infer a new bot from an alias: old unpinned routes need explicit `/topic bind` before automatic destructive cleanup.
+
+The source-only `go run ./cmd/telegram-readiness` command reads the token from an environment variable and reports public identity, active usernames and topic capability. `-token-env` selects a secret variable; `-test-environment` requires separate Telegram test-server credentials. It neither polls updates nor sends/edits messages, and does not prove client rendering or task mutation permissions. Only one polling instance should consume a bot's updates. See [Telegram operation](telegram.md#operation-and-troubleshooting).
+
+Manual-deletion reconciliation is eventual and uses bounded known-route checks, including narrowly constrained validation probes for observed Bot API responses; Telegram does not expose a documented topic-deletion notification or get-topic probe. Unknown/changed detection behavior does not authorize new local cleanup and may disable the probe. This differs from an explicitly confirmed delete, whose local cleanup is committed before native deletion and remains committed if the native result is uncertain. Test compatibility before relying on synchronization, and keep explicit bot binding and rollback backups.

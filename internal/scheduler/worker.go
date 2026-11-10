@@ -148,6 +148,47 @@ func (w *Worker) executeTask(ctx context.Context, task *domain.Task) {
 		return
 	}
 
+	// SQLite supplies durable cancellation authority. Keep the monitor lifetime
+	// bounded by this handler; failures to establish authority stop execution.
+	guard, guarded := w.store.(interface {
+		TaskStillRunnable(context.Context, int64) (bool, error)
+	})
+	runCtx, cancelRun := context.WithCancel(ctx)
+	defer cancelRun()
+	monitorDone := make(chan struct{})
+	defer close(monitorDone)
+	if guarded {
+		runnable, e := guard.TaskStillRunnable(runCtx, task.ID)
+		if e != nil {
+			if failErr := w.store.FailTask(ctx, task.ID, "unable to verify task authority"); failErr != nil {
+				w.logger.Error("failed to persist task authority failure", zap.Int64("task_id", task.ID), zap.Error(failErr))
+			}
+			return
+		}
+		if !runnable {
+			return
+		}
+		go func() {
+			tick := time.NewTicker(100 * time.Millisecond)
+			defer tick.Stop()
+			for {
+				select {
+				case <-monitorDone:
+					return
+				case <-runCtx.Done():
+					return
+				case <-tick.C:
+					checkCtx, cancel := context.WithTimeout(runCtx, time.Second)
+					runnable, e := guard.TaskStillRunnable(checkCtx, task.ID)
+					cancel()
+					if e != nil || !runnable {
+						cancelRun()
+						return
+					}
+				}
+			}
+		}()
+	}
 	w.logger.Info("executing task",
 		zap.Int64("task_id", task.ID),
 		zap.String("type", task.Type),
@@ -155,7 +196,7 @@ func (w *Worker) executeTask(ctx context.Context, task *domain.Task) {
 
 	// Carry the task ID so long-running handlers can heartbeat via TouchTask and
 	// detect a stale-reclaim of their own task.
-	result, err := handler.Handle(WithTaskID(ctx, task.ID), task.Payload)
+	result, err := handler.Handle(WithTaskID(runCtx, task.ID), task.Payload)
 
 	// Persist the terminal task transition with a detached context so a shutdown
 	// (ctx already canceled) still records failed/done instead of leaving the task
@@ -163,6 +204,18 @@ func (w *Worker) executeTask(ctx context.Context, task *domain.Task) {
 	termCtx, cancelTerm := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancelTerm()
 
+	if guarded {
+		runnable, e := guard.TaskStillRunnable(termCtx, task.ID)
+		if e != nil {
+			if failErr := w.store.FailTask(termCtx, task.ID, "unable to verify task authority"); failErr != nil {
+				w.logger.Error("failed to persist task authority failure", zap.Int64("task_id", task.ID), zap.Error(failErr))
+			}
+			return
+		}
+		if !runnable {
+			return
+		} // no stale results/events after deletion
+	}
 	if err != nil {
 		w.logger.Error("task failed",
 			zap.Int64("task_id", task.ID),
@@ -171,6 +224,7 @@ func (w *Worker) executeTask(ctx context.Context, task *domain.Task) {
 		if ferr := w.store.FailTask(termCtx, task.ID, err.Error()); ferr != nil {
 			w.logger.Error("failed to mark task failed",
 				zap.Int64("task_id", task.ID), zap.Error(ferr))
+			return
 		}
 		if w.bus != nil {
 			w.bus.Publish(termCtx, eventbus.Event{

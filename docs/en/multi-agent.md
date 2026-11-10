@@ -236,10 +236,10 @@ The `Runner` is a simplified agentic loop, deliberately stripped down compared t
 | Feature | Main Assistant | Sub-Agent Runner |
 |---------|---------------|------------------|
 | Storage | SQLite history | None |
-| History | Last 50 messages | None (fresh context) |
+| History | Full verified Telegram-topic history; bounded history elsewhere | None (fresh context) |
 | Compression | Auto at 80% | None |
 | Approvals | Full flow | Skipped (filtered at tool level) |
-| Streaming | Yes | No |
+| Streaming | Channel-dependent; Telegram publishes after final privacy classification | No |
 | Context overflow retry | Yes | No |
 | Tool exchanges | Accumulated per turn | Accumulated per turn |
 

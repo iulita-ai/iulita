@@ -282,3 +282,8 @@ make setup-hooks
 ```
 
 安装 git pre-commit 钩子，运行 `gitleaks detect` 以防止意外提交密钥。
+
+
+## Telegram 源代码更新
+
+尚未发布的 Telegram 功能见[英文完整指南](../en/telegram.md)：话题与上下文、`/day`、天气卡片、私密操作、附加用户名及生产/测试服务器限制。新卡片提供 EN/RU 文案；其他语言使用英文回退。

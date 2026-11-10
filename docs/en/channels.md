@@ -8,7 +8,7 @@ Each channel declares its capabilities via a bitmask on every message:
 
 | Capability | Console | Telegram | WebChat |
 |------------|---------|----------|---------|
-| Streaming | via bubbletea | Yes (edit-based) | Yes (WebSocket) |
+| Streaming | via bubbletea | Buffered final response | Yes (WebSocket) |
 | Markdown | via glamour | Yes | HTML |
 | Reactions | No | No | No |
 | Buttons | No | Yes (inline keyboard) | Yes |
@@ -71,96 +71,21 @@ In console mode, the server runs in the background:
 
 ## Telegram
 
-Full-featured Telegram bot with streaming, debouncing, and interactive prompts.
+The [Telegram guide](telegram.md) covers setup, topics, day/weather cards, usernames, rich quotes, private callbacks, configuration and troubleshooting. New Bot API 10.4 features are documented as unreleased source changes until included in a published build.
 
-### Setup
+- Set the bot token through `iulita init`, a supported secret store or `IULITA_TELEGRAM_TOKEN`; restrict `telegram.allowed_ids` for a personal bot.
+- Enable topics in BotFather: an ordinary root message starts a topic, `/topic` lists known topics, and `/clear` and `/compact` affect the current context.
+- `/day` opens a personal overview; `/day text` is the text/button alternative. Source-backed changes require exact owner confirmation.
+- `/weather CITY DAYS` and ordinary weather requests can show illustrated cards; `/weather text CITY DAYS` keeps a full text path.
+- Widget refresh updates the existing message state. Topic, actor, owner, bot instance and revision checks protect actions and prompts.
+- Replies are buffered for final privacy classification. `draft_streaming` remains a compatibility setting, not a way to publish unchecked partial responses. Sensitive-delivery failure never falls back to ordinary delivery of that text.
+- Debouncing separates conversations and actors, with FIFO processing for a topic; messages from another user/topic cannot become part of the same intent.
+- Markdown is rendered as safe Telegram HTML or supported typed rich blocks. Verified rich quotes stay within their source chat/topic. Suspected sensitive replies have no bookmark/copy controls.
+- Photos, documents, voice/audio, locations, venues, reactions and eligible bookmark/copy controls remain supported. A venue send needs explicit approval; a received location is not a reusable send grant.
+- Native Todoist checklists remain a one-way mirror; the separately confirmed day-card actions can modify the underlying task.
+- Production widgets are private-only. Inline/shared exports require Telegram's isolated test server, not a production feature-flag bypass.
 
-1. Create a bot via [@BotFather](https://t.me/BotFather)
-2. Set the token: `iulita init` (keyring) or `IULITA_TELEGRAM_TOKEN` env var
-3. Optional: set `telegram.allowed_ids` to whitelist specific Telegram user IDs
-
-### Features
-
-- Long polling through `go-telegram/bot`, with typed reaction and callback updates.
-- Streaming edits, or experimental drafts with `telegram.draft_streaming = true`
-  (default off). Draft errors fall back to the edit path.
-- Markdown converted to Telegram HTML: nested styles, blockquotes, expandable
-  long quotes, spoilers, and monospace tables with emoji-aware column widths.
-  Long replies split at block boundaries without cutting formatting tags.
-- Processing reaction 👀; save a recent response with 🔖 or the 💾 button;
-  native copy button on supported responses.
-- Photos, documents, voice/audio, location pins and venue cards. Sending a venue
-  requires explicit approval; private location data is not a reusable send grant.
-- `/clear` clears stored history and attempts native deletion of recent bot
-  messages within Telegram's limits (generally the last 48 hours).
-- Native Todoist checklists where supported; a one-way mirror, without Todoist
-  completion sync.
-- Suspected secret replies use ephemeral delivery without bookmark/copy buttons.
-  If that API fails, a regular-send fallback exists: do not treat this feature as
-  a guaranteed private delivery mechanism.
-- User whitelist, message coalescing, interactive prompts and tool status updates.
-
-### Message Processing Pipeline
-
-```
-Incoming Telegram Update
-    │
-    ├── Callback query?
-    │   ├── "noop" → acknowledge silently
-    │   ├── "remember:*" → bookmark handler (save fact + ✅ feedback)
-    │   └── other → route to prompt handler
-    ├── Not a message? → skip
-    ├── User not in whitelist? → reject
-    ├── /clear command? → handle directly
-    ├── Registered command? → route to handler
-    ├── Active prompt? → route text to prompt
-    │
-    ▼
-Construct IncomingMessage
-    │ Caps = Streaming | Markdown | Typing | Buttons | Locations
-    │
-    ├── Resolve user (platform → iulita UUID)
-    ├── Lookup locale from DB
-    ├── Download media (photo/document/voice)
-    ├── Check rate limit
-    │
-    ▼
-Debounce
-    │ merge rapid messages (text joined with \n)
-    │ timer reset on each new message
-    │
-    ▼
-Handler (Assistant.HandleMessage)
-```
-
-### Debouncer
-
-The debouncer coalesces rapid messages from the same chat to prevent multiple LLM calls:
-
-- Each `chatID` has a buffer with a `time.AfterFunc` timer
-- Adding a message resets the timer
-- When the timer fires, all buffered messages are merged:
-  - Text joined with `"\n"`
-  - Images and documents concatenated
-  - First message's metadata preserved
-- If `debounce_window = 0`, messages are processed immediately (non-blocking)
-- `flushAll()` processes remaining buffers during shutdown
-
-### Message Chunking
-
-The HTML renderer splits responses into bounded Telegram chunks at block
-boundaries. Oversized code blocks are rewrapped in each chunk. Raw HTML from
-model output is stripped and text nodes are escaped. Stored bookmarks keep the
-original Markdown, not the display HTML.
-
-### Configuration
-
-| Key | Default | Description |
-|-----|---------|-------------|
-| `telegram.token` | — | Bot token (hot-reloadable) |
-| `telegram.allowed_ids` | `[]` | User ID whitelist (empty = allow all) |
-| `telegram.debounce_window` | 1.5s | Message coalescing window |
-| `telegram.draft_streaming` | false | Experimental draft streaming |
+See [settings and upgrades](telegram.md#settings-and-upgrades), [topic deletion](telegram.md#pause-and-delete-have-different-effects) and [availability](telegram.md#telegram-capabilities-and-availability) before enabling optional flows.
 
 ### Voice input {#voice-input}
 

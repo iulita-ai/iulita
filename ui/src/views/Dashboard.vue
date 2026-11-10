@@ -11,6 +11,8 @@
       style="max-width: 300px"
     />
 
+    <a v-if="selectedTopicURL" :href="selectedTopicURL" target="_blank" rel="noopener noreferrer">{{ t('dashboard.openTelegramTopic') }}</a>
+
     <n-grid :cols="5" :x-gap="16" :y-gap="16">
       <n-grid-item>
         <n-card>
@@ -90,6 +92,11 @@ const chats = ref<ChatInfo[]>([])
 const stats = ref<Stats | null>(null)
 const recentFacts = ref<Fact[]>([])
 const recentInsights = ref<Insight[]>([])
+
+const selectedTopicURL = computed(() => {
+  const url = chats.value.find(c => c.chat_id === selectedChat.value)?.topic_url
+  return url && /^https:\/\/t\.me\/[A-Za-z0-9_]+\/[0-9]+$/.test(url) ? url : undefined
+})
 
 const chatOptions = computed(() =>
   chats.value.map(c => ({

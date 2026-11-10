@@ -15,7 +15,7 @@ require (
 	github.com/charmbracelet/glamour v0.8.0
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/fasthttp/websocket v1.5.8
-	github.com/go-telegram/bot v1.27.0
+	github.com/go-telegram/bot v1.28.0
 	github.com/gofiber/contrib/websocket v1.3.4
 	github.com/gofiber/fiber/v2 v2.52.12
 	github.com/gofrs/flock v0.13.0
@@ -41,8 +41,8 @@ require (
 	github.com/uptrace/bun v1.2.18
 	github.com/uptrace/bun/dialect/sqlitedialect v1.2.18
 	github.com/uptrace/bun/driver/sqliteshim v1.2.18
-	github.com/yosida95/uritemplate/v3 v3.0.2
 	github.com/valyala/fasthttp v1.52.0
+	github.com/yosida95/uritemplate/v3 v3.0.2
 	github.com/yuin/goldmark v1.8.6
 	github.com/zalando/go-keyring v0.2.6
 	go.uber.org/zap v1.27.1

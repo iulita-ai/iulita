@@ -22,9 +22,10 @@ Console-first: launches a full-screen TUI chat by default. Also runs as a headle
 - **Cross-reference insights** — discovers patterns across your facts using clustering and LLM analysis
 - **Multi-agent orchestration** — parallel sub-agents for complex tasks (research + analysis simultaneously)
 - **Token usage dashboard** — per-model, per-day cost tracking; admin dashboard page with filters and summaries; chat-based stats via `token_stats` skill
-- **Bookmark (quick save)** — save any assistant response as a fact with one click, background LLM refinement
+- **Bookmark (quick save)** — save eligible nonsensitive assistant responses as facts with one click, background LLM refinement
 - **Console TUI** — full-screen chat with markdown rendering, streaming, slash commands
 - **Multi-channel** — Telegram, Slack, Discord, Web Chat (WebSocket), Console TUI
+- **Telegram topics and cards** — isolated topic context, explicit compaction, illustrated weather and confirmed day actions; see the [Telegram guide](docs/en/telegram.md) for unreleased source features and platform gates
 - **Temporal decay** — older memories naturally lose relevance (configurable half-life)
 - **Hybrid search** — FTS5 full-text + ONNX vector embeddings with MMR reranking
 - **25+ skills** — web search, Google Workspace, Todoist, Craft, weather, shell exec, multi-agent, and more
@@ -110,7 +111,7 @@ Web Chat ────┼→ Channel Manager → Assistant → LLM Provider Chain
 | Component | Description |
 |-----------|-------------|
 | `channel/console` | Bubbletea TUI with markdown, streaming, slash commands |
-| `channel/telegram` | Telegram bot with whitelist, debouncing, streaming edits, bookmark button |
+| `channel/telegram` | Telegram bot with private topics, day/weather cards, confirmed actions and bookmarks |
 | `channel/webchat` | WebSocket-based web chat with JWT auth, bookmark support |
 | `assistant` | Orchestrator: history, memory, skills, compression, approvals, streaming |
 | `agent` | Multi-agent orchestration: parallel sub-agents, budget enforcement, depth limits |
@@ -241,7 +242,7 @@ docs/                # documentation (6 languages)
 - **SQLite** (WAL mode) via [bun](https://bun.uptrace.dev/) ORM + FTS5 + ONNX vector search
 - **anthropic-sdk-go** — Claude API with prompt caching and extended thinking
 - **bubbletea + lipgloss + glamour** — console TUI
-- **go-telegram/bot** — typed Telegram API, reactions, HTML replies and streaming
+- **go-telegram/bot** — typed Bot API 10.4, private widgets, rich replies, reactions and buffered privacy classification
 - **GoFiber** — dashboard HTTP server + WebSocket hub
 - **Vue 3 + Naive UI + UnoCSS** — dashboard frontend
 - **vue-i18n** — frontend internationalization (6 languages)
@@ -279,6 +280,7 @@ Full public documentation is available in the [`docs/`](docs/) directory:
 - [Memory and Insights](docs/en/memory-and-insights.md) — fact storage, temporal decay, embeddings, bookmarks
 - [Multi-Agent](docs/en/multi-agent.md) — parallel sub-agents, orchestration, budget system
 - [Channels](docs/en/channels.md) — Console TUI, Telegram, WebChat, bookmark button
+- [Telegram](docs/en/telegram.md) — topics, day/weather cards, private actions, aliases and English previews
 - [LLM Providers](docs/en/llm-providers.md) — Claude, Ollama, OpenAI, ONNX, provider routing
 - [Skills](docs/en/skills.md) — all 25+ tools, approval levels, marketplace
 - [i18n / l10n](docs/en/i18n.md) — 6 languages, RTL support

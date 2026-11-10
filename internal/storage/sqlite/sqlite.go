@@ -101,6 +101,7 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 		{(*domain.ChannelInstance)(nil), "channel_instances"},
 		{(*domain.ChatMessage)(nil), "chat_messages"},
 		{(*domain.Reminder)(nil), "reminders"},
+		{(*reminderDeliveryClaim)(nil), "reminder_delivery_claims"},
 		{(*domain.Directive)(nil), "directives"},
 		{(*domain.Fact)(nil), "facts"},
 		{(*domain.Insight)(nil), "insights"},
@@ -127,6 +128,10 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 		{(*domain.ImportRun)(nil), "import_runs"},
 		// Slack proactive-delivery routing (survives cache eviction + restarts).
 		{(*domain.SlackChatRoute)(nil), "slack_chat_routes"},
+		{(*domain.TelegramConversationRoute)(nil), "telegram_conversation_routes"},
+		{(*domain.TelegramTopicDeletion)(nil), "telegram_topic_deletions"},
+		{(*domain.TelegramTopicState)(nil), "telegram_topic_states"},
+		{(*domain.TelegramTopicOperation)(nil), "telegram_topic_operations"},
 		// Slack personal user-token OAuth account (owner-only).
 		{(*domain.SlackAccount)(nil), "slack_accounts"},
 		// HTTP tool: origin-bound credential grants (additive, plan §8.1).
@@ -152,6 +157,9 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 		}
 	}
 
+	if err := s.migrateTelegramBotIdentity(ctx); err != nil {
+		return err
+	}
 	if err := s.migrateMCPIndexes(ctx); err != nil {
 		return fmt.Errorf("creating MCP indexes: %w", err)
 	}
@@ -526,11 +534,13 @@ func (s *Store) SaveMessage(ctx context.Context, msg *domain.ChatMessage) error 
 	if err := domain.CheckLegacyChatID(msg.ChatID); err != nil {
 		return err
 	}
-	_, err := s.db.NewInsert().Model(msg).Exec(ctx)
-	if err != nil {
-		return fmt.Errorf("inserting message: %w", err)
-	}
-	return nil
+	return s.withConversationWrite(ctx, msg.ChatID, func(db bun.IDB) error {
+		_, err := db.NewInsert().Model(msg).Exec(ctx)
+		if err != nil {
+			return fmt.Errorf("inserting message: %w", err)
+		}
+		return nil
+	})
 }
 
 func (s *Store) GetHistory(ctx context.Context, chatID string, limit int) ([]domain.ChatMessage, error) {

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/uptrace/bun"
+
 	"github.com/iulita-ai/iulita/internal/domain"
 )
 
@@ -15,7 +17,8 @@ func (s *Store) UpsertTechFact(ctx context.Context, f *domain.TechFact) error {
 	now := time.Now()
 	// Running average for confidence: new_avg = (old_avg * count + new_value) / (count + 1)
 	// Value is recalculated from the averaged confidence as a percentage.
-	_, err := s.db.ExecContext(ctx, `
+	return s.withConversationWrite(ctx, f.ChatID, func(db bun.IDB) error {
+		_, err := db.ExecContext(ctx, `
 		INSERT INTO tech_facts (chat_id, user_id, category, key, value, confidence, update_count, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
 		ON CONFLICT(chat_id, category, key) DO UPDATE SET
@@ -24,10 +27,11 @@ func (s *Store) UpsertTechFact(ctx context.Context, f *domain.TechFact) error {
 			update_count = tech_facts.update_count + 1,
 			updated_at = excluded.updated_at
 	`, f.ChatID, f.UserID, f.Category, f.Key, f.Value, f.Confidence, now, now)
-	if err != nil {
-		return fmt.Errorf("upserting tech fact: %w", err)
-	}
-	return nil
+		if err != nil {
+			return fmt.Errorf("upserting tech fact: %w", err)
+		}
+		return nil
+	})
 }
 
 func (s *Store) GetTechFacts(ctx context.Context, chatID string) ([]domain.TechFact, error) {

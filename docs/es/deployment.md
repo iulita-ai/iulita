@@ -282,3 +282,8 @@ make setup-hooks
 ```
 
 Instala un hook git pre-commit que ejecuta `gitleaks detect` para prevenir commits accidentales de secretos.
+
+
+## Telegram: actualización del código
+
+Los cambios de Telegram aún no publicados se describen en la [guía completa en inglés](../en/telegram.md): temas y contexto, `/day`, tarjetas de tiempo, acciones privadas, alias y límites production/test-server. Las nuevas tarjetas tienen textos EN/RU; otros idiomas usan el fallback inglés.

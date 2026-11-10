@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/iulita-ai/iulita/internal/domain"
+	"github.com/iulita-ai/iulita/internal/security"
 	"github.com/iulita-ai/iulita/internal/skill"
 	"github.com/iulita-ai/iulita/internal/storage"
 )
@@ -60,6 +61,7 @@ func (s *RememberSkill) Execute(ctx context.Context, raw json.RawMessage) (strin
 	}
 	userID := skill.UserIDFrom(ctx)
 
+	in.Content = security.RedactSensitiveText(in.Content)
 	if in.Content == "" {
 		return "", fmt.Errorf("content is required")
 	}

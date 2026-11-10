@@ -8,7 +8,7 @@ Cada canal declara sus capacidades mediante un bitmask en cada mensaje:
 
 | Capacidad | Consola | Telegram | WebChat |
 |-----------|---------|----------|---------|
-| Streaming | via bubbletea | Si (basado en edicion) | Si (WebSocket) |
+| Streaming | via bubbletea | Respuesta final en búfer | Si (WebSocket) |
 | Markdown | via glamour | Si | HTML |
 | Reacciones | No | No | No |
 | Botones | No | Si (teclado inline) | Si |
@@ -70,92 +70,13 @@ En modo consola, el servidor se ejecuta en segundo plano:
 
 ## Telegram
 
-Bot de Telegram con funcionalidad completa, incluyendo streaming, debouncing y prompts interactivos.
+La [guía completa de Telegram (EN)](../en/telegram.md) describe los cambios del código aún no publicados: temas privados, tarjetas de día y tiempo, alias, citas y callbacks personales.
 
-### Configuracion
+Configure el token y `telegram.allowed_ids`; active los temas en BotFather. Un mensaje normal en el chat raíz inicia un tema; `/topic` lista los conocidos. `/clear` y `/compact` afectan al contexto actual. `/topic pause` pausa Iulita, no cierra el tema; `/topic delete` requiere confirmación y cancela trabajo local asociado sin borrar tareas externas.
 
-1. Crear un bot via [@BotFather](https://t.me/BotFather)
-2. Establecer el token: `iulita init` (llavero) o variable de entorno `IULITA_TELEGRAM_TOKEN`
-3. Opcional: establecer `telegram.allowed_ids` para restringir a IDs de usuario especificos de Telegram
+Use `/day`, `/day text`, `/weather London 4` o `/weather text London 4`. `telegram.day_widgets` y `telegram.day_actions` están activados por defecto, también al actualizar configuraciones sin estas claves; un valor false explícito se conserva y los cambios requieren reinicio. Las acciones necesitan confirmación del propietario.
 
-### Caracteristicas
-
-- **Lista blanca de usuarios**: `allowed_ids` restringe quien puede chatear con el bot. Vacio = permitir todos (se registra advertencia)
-- **Debouncing de mensajes**: mensajes rapidos del mismo chat se fusionan (ventana configurable)
-- **Ediciones de streaming**: las respuestas aparecen incrementalmente via `EditMessageText` (limitado a 1 edicion/1.5s)
-- **Fragmentacion de mensajes**: mensajes de mas de 4000 caracteres se dividen en limites de parrafo/linea/palabra, preservando bloques de codigo
-- **Hilos de respuesta**: el primer fragmento responde al mensaje del usuario; los siguientes son independientes
-- **Indicador de escritura**: accion `ChatTyping` enviada cada 4 segundos durante el procesamiento
-- **Monitor de salud**: `GetMe()` llamado cada 60 segundos para detectar problemas de conectividad
-- **Prompts interactivos**: teclados inline para interacciones de habilidades (ubicacion del clima, etc.)
-- **Soporte de medios**: fotos (tamano mas grande), documentos (limite de 30MB), voz/audio (con transcripcion)
-- **Comandos integrados**: `/clear` (limpiar historial), comandos personalizados registrados
-- **Boton de marcador**: boton 💾 de teclado inline en cada respuesta del asistente; al hacer clic se guarda la respuesta completa como dato con refinamiento LLM en segundo plano
-- **Mensajes de estado en tiempo real**: actualizaciones de estado durante la ejecucion de herramientas y orquestacion de agentes, mostrando la habilidad actual y el progreso de los agentes
-
-### Pipeline de Procesamiento de Mensajes
-
-```
-Actualizacion entrante de Telegram
-    │
-    ├── Callback query?
-    │   ├── "noop" → confirmar silenciosamente
-    │   ├── "remember:*" → manejador de marcadores (guardar dato + retroalimentacion ✅)
-    │   └── otro → enrutar al manejador de prompts
-    ├── No es un mensaje? → omitir
-    ├── Usuario no esta en la lista blanca? → rechazar
-    ├── Comando /clear? → manejar directamente
-    ├── Comando registrado? → enrutar al manejador
-    ├── Prompt activo? → enrutar texto al prompt
-    │
-    ▼
-Construir IncomingMessage
-    │ Caps = Streaming | Markdown | Typing | Buttons
-    │
-    ├── Resolver usuario (plataforma → UUID de iulita)
-    ├── Buscar locale en BD
-    ├── Descargar medios (foto/documento/voz)
-    ├── Verificar limite de tasa
-    │
-    ▼
-Debounce
-    │ fusionar mensajes rapidos (texto unido con \n)
-    │ temporizador se reinicia con cada nuevo mensaje
-    │
-    ▼
-Handler (Assistant.HandleMessage)
-```
-
-### Debouncer
-
-El debouncer fusiona mensajes rapidos del mismo chat para prevenir multiples llamadas LLM:
-
-- Cada `chatID` tiene un buffer con un temporizador `time.AfterFunc`
-- Agregar un mensaje reinicia el temporizador
-- Cuando el temporizador se dispara, todos los mensajes en buffer se fusionan:
-  - Texto unido con `"\n"`
-  - Imagenes y documentos concatenados
-  - Metadatos del primer mensaje preservados
-- Si `debounce_window = 0`, los mensajes se procesan inmediatamente (no bloqueante)
-- `flushAll()` procesa buffers restantes durante el apagado
-
-### Fragmentacion de Mensajes
-
-Las respuestas largas se dividen en fragmentos compatibles con Telegram (maximo 4000 caracteres):
-
-1. Intentar dividir en limites de parrafo (`\n\n`)
-2. Intentar dividir en limites de linea (`\n`)
-3. Intentar dividir en limites de palabra (` `)
-4. Division forzada como ultimo recurso
-5. **Conciencia de bloques de codigo**: si se divide dentro de un bloque ``` , se cierra con ``` y se reabre en el siguiente fragmento
-
-### Configuracion
-
-| Clave | Predeterminado | Descripcion |
-|-------|----------------|-------------|
-| `telegram.token` | — | Token del bot (recargable en caliente) |
-| `telegram.allowed_ids` | `[]` | Lista blanca de IDs de usuario (vacio = permitir todos) |
-| `telegram.debounce_window` | 2s | Ventana de fusion de mensajes |
+Las respuestas se almacenan temporalmente hasta la comprobación final de privacidad; no se publican fragmentos sin comprobar. Un fallo del envío privado de datos sensibles no causa un envío ordinario de esos datos. La combinación de mensajes separa usuarios y temas. Los widgets en producción son privados; inline/shared requieren el servidor de pruebas de Telegram. Consulte la guía EN para voz, rich quotes, disponibilidad, configuración y recuperación.
 
 ## WebChat
 

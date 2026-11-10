@@ -248,3 +248,8 @@ La pagina Token Usage muestra:
 ### Habilidad en el Chat
 
 La habilidad `token_stats` esta disponible a traves del chat (solo administradores). Permite consultar estadisticas de uso de tokens directamente en la conversacion.
+
+
+## Telegram: actualización del código
+
+Los cambios de Telegram aún no publicados se describen en la [guía completa en inglés](../en/telegram.md): temas y contexto, `/day`, tarjetas de tiempo, acciones privadas, alias y límites production/test-server. Las nuevas tarjetas tienen textos EN/RU; otros idiomas usan el fallback inglés.

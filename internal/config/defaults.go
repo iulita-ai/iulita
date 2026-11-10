@@ -126,6 +126,8 @@ func DefaultConfig(paths *Paths) *Config {
 			ModelDir: paths.ModelsDir(),
 		},
 		Telegram: TelegramConfig{
+			DayWidgets:     true,
+			DayActions:     true,
 			DebounceWindow: "1.5s",
 			RateWindow:     "1m",
 		},

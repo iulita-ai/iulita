@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/iulita-ai/iulita/internal/channel"
+	"github.com/iulita-ai/iulita/internal/domain"
 	"github.com/iulita-ai/iulita/internal/i18n"
 )
 
@@ -57,91 +58,141 @@ func WMODescription(code int, ctx ...context.Context) string {
 	return fmt.Sprintf("Weather code %d", code)
 }
 
-// formatForecast renders a WeatherResult as text or markdown.
+// formatForecast retains the model-facing location instructions and complete
+// forecast. Optional source presence prevents missing values becoming real zero.
 func formatForecast(result *WeatherResult, caps channel.ChannelCaps) string {
 	var b strings.Builder
-
 	if result.Location != "" && result.Location != sharedPinDescriptor {
 		fmt.Fprintf(&b, "Weather for %s\n\n", result.Location)
 	}
-
+	if result.Current != nil {
+		current := &domain.WeatherCard{Location: result.Location, Source: result.Source, Current: result.Current}
+		b.WriteString(FormatCardText(context.Background(), current))
+		b.WriteString("\n\nForecast:\n")
+	} else {
+		b.WriteString("Current conditions are unavailable; the following data is a forecast, not a current measurement.\n\n")
+	}
 	if caps.Has(channel.CapMarkdown) {
 		return formatMarkdown(&b, result)
 	}
 	return formatPlainText(&b, result)
 }
-
-func formatMarkdown(b *strings.Builder, result *WeatherResult) string {
-	// Emphasize the resolved location to prevent LLM from substituting a different city.
-	if result.Location == sharedPinDescriptor {
-		// A shared pin has no city name: refer to it descriptively in the
-		// user's language instead of demanding verbatim English.
-		fmt.Fprintf(b, "[Location: shared pin — refer to it descriptively in the user's language (the place/pin they shared); never substitute a different place]\n\n")
-	} else if result.Location != "" {
-		fmt.Fprintf(b, "[Location: %s — present this exact city name to the user]\n\n", result.Location)
+func dayMetric(d DayForecast, key string) *float64 {
+	if v := d.Values; v != nil {
+		switch key {
+		case "min":
+			return v.TempMinC
+		case "max":
+			return v.TempMaxC
+		case "rain":
+			return v.PrecipitationMM
+		case "wind":
+			return v.WindKph
+		case "uv":
+			return v.UVIndexMax
+		}
+		return nil
 	}
+	switch key {
+	case "min":
+		return value(d.TempMinC)
+	case "max":
+		return value(d.TempMaxC)
+	case "rain":
+		return value(d.PrecipMM)
+	case "wind":
+		return value(d.WindKph)
+	case "uv":
+		return value(d.UVIndex)
+	}
+	return nil
+}
+func formattedMetric(v *float64, format string) string {
+	if v == nil {
+		return "—"
+	}
+	return fmt.Sprintf(format, *v)
+}
+func modelPlace(b *strings.Builder, result *WeatherResult, markdown bool) {
+	if result.Location == sharedPinDescriptor {
+		if markdown {
+			b.WriteString("[Location: shared pin — refer to it descriptively in the user's language (the place/pin they shared); never substitute a different place]\n\n")
+		} else {
+			b.WriteString("IMPORTANT: This weather data is for the place/pin the user shared — refer to it descriptively in the user's language; never substitute a different place.\n\n")
+		}
+	} else if result.Location != "" {
+		if markdown {
+			fmt.Fprintf(b, "[Location: %s — present this exact city name to the user]\n\n", result.Location)
+		} else {
+			fmt.Fprintf(b, "IMPORTANT: This weather data is for %s. Do NOT change or substitute the city name.\n\n", result.Location)
+		}
+	}
+}
+func modelSample(b *strings.Builder, d DayForecast) {
+	if s := d.Sample; s != nil {
+		fmt.Fprintf(b, "%s:", s.Kind)
+		if s.WindKph != nil {
+			fmt.Fprintf(b, " wind %.0f km/h;", *s.WindKph)
+		}
+		if s.PrecipitationMM != nil {
+			fmt.Fprintf(b, " precipitation %.1f mm;", *s.PrecipitationMM)
+		}
+		if s.HumidityPercent != nil {
+			fmt.Fprintf(b, " humidity %d%%;", *s.HumidityPercent)
+		}
+		if s.UVIndex != nil {
+			fmt.Fprintf(b, " UV %.0f;", *s.UVIndex)
+		}
+		b.WriteString(" not current observations or full-day aggregates.\n")
+	}
+}
+func formatMarkdown(b *strings.Builder, result *WeatherResult) string {
+	modelPlace(b, result, true)
 	if len(result.Days) == 1 {
 		d := result.Days[0]
 		fmt.Fprintf(b, "**%s** — %s\n", d.Date.Format("Mon, Jan 2"), d.Description)
-		fmt.Fprintf(b, "🌡 %+.0f..%+.0f°C", d.TempMinC, d.TempMaxC)
-		if d.PrecipMM > 0 {
-			fmt.Fprintf(b, " | 🌧 %.1f mm", d.PrecipMM)
+		fmt.Fprintf(b, "🌡 %s..%s°C", formattedMetric(dayMetric(d, "min"), "%+.0f"), formattedMetric(dayMetric(d, "max"), "%+.0f"))
+		for _, m := range []struct{ key, format string }{{"rain", " | 🌧 %.1f mm"}, {"wind", " | 💨 %.0f km/h"}, {"uv", " | ☀️ UV %.0f"}} {
+			if v := dayMetric(d, m.key); v != nil && (d.Values != nil || *v > 0) {
+				fmt.Fprintf(b, m.format, *v)
+			}
 		}
-		if d.WindKph > 0 {
-			fmt.Fprintf(b, " | 💨 %.0f km/h", d.WindKph)
-		}
-		if d.Humidity > 0 {
+		if d.Values == nil && d.Humidity > 0 {
 			fmt.Fprintf(b, " | 💧 %d%%", d.Humidity)
 		}
-		if d.UVIndex > 0 {
-			fmt.Fprintf(b, " | ☀️ UV %.0f", d.UVIndex)
-		}
 		b.WriteString("\n")
+		modelSample(b, d)
 		return b.String()
 	}
-
-	// Multi-day table.
-	b.WriteString("| Date | Weather | Temp °C | Precip | Wind |\n")
-	b.WriteString("|------|---------|---------|--------|------|\n")
+	b.WriteString("| Date | Weather | Temp °C | Precip | Wind |\n|------|---------|---------|--------|------|\n")
 	for _, d := range result.Days {
-		fmt.Fprintf(b, "| %s | %s | %+.0f..%+.0f | %.1f mm | %.0f km/h |\n",
-			d.Date.Format("Mon 02"),
-			d.Description,
-			d.TempMinC, d.TempMaxC,
-			d.PrecipMM,
-			d.WindKph,
-		)
+		fmt.Fprintf(b, "| %s | %s | %s..%s | %s | %s |\n", d.Date.Format("Mon 02"), d.Description, formattedMetric(dayMetric(d, "min"), "%+.0f"), formattedMetric(dayMetric(d, "max"), "%+.0f"), formattedMetric(dayMetric(d, "rain"), "%.1f mm"), formattedMetric(dayMetric(d, "wind"), "%.0f km/h"))
+	}
+	for _, d := range result.Days {
+		if d.Sample != nil {
+			fmt.Fprintf(b, "%s · ", d.Date.Format("2006-01-02"))
+			modelSample(b, d)
+		}
 	}
 	return b.String()
 }
-
 func formatPlainText(b *strings.Builder, result *WeatherResult) string {
-	// Emphasize the resolved location to prevent LLM from substituting a different city.
-	if result.Location == sharedPinDescriptor {
-		// A shared pin has no city name: refer to it descriptively in the
-		// user's language instead of demanding verbatim English.
-		fmt.Fprintf(b, "IMPORTANT: This weather data is for the place/pin the user shared — refer to it descriptively in the user's language; never substitute a different place.\n\n")
-	} else if result.Location != "" {
-		fmt.Fprintf(b, "IMPORTANT: This weather data is for %s. Do NOT change or substitute the city name.\n\n", result.Location)
-	}
+	modelPlace(b, result, false)
 	for i, d := range result.Days {
 		if i > 0 {
 			b.WriteString("\n")
 		}
 		fmt.Fprintf(b, "%s: %s\n", d.Date.Format("Mon, Jan 2"), d.Description)
-		fmt.Fprintf(b, "  Temperature: %+.0f to %+.0f°C\n", d.TempMinC, d.TempMaxC)
-		if d.PrecipMM > 0 {
-			fmt.Fprintf(b, "  Precipitation: %.1f mm\n", d.PrecipMM)
+		fmt.Fprintf(b, "  Temperature: %s to %s°C\n", formattedMetric(dayMetric(d, "min"), "%+.0f"), formattedMetric(dayMetric(d, "max"), "%+.0f"))
+		for _, m := range []struct{ key, format string }{{"rain", "  Precipitation: %.1f mm\n"}, {"wind", "  Wind: %.0f km/h\n"}, {"uv", "  UV Index: %.0f\n"}} {
+			if v := dayMetric(d, m.key); v != nil && (d.Values != nil || *v > 0) {
+				fmt.Fprintf(b, m.format, *v)
+			}
 		}
-		if d.WindKph > 0 {
-			fmt.Fprintf(b, "  Wind: %.0f km/h\n", d.WindKph)
-		}
-		if d.Humidity > 0 {
+		if d.Values == nil && d.Humidity > 0 {
 			fmt.Fprintf(b, "  Humidity: %d%%\n", d.Humidity)
 		}
-		if d.UVIndex > 0 {
-			fmt.Fprintf(b, "  UV Index: %.0f\n", d.UVIndex)
-		}
+		modelSample(b, d)
 	}
 	return b.String()
 }

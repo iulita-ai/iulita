@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/iulita-ai/iulita/internal/security"
+
 	"go.uber.org/zap"
 
 	"github.com/iulita-ai/iulita/internal/domain"
@@ -44,6 +46,7 @@ func New(store storage.Repository, logger *zap.Logger) Service {
 
 // Save implements Service.Save.
 func (s *service) Save(ctx context.Context, chatID, userID, content string) (int64, error) {
+	content = security.RedactSensitiveText(content)
 	if content == "" {
 		return 0, fmt.Errorf("bookmark content is empty")
 	}

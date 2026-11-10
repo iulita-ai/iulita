@@ -123,7 +123,7 @@ Both use LRU eviction (oldest `accessed_at` removed when exceeding max entries).
 
 ## Multi-User Data Scoping
 
-All data tables have a `user_id TEXT` column. Queries use user-scoped variants when available:
+User-owned content queries use user-scoped variants when available; transport/lifecycle tables carry their own explicit owner scope:
 
 ```
 SearchFacts(ctx, chatID, query, limit)        // legacy, single-channel
@@ -245,3 +245,10 @@ not ordinary transcripts, facts, embeddings or persistent response caches.
 Account authority reads use a separate read-only SQLite pool so pending writers
 cannot starve an active reservation holder. See [the API guide](mobile-api.md)
 for registrations, revocation, backup, acceptance gates and current availability.
+
+
+## Telegram routes, cards and deletion markers
+
+Telegram transport coordinates are stored separately from conversation history. Routes pin the instance, owner, numeric bot identity and chat/thread. Topic operation/seed records recover separate create/copy/process stages without blindly repeating an ambiguous write. Card state, confirmed operations, delivery receipts and public test snapshots have bounded lifetimes and owner scope.
+
+A topic deletion marker and local cleanup are committed transactionally. Conversation-scoped history/summary/derived-context writes and bound reminder/job/queue work respect the marker, including late writes from an already-running turn. Explicit account-wide facts and external Todoist/Google/Craft records are not bulk deleted. Legacy routes without a numeric bot pin are readable but require owner-confirmed binding before automatic destructive reconciliation. Back up the database before upgrading; schema maintenance runs on startup. See the [Telegram guide](telegram.md).

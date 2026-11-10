@@ -17,6 +17,7 @@ function sidebarEn() {
       items: [
         { text: 'Memory & Insights', link: '/en/memory-and-insights' },
         { text: 'Channels', link: '/en/channels' },
+        { text: 'Telegram topics & cards', link: '/en/telegram' },
         { text: 'Mobile, CLI & service API', link: '/en/mobile-api' },
         { text: 'Skills', link: '/en/skills' },
         { text: 'Remote MCP', link: '/en/mcp' },
@@ -59,6 +60,7 @@ function sidebarRu() {
       items: [
         { text: 'Память и инсайты', link: '/ru/memory-and-insights' },
         { text: 'Каналы', link: '/ru/channels' },
+        { text: 'Telegram: темы и карточки', link: '/ru/telegram' },
         { text: 'API: mobile, CLI и service', link: '/ru/mobile-api' },
         { text: 'Навыки', link: '/ru/skills' },
         { text: 'Удалённые MCP (EN)', link: '/en/mcp' },
@@ -102,6 +104,7 @@ function sidebarZh() {
       items: [
         { text: '记忆与洞察', link: '/zh/memory-and-insights' },
         { text: '频道', link: '/zh/channels' },
+        { text: 'Telegram 话题与卡片 (EN)', link: '/en/telegram' },
         { text: '技能', link: '/zh/skills' },
         { text: '调度器', link: '/zh/scheduler' },
       ]
@@ -142,6 +145,7 @@ function sidebarEs() {
       items: [
         { text: 'Memoria e insights', link: '/es/memory-and-insights' },
         { text: 'Canales', link: '/es/channels' },
+        { text: 'Telegram topics & cards (EN)', link: '/en/telegram' },
         { text: 'Habilidades', link: '/es/skills' },
         { text: 'Planificador', link: '/es/scheduler' },
       ]
@@ -182,6 +186,7 @@ function sidebarFr() {
       items: [
         { text: 'Mémoire et insights', link: '/fr/memory-and-insights' },
         { text: 'Canaux', link: '/fr/channels' },
+        { text: 'Telegram topics & cards (EN)', link: '/en/telegram' },
         { text: 'Compétences', link: '/fr/skills' },
         { text: 'Planificateur', link: '/fr/scheduler' },
       ]
@@ -222,6 +227,7 @@ function sidebarHe() {
       items: [
         { text: 'זיכרון ותובנות', link: '/he/memory-and-insights' },
         { text: 'ערוצים', link: '/he/channels' },
+        { text: 'Telegram topics & cards (EN)', link: '/en/telegram' },
         { text: 'כישורים', link: '/he/skills' },
         { text: 'מתזמן', link: '/he/scheduler' },
       ]

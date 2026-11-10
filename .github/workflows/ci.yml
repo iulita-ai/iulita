@@ -97,9 +97,10 @@ jobs:
   go-lint:
     name: Go Lint
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-go@v5
         with:
@@ -109,11 +110,32 @@ jobs:
       - name: Create ui/dist placeholder for embed
         run: mkdir -p ui/dist && touch ui/dist/.gitkeep
 
+      - name: Prepare local lint diff
+        id: lint-diff
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BASE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          patch="${RUNNER_TEMP}/golangci-new.patch"
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            git diff --no-ext-diff --unified=0 "${PR_BASE}...HEAD" -- '*.go' > "$patch"
+          elif [[ -n "$PUSH_BASE" && ! "$PUSH_BASE" =~ ^0+$ ]]; then
+            git diff --no-ext-diff --unified=0 "$PUSH_BASE" HEAD -- '*.go' > "$patch"
+          else
+            empty_tree=$(git hash-object -t tree /dev/null)
+            git diff --no-ext-diff --unified=0 "$empty_tree" HEAD -- '*.go' > "$patch"
+          fi
+          echo "patch=$patch" >> "$GITHUB_OUTPUT"
+
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
           version: latest
-          only-new-issues: true
+          # Generate the diff locally: GitHub's REST diff has a size limit.
+          only-new-issues: false
+          args: --new-from-patch=${{ steps.lint-diff.outputs.patch }} --new=false
 
   frontend-test:
     name: Frontend Tests

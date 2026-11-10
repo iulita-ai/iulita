@@ -292,3 +292,8 @@ force_triggers: [weather, погода, météo]
 Cuando el mensaje del usuario contiene una palabra clave disparadora (coincidencia de subcadena sin importar mayusculas/minusculas), `ForceTool` se establece en la solicitud LLM para la iteracion 0. Esto asegura que el LLM siempre llame a la herramienta en lugar de responder desde los datos de entrenamiento.
 
 Los disparadores de memoria (ej., "remember", "запомни") se configuran por separado y fuerzan la herramienta `remember`.
+
+
+## Telegram: actualización del código
+
+Los cambios de Telegram aún no publicados se describen en la [guía completa en inglés](../en/telegram.md): temas y contexto, `/day`, tarjetas de tiempo, acciones privadas, alias y límites production/test-server. Las nuevas tarjetas tienen textos EN/RU; otros idiomas usan el fallback inglés.

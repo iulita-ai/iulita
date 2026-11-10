@@ -222,3 +222,8 @@ Campos:
 - `delivery_chat_id` — donde enviar el resultado (opcional)
 
 Gestionado via panel de control: `GET/POST/PUT/DELETE /api/agent-jobs/`
+
+
+## Telegram: actualización del código
+
+Los cambios de Telegram aún no publicados se describen en la [guía completa en inglés](../en/telegram.md): temas y contexto, `/day`, tarjetas de tiempo, acciones privadas, alias y límites production/test-server. Las nuevas tarjetas tienen textos EN/RU; otros idiomas usan el fallback inglés.

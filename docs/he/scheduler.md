@@ -222,3 +222,8 @@ pending → claimed (על ידי worker) → running → completed / failed
 - `delivery_chat_id` — לאן לשלוח את התוצאה (אופציונלי)
 
 ניהול דרך לוח הבקרה: `GET/POST/PUT/DELETE /api/agent-jobs/`
+
+
+## Telegram: עדכון קוד
+
+שינויי Telegram שטרם פורסמו מתוארים ב[מדריך המלא באנגלית](../en/telegram.md): נושאים והקשר, `/day`, מזג אוויר, פעולות פרטיות, שמות נוספים ומגבלות ייצור/שרת בדיקה. הכרטיסים החדשים כוללים EN/RU; שפות אחרות משתמשות באנגלית.

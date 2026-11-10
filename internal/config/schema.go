@@ -139,6 +139,8 @@ func CoreConfigSchema() []ConfigSection {
 			Optional:    true,
 			Fields: []ConfigField{
 				{Key: "telegram.token", Label: "Bot Token", Description: "Telegram bot token from @BotFather", Type: FieldSecret, Secret: true, Section: "telegram", WizardOrder: 1},
+				{Key: "telegram.day_widgets", Label: "Day Cards", Description: "Show My Day in Telegram. Enabled by default; restart after changes.", Type: FieldBool, Default: "true", Section: "telegram", RestartRequired: true},
+				{Key: "telegram.day_actions", Label: "Day Card Actions", Description: "Allow task and reminder actions with owner checks and confirmation. Enabled by default; restart after changes.", Type: FieldBool, Default: "true", Section: "telegram", RestartRequired: true},
 			},
 		},
 		{

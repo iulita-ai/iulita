@@ -67,7 +67,7 @@ domain.Fact {
 
 ### איך זה עובד
 
-1. **Telegram**: כפתור 💾 במקלדת inline מופיע מתחת לכל תשובת עוזר (כולל הודעות רב-נתחיות)
+1. **Telegram**: תשובות מתאימות ללא מידע רגיש עשויות להציע 💾; לא כל תשובה או כרטיס כוללים את הכפתור.
 2. **WebChat**: סמל 💾 מופיע בהעברת עכבר מעל הודעות העוזר
 3. לחיצה על הכפתור שומרת **מיידית** את התשובה המלאה כעובדה עם `source_type="bookmark"`
 4. משימת מתזמן ברקע (`bookmark.refine`) שולחת את התוכן ל-LLM לסיכום
@@ -308,3 +308,8 @@ memory.ImportFacts(ctx, store, chatID, markdownContent)
 | `skills.insights.quality_threshold` | 0 | ניקוד איכות מינימלי (0 = קבל הכל) |
 | `embedding.model` | `KnightsAnalytics/all-MiniLM-L6-v2` | שם מודל ONNX |
 | `embedding.enabled` | true | הפעל הטבעות ONNX |
+
+
+## Telegram: עדכון קוד
+
+שינויי Telegram שטרם פורסמו מתוארים ב[מדריך המלא באנגלית](../en/telegram.md): נושאים והקשר, `/day`, מזג אוויר, פעולות פרטיות, שמות נוספים ומגבלות ייצור/שרת בדיקה. הכרטיסים החדשים כוללים EN/RU; שפות אחרות משתמשות באנגלית.

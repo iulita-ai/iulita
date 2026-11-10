@@ -107,6 +107,7 @@ func (e *statusEntry) isLongTask() bool {
 type statusState struct {
 	mu      sync.Mutex
 	entries map[string]*statusEntry
+	blocked map[string]bool
 }
 
 func newStatusState() *statusState {
@@ -120,6 +121,9 @@ func newStatusState() *statusState {
 func (ss *statusState) setReplyTo(chatID string, replyTo int) {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
+	if ss.blocked[chatID] {
+		return
+	}
 	// Store as a placeholder entry — the actual entry is created later by NotifyStatus.
 	if e, ok := ss.entries[chatID]; ok {
 		e.replyTo = replyTo
@@ -144,7 +148,9 @@ func (ss *statusState) create(chatID string, tgChatID int64, msgID int) *statusE
 		sentAt:   time.Now(),
 		lastEdit: time.Now(), // count the initial send as an edit
 	}
-	ss.entries[chatID] = e
+	if !ss.blocked[chatID] {
+		ss.entries[chatID] = e
+	}
 	return e
 }
 
@@ -174,6 +180,16 @@ func (ss *statusState) remove(chatID string) {
 	ss.mu.Lock()
 	delete(ss.entries, chatID)
 	ss.mu.Unlock()
+}
+
+func (ss *statusState) forgetConversation(key string) {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	if ss.blocked == nil {
+		ss.blocked = map[string]bool{}
+	}
+	ss.blocked[key] = true
+	delete(ss.entries, key)
 }
 
 // skillEmoji returns an emoji for the given skill name.

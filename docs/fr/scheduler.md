@@ -222,3 +222,8 @@ Champs :
 - `delivery_chat_id` — ou envoyer le resultat (optionnel)
 
 Gere via le tableau de bord : `GET/POST/PUT/DELETE /api/agent-jobs/`
+
+
+## Telegram : mise à jour du code
+
+Les changements Telegram non encore publiés sont décrits dans le [guide complet en anglais](../en/telegram.md) : sujets et contexte, `/day`, météo, actions privées, alias et limites production/serveur de test. Les nouvelles cartes proposent EN/RU ; les autres langues utilisent le repli anglais.

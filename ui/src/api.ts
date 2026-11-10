@@ -20,6 +20,7 @@ export interface Stats {
 }
 
 export interface ChatInfo {
+  topic_url?: string
   chat_id: string
   messages: number
 }

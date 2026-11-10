@@ -18,6 +18,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/domain"
 	"github.com/iulita-ai/iulita/internal/i18n"
 	"github.com/iulita-ai/iulita/internal/llm"
+	"github.com/iulita-ai/iulita/internal/security"
 	"github.com/iulita-ai/iulita/internal/skill"
 	"github.com/iulita-ai/iulita/internal/skill/pdfreader"
 )
@@ -118,6 +119,7 @@ func (s *Skill) Execute(ctx context.Context, raw json.RawMessage) (string, error
 		return "", fmt.Errorf("file_summarize: saving requires an authenticated user, chat and fact storage")
 	}
 	doc := docs[in.AttachmentIndex]
+	doc.Filename = security.RedactSensitiveText(doc.Filename)
 	digest := sha256.Sum256(doc.Data)
 	digestString := fmt.Sprintf("%x", digest)
 	if in.Save {
@@ -213,6 +215,7 @@ func (s *Skill) Execute(ctx context.Context, raw json.RawMessage) (string, error
 	return string(encoded), err
 }
 func (s *Skill) summarize(ctx context.Context, text, language string) (string, error) {
+	text = security.RedactSensitiveText(text)
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -233,7 +236,7 @@ func (s *Skill) summarize(ctx context.Context, text, language string) (string, e
 	if err != nil {
 		return "", fmt.Errorf("file_summarize: model failed; no fact saved: %w", err)
 	}
-	summary := strings.TrimSpace(resp.Content)
+	summary := security.RedactSensitiveText(strings.TrimSpace(resp.Content))
 	if len(resp.ToolCalls) > 0 || summary == "" || resp.FinishReason == "max_tokens" || resp.FinishReason == "length" {
 		return "", fmt.Errorf("file_summarize: model returned incomplete summary; no fact saved")
 	}

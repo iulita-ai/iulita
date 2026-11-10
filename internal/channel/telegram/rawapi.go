@@ -9,6 +9,8 @@ import (
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
+	"github.com/iulita-ai/iulita/internal/domain"
+	"github.com/iulita-ai/iulita/internal/security"
 	"go.uber.org/zap"
 )
 
@@ -51,9 +53,10 @@ func bookmarkKeyboard(rememberLabel, copyLabel, callbackData, fullText string) m
 // --- Recent sent-message tracking (for 🔖 reactions and /clear deletes) ---
 
 type sentMsg struct {
-	msgID int
-	text  string
-	at    time.Time
+	threadID int
+	msgID    int
+	text     string
+	at       time.Time
 }
 
 const (
@@ -62,19 +65,47 @@ const (
 )
 
 type sentTracker struct {
-	mu   sync.Mutex
-	msgs map[int64][]sentMsg // per Telegram chat, oldest first
+	mu      sync.Mutex
+	msgs    map[int64][]sentMsg // per Telegram chat, oldest first
+	blocked map[[2]int64]bool
 }
 
 func newSentTracker() *sentTracker {
 	return &sentTracker{msgs: make(map[int64][]sentMsg)}
 }
 
-func (t *sentTracker) record(chatID int64, msgID int, text string) {
+func (t *sentTracker) clearThread(chat int64, thread int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.blocked == nil {
+		t.blocked = make(map[[2]int64]bool)
+	}
+	t.blocked[[2]int64{chat, int64(thread)}] = true
+	var kept []sentMsg
+	for _, m := range t.msgs[chat] {
+		if m.threadID != thread {
+			kept = append(kept, m)
+		}
+	}
+	if len(kept) == 0 {
+		delete(t.msgs, chat)
+	} else {
+		t.msgs[chat] = kept
+	}
+}
+
+func (t *sentTracker) record(chatID int64, msgID int, text string, threadID ...int) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	list := t.msgs[chatID]
-	list = append(list, sentMsg{msgID: msgID, text: text, at: time.Now()})
+	thread := 0
+	if len(threadID) > 0 {
+		thread = threadID[0]
+	}
+	if t.blocked[[2]int64{chatID, int64(thread)}] {
+		return
+	}
+	list = append(list, sentMsg{msgID: msgID, text: text, at: time.Now(), threadID: thread})
 	if len(list) > sentTrackPerChat {
 		list = list[len(list)-sentTrackPerChat:]
 	}
@@ -85,7 +116,7 @@ func (t *sentTracker) text(chatID int64, msgID int) (string, bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	for _, m := range t.msgs[chatID] {
-		if m.msgID == msgID {
+		if m.msgID == msgID && m.threadID == 0 {
 			return m.text, true
 		}
 	}
@@ -101,7 +132,7 @@ func (t *sentTracker) deletable(chatID int64) []int {
 	var ids []int
 	var kept []sentMsg
 	for _, m := range t.msgs[chatID] {
-		if m.at.After(cutoff) && len(ids) < 100 {
+		if m.at.After(cutoff) && m.threadID == 0 && len(ids) < 100 {
 			ids = append(ids, m.msgID)
 		}
 		if m.at.After(cutoff) {
@@ -117,12 +148,32 @@ func (t *sentTracker) deletable(chatID int64) []int {
 // sendHTML sends an HTML-formatted message with link previews above the text,
 // falling back to plain text when Telegram rejects the HTML. Returns the sent
 // message ID.
-func (c *Channel) sendHTML(chatID int64, html string, replyTo int, markup models.ReplyMarkup, effectID string) (int, error) {
+func (c *Channel) sendHTML(chatID int64, html string, replyTo int, markup models.ReplyMarkup, effectID string, threadID ...int) (int, error) {
+	if len(threadID) > 0 && threadID[0] > 0 {
+		if s, ok := c.store.(topicStore); ok {
+			guard, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			state, e := s.GetTelegramTopicState(guard, c.routeKey(chatID, threadID[0]))
+			cancel()
+			if e != nil {
+				return 0, e
+			}
+			if state != nil && (state.Status == "deleting" || state.Status == "deleted") {
+				return 0, domain.ErrConversationDeleted
+			}
+		}
+	}
+	if matched, _ := security.Contains(html); matched {
+		return 0, fmt.Errorf("sensitive content requires private delivery")
+	}
+	html = security.RedactPaymentData(html)
 	p := &bot.SendMessageParams{
 		ChatID:             chatID,
 		Text:               html,
 		ParseMode:          models.ParseModeHTML,
 		LinkPreviewOptions: linkPreviewAbove(),
+	}
+	if len(threadID) > 0 {
+		p.MessageThreadID = threadID[0]
 	}
 	if replyTo > 0 {
 		p.ReplyParameters = &models.ReplyParameters{MessageID: replyTo}
@@ -135,15 +186,25 @@ func (c *Channel) sendHTML(chatID int64, html string, replyTo int, markup models
 	}
 	m, err := c.bot.SendMessage(context.Background(), p)
 	if err != nil {
+		if missingTelegramTopic(err) {
+			cleanup, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			return 0, c.observeMissingTopic(cleanup, chatID, p.MessageThreadID, err)
+		}
 		c.logger.Debug("html send failed, retrying as plain text", zap.Error(err))
 		p.ParseMode = ""
 		m, err = c.bot.SendMessage(context.Background(), p)
 		if err != nil {
+			if missingTelegramTopic(err) {
+				cleanup, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				return 0, c.observeMissingTopic(cleanup, chatID, p.MessageThreadID, err)
+			}
 			c.logger.Error("failed to send message", zap.Error(err), zap.Int64("chat_id", chatID))
 			return 0, err
 		}
 	}
-	c.sentMsgs.record(chatID, m.ID, html)
+	c.sentMsgs.record(chatID, m.ID, html, threadID...)
 	return m.ID, nil
 }
 
@@ -172,8 +233,11 @@ func (c *Channel) editHTML(chatID int64, msgID int, html string, markup models.R
 // sendEphemeralHTML sends a message visible only to receiverUserID and
 // carrying the ephemeral lifecycle (edit/delete, no persistence in chat
 // history for other members). Used for secret-looking replies so credentials
-// don't linger in the chat. Falls back to a regular HTML send.
-func (c *Channel) sendEphemeralHTML(chatID, receiverUserID int64, html string, replyTo int) (int, error) {
+// do not become public if delivery fails. Sensitive text is never cached.
+func (c *Channel) sendEphemeralHTML(chatID, receiverUserID int64, html string, replyTo int, threadID ...int) error {
+	if receiverUserID <= 0 {
+		return fmt.Errorf("sensitive delivery requires a verified recipient")
+	}
 	p := &bot.SendMessageParams{
 		ChatID:    chatID,
 		Text:      html,
@@ -182,16 +246,18 @@ func (c *Channel) sendEphemeralHTML(chatID, receiverUserID int64, html string, r
 			ReceiverUserID: receiverUserID,
 		},
 	}
+	if len(threadID) > 0 {
+		p.MessageThreadID = threadID[0]
+	}
 	if replyTo > 0 {
 		p.ReplyParameters = &models.ReplyParameters{MessageID: replyTo}
 	}
-	m, err := c.bot.SendMessage(context.Background(), p)
+	_, err := c.bot.SendMessage(context.Background(), p)
 	if err != nil {
-		c.logger.Warn("ephemeral send failed, falling back to regular send", zap.Error(err))
-		return c.sendHTML(chatID, html, replyTo, nil, "")
+		c.logger.Warn("sensitive delivery failed")
+		return fmt.Errorf("sensitive delivery failed")
 	}
-	c.sentMsgs.record(chatID, m.ID, html)
-	return m.ID, nil
+	return nil
 }
 
 // --- Reactions (Bot API 7.0) ---
@@ -231,7 +297,7 @@ func (c *Channel) deleteBotMessages(chatID int64) {
 // handleReactionUpdate saves a bot message as a fact when the user reacts
 // with 🔖, and confirms with a ✅ reaction.
 func (c *Channel) handleReactionUpdate(ctx context.Context, r *models.MessageReactionUpdated) {
-	if c.rememberSvc == nil || r.User == nil || !c.isAllowed(r.User.ID) {
+	if c.rememberSvc == nil || r.User == nil || !c.isAllowed(r.User.ID) || r.Chat.Type != models.ChatTypePrivate || r.User.ID != r.Chat.ID {
 		return
 	}
 	bookmarked := false
@@ -270,7 +336,7 @@ func (c *Channel) handleReactionUpdate(ctx context.Context, r *models.MessageRea
 // SendChecklist sends a native Telegram checklist to a chat. Task completion
 // is tracked client-side by Telegram; this is a one-way mirror surface.
 // Returns the sent message ID.
-func (c *Channel) SendChecklist(_ context.Context, chatID int64, title string, tasks []string) (int, error) {
+func (c *Channel) SendChecklist(_ context.Context, chatID int64, title string, tasks []string, threadID ...int) (int, error) {
 	if len(tasks) == 0 {
 		return 0, fmt.Errorf("checklist needs at least one task")
 	}
@@ -278,13 +344,17 @@ func (c *Channel) SendChecklist(_ context.Context, chatID int64, title string, t
 	for i, t := range tasks {
 		input = append(input, models.InputChecklistTask{ID: i + 1, Text: t})
 	}
-	m, err := c.bot.SendChecklist(context.Background(), &bot.SendChecklistParams{
+	p := &bot.SendChecklistParams{
 		ChatID: chatID,
 		Checklist: models.InputChecklist{
 			Title: title,
 			Tasks: input,
 		},
-	})
+	}
+	if len(threadID) > 0 && threadID[0] != 0 {
+		return 0, fmt.Errorf("checklists do not support topic delivery")
+	}
+	m, err := c.bot.SendChecklist(context.Background(), p)
 	if err != nil {
 		return 0, fmt.Errorf("sending checklist: %w", sanitizeTGError(err))
 	}

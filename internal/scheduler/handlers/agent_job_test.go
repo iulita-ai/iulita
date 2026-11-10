@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/iulita-ai/iulita/internal/domain"
+
 	"go.uber.org/zap"
 
 	"github.com/iulita-ai/iulita/internal/llm"
@@ -67,6 +69,15 @@ func TestCronTimezone(t *testing.T) {
 
 func handle(t *testing.T, h *AgentJobHandler, p agentJobPayload) (string, error) {
 	t.Helper()
+	// Scheduled payloads must refer to a live persisted command, as in production.
+	if !strings.HasPrefix(p.Prompt, RemoteRunbookPromptPrefix) {
+		if _, e := h.store.GetAgentJob(context.Background(), p.JobID); e != nil {
+			j := &domain.AgentJob{ID: p.JobID, Name: p.JobName, UserID: p.UserID, Prompt: p.Prompt, DeliveryChatID: p.DeliveryChatID, WakeGatePrompt: p.WakeGatePrompt, Enabled: true}
+			if e := h.store.CreateAgentJob(context.Background(), j); e != nil {
+				t.Fatal(e)
+			}
+		}
+	}
 	raw, _ := json.Marshal(p)
 	return h.Handle(context.Background(), string(raw))
 }
