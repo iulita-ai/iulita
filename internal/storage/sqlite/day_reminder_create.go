@@ -2,7 +2,6 @@ package sqlite
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -35,7 +34,7 @@ func (s *Store) CreateDayReminder(ctx context.Context, owner, conversation, titl
 	if e != nil || route == nil || route.OwnerID != owner || !route.Private {
 		return 0, false, fmt.Errorf("private owned route required")
 	}
-	err = s.db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+	err = s.runWriteTransaction(ctx, func(ctx context.Context, tx bun.IDB) error {
 		if e := conversationAvailable(ctx, tx, conversation); e != nil {
 			return e
 		}

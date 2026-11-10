@@ -53,7 +53,7 @@ func (s *Store) ConversationUnavailable(ctx context.Context, key string) (bool, 
 	return false, e
 }
 func (s *Store) withConversationWrite(ctx context.Context, key string, fn func(bun.IDB) error) error {
-	return s.db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+	return s.runWriteTransaction(ctx, func(ctx context.Context, tx bun.IDB) error {
 		if e := conversationAvailable(ctx, tx, key); e != nil {
 			return e
 		}
@@ -83,7 +83,7 @@ func (s *Store) BeginTelegramTopicDeletion(ctx context.Context, scope domain.Tel
 	if e := domain.CheckLegacyChatID(scope.ConversationID); e != nil {
 		return nil, e
 	}
-	err = s.db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+	err = s.runWriteTransaction(ctx, func(ctx context.Context, tx bun.IDB) error {
 		route := new(domain.TelegramConversationRoute)
 		if e := tx.NewSelect().Model(route).Where("conversation_id = ? AND instance_id = ? AND owner_id = ? AND chat_id = ? AND thread_id = ? AND private = ? AND bot_id = ?", scope.ConversationID, scope.InstanceID, scope.OwnerID, scope.ChatID, scope.ThreadID, true, scope.BotID).Scan(ctx); e != nil {
 			return fmt.Errorf("topic deletion ownership mismatch")
@@ -213,7 +213,7 @@ func (s *Store) BeginTelegramTopicDeletion(ctx context.Context, scope domain.Tel
 
 // FinalizeTelegramTopicDeletion records confirmed native deletion for the same durable scope.
 func (s *Store) FinalizeTelegramTopicDeletion(ctx context.Context, scope domain.TelegramTopicDeletionScope) (out *domain.TelegramTopicDeletion, err error) {
-	err = s.db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+	err = s.runWriteTransaction(ctx, func(ctx context.Context, tx bun.IDB) error {
 		d := new(domain.TelegramTopicDeletion)
 		if e := tx.NewSelect().Model(d).Where("conversation_id = ?", scope.ConversationID).Scan(ctx); e != nil {
 			return e

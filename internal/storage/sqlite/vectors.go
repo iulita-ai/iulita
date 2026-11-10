@@ -80,7 +80,7 @@ func (s *Store) CreateVectorTables(ctx context.Context) error {
 
 // SaveFactVector stores the embedding for a fact as a binary BLOB.
 func (s *Store) SaveFactVector(ctx context.Context, factID int64, embedding []float32) error {
-	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+	return s.runWriteTransaction(ctx, func(ctx context.Context, tx bun.IDB) error {
 		f := new(domain.Fact)
 		if e := tx.NewSelect().Model(f).Where("id = ?", factID).Scan(ctx); e != nil {
 			return e
@@ -95,7 +95,7 @@ func (s *Store) SaveFactVector(ctx context.Context, factID int64, embedding []fl
 
 // SaveInsightVector stores the embedding for an insight as a binary BLOB.
 func (s *Store) SaveInsightVector(ctx context.Context, insightID int64, embedding []float32) error {
-	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+	return s.runWriteTransaction(ctx, func(ctx context.Context, tx bun.IDB) error {
 		f := new(domain.Insight)
 		if e := tx.NewSelect().Model(f).Where("id = ?", insightID).Scan(ctx); e != nil {
 			return e

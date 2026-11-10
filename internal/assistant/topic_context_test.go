@@ -115,6 +115,32 @@ func TestProvenTopicLoadsAllHistoryAndIgnoresOtherChatUsage(t *testing.T) {
 		}
 	}
 }
+
+func TestTopicTurnPersistsBothRolesAndReusesAssistantContext(t *testing.T) {
+	p := &topicProvider{}
+	a := newTestAssistant(t, p)
+	defer a.Shutdown()
+	ctx := context.Background()
+	key := "tgconv:persisted-answer"
+	if _, err := a.HandleMessage(ctx, topicMsg(key, "First topic question")); err != nil {
+		t.Fatal(err)
+	}
+	history, err := a.store.GetHistory(ctx, key, 0)
+	if err != nil || len(history) != 2 || history[0].Role != domain.RoleUser || history[1].Role != domain.RoleAssistant || history[0].UserID != "owner" || history[1].UserID != "owner" || history[1].Content != "Answer" {
+		t.Fatalf("first turn not persisted completely: %+v, %v", history, err)
+	}
+	if _, err = a.HandleMessage(ctx, topicMsg(key, "Follow-up question")); err != nil {
+		t.Fatal(err)
+	}
+	requests := p.captured()
+	if len(requests) != 2 || len(requests[1].History) != 2 || requests[1].History[1].Role != "assistant" || requests[1].History[1].Content != "Answer" {
+		t.Fatalf("next turn lost prior assistant context or replayed the model: %+v", requests)
+	}
+	history, err = a.store.GetHistory(ctx, key, 0)
+	if err != nil || len(history) != 4 {
+		t.Fatalf("two turns not persisted exactly once: %+v, %v", history, err)
+	}
+}
 func TestCompactionReportsAfterCommitManualAndAutomatic(t *testing.T) {
 	for _, manual := range []bool{false, true} {
 		t.Run(fmt.Sprint(manual), func(t *testing.T) {

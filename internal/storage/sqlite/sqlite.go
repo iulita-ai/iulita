@@ -23,6 +23,7 @@ type EmbedFunc func(ctx context.Context, texts []string) ([][]float32, error)
 type Store struct {
 	db                   *bun.DB
 	securityReservations *semaphore.Weighted
+	writeReservations    *semaphore.Weighted
 	halfLifeDays         float64   // temporal decay half-life for memory ranking
 	mmrLambda            float64   // MMR diversity parameter (0 = disabled)
 	embedFunc            EmbedFunc // optional: auto-embed on save
@@ -86,7 +87,7 @@ func New(path string) (*Store, error) {
 		}
 	}
 
-	return &Store{db: db, securityReservations: semaphore.NewWeighted(1)}, nil
+	return &Store{db: db, securityReservations: semaphore.NewWeighted(1), writeReservations: semaphore.NewWeighted(1)}, nil
 }
 
 func (s *Store) RunMigrations(ctx context.Context) error {

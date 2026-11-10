@@ -113,7 +113,7 @@ func (s *Store) TaskStillRunnable(ctx context.Context, id int64) (bool, error) {
 }
 
 func (s *Store) insertTaskFenced(ctx context.Context, t *domain.Task) error {
-	return s.db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+	return s.runWriteTransaction(ctx, func(ctx context.Context, tx bun.IDB) error {
 		key, e := taskConversation(ctx, tx, t)
 		if e != nil {
 			return e
@@ -127,7 +127,7 @@ func (s *Store) insertTaskFenced(ctx context.Context, t *domain.Task) error {
 }
 
 func (s *Store) withTelegramCoordinatesWrite(ctx context.Context, instance, owner string, chat int64, thread int, fn func(bun.IDB) error) error {
-	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+	return s.runWriteTransaction(ctx, func(ctx context.Context, tx bun.IDB) error {
 		exists, e := tableExists(ctx, tx, "telegram_conversation_routes")
 		if e != nil {
 			return e
