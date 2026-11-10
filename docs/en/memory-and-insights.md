@@ -63,11 +63,11 @@ The `forget` tool deletes a fact by ID. The FTS trigger (`facts_ad`) automatical
 
 ## Bookmarks (Quick Save)
 
-In addition to the chat-based "remember" flow, users can bookmark any assistant response with a single click.
+In addition to the chat-based "remember" flow, users can bookmark eligible nonsensitive assistant responses with a single click.
 
 ### How It Works
 
-1. **Telegram**: a 💾 inline keyboard button appears below every assistant response (including multi-chunk messages)
+1. **Telegram**: eligible nonsensitive replies can offer a 💾 bookmark button; sensitive/verbatim/card responses may omit it
 2. **WebChat**: a 💾 icon appears on hover over assistant messages
 3. Clicking the button **immediately** saves the full response as a fact with `source_type="bookmark"`
 4. A background scheduler task (`bookmark.refine`) sends the content to an LLM for summarization
@@ -308,3 +308,10 @@ Parses the markdown, creates new facts (original IDs are discarded — new IDs a
 | `skills.insights.quality_threshold` | 0 | Minimum quality score (0 = accept all) |
 | `embedding.model` | `KnightsAnalytics/all-MiniLM-L6-v2` | ONNX model name |
 | `embedding.enabled` | true | Enable ONNX embeddings |
+
+
+## Topic context and saved memory
+
+A Telegram topic's conversation context is separate from account facts and directives. `/clear` clears the current history/summary; `/compact` summarizes it and reports estimated before/after size. Verified private topics load their full persisted history before bounded compression, not only the last 50 messages. Automatic compression also posts a notice after committing the summary.
+
+Confirmed topic deletion additionally clears topic-derived context and cancels attached local work, while preserving external tasks and account-wide explicitly saved memory. It is not account erasure. See [topic context](telegram.md#topic-context).

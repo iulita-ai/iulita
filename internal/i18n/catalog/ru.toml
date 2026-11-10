@@ -412,3 +412,15 @@ other = "В этом запросе нет подтверждённого вып
 
 [MCPPrivateExecution]
 other = "Операция MCP завершилась успешно. Результат сохранён приватно и не передан модели; его можно открыть в настройках MCP. Выполнение:"
+
+[TelegramPromptOther]
+other = "Ввести вручную"
+
+[TelegramPromptTypeAnswer]
+other = "Введите ответ:"
+
+[TelegramBookmarkUnavailable]
+other = "Эта кнопка недоступна. Откройте новый ответ."
+
+[TelegramPromptCancel]
+other = "Отмена"

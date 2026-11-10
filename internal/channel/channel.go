@@ -35,22 +35,48 @@ type LocationAttachment struct {
 }
 
 // IncomingMessage represents a message received from an input channel.
+// TelegramTarget carries delivery coordinates, distinct from the conversation key.
+type TelegramTarget struct {
+	BotID      int64
+	InstanceID string
+	ChatID     int64
+	ThreadID   int
+	OwnerID    string
+	Private    bool
+}
+
+// QuoteContext carries a selected source passage and its transport verification metadata.
+type QuoteContext struct {
+	Position        int
+	SourceRich      bool
+	Text            string
+	SourceMessageID int
+	SourceChatID    int64
+	SourceThreadID  int
+	Verified        bool
+}
+
 type IncomingMessage struct {
-	ChatID            string
-	UserID            string // platform-specific user ID (e.g., Telegram user_id)
-	ResolvedUserID    string // iulita user UUID (set after user resolution)
-	ChannelInstanceID string // channel instance slug (e.g., "tg-config")
-	UserName          string
-	Text              string
-	LanguageCode      string               // IETF language tag from the channel (e.g. "ru", "en")
-	Locale            string               // channel-stored locale preference (BCP-47, e.g. "ru", "en")
-	Images            []ImageAttachment    // nil for text-only messages
-	Documents         []DocumentAttachment // nil for messages without files
-	Audio             []AudioAttachment    // nil for messages without voice/audio
-	Locations         []LocationAttachment // nil for messages without a shared location
-	ClientMessageID   string               // Optional stable request ID for private web commands.
-	MessageID         int                  // platform-specific message ID for reply threading
-	Caps              ChannelCaps          // capabilities of the originating channel
+	ChannelType string
+	// ProvenPrivateRoute is set by a trusted transport adapter after identity validation.
+	ProvenPrivateRoute bool
+	Quote              *QuoteContext
+	ChatID             string
+	UserID             string // platform-specific user ID (e.g., Telegram user_id)
+	ResolvedUserID     string // iulita user UUID (set after user resolution)
+	ChannelInstanceID  string // channel instance slug (e.g., "tg-config")
+	UserName           string
+	Text               string
+	LanguageCode       string               // IETF language tag from the channel (e.g. "ru", "en")
+	Locale             string               // channel-stored locale preference (BCP-47, e.g. "ru", "en")
+	Images             []ImageAttachment    // nil for text-only messages
+	Documents          []DocumentAttachment // nil for messages without files
+	Audio              []AudioAttachment    // nil for messages without voice/audio
+	Locations          []LocationAttachment // nil for messages without a shared location
+	ClientMessageID    string               // Optional stable request ID for private web commands.
+	MessageID          int                  // platform-specific message ID for reply threading
+	RelatedMessageIDs  []int                // source IDs retained when a transport merges a burst
+	Caps               ChannelCaps          // capabilities of the originating channel
 }
 
 // MessageHandler is a callback invoked for each incoming message.

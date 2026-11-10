@@ -233,3 +233,8 @@ combined = (1-vectorWeight)*ftsScore + vectorWeight*vecScore
 | Agent Jobs | CRUD, GetDue |
 | Google | Account CRUD, אחסון טוקנים |
 | מיומנויות חיצוניות | Install, List, Get, Delete |
+
+
+## Telegram: עדכון קוד
+
+שינויי Telegram שטרם פורסמו מתוארים ב[מדריך המלא באנגלית](../en/telegram.md): נושאים והקשר, `/day`, מזג אוויר, פעולות פרטיות, שמות נוספים ומגבלות ייצור/שרת בדיקה. הכרטיסים החדשים כוללים EN/RU; שפות אחרות משתמשות באנגלית.

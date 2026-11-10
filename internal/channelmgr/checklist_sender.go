@@ -12,7 +12,7 @@ func (m *Manager) SendChecklistToChat(ctx context.Context, chatID, title string,
 	if err != nil {
 		return 0, err
 	}
-	return tg.SendChecklist(ctx, chatID64, title, tasks)
+	return tg.SendChecklist(ctx, chatID64, title, tasks, m.telegramThreadID(ctx, chatID))
 }
 
 // CanSendChecklists reports whether a native checklist can reach chatID.

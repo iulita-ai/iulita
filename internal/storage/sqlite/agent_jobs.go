@@ -5,17 +5,15 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/uptrace/bun"
+
 	"github.com/iulita-ai/iulita/internal/domain"
 )
 
 func (s *Store) CreateAgentJob(ctx context.Context, j *domain.AgentJob) error {
 	j.CreatedAt = time.Now()
 	j.UpdatedAt = time.Now()
-	_, err := s.db.NewInsert().Model(j).Exec(ctx)
-	if err != nil {
-		return fmt.Errorf("inserting agent job: %w", err)
-	}
-	return nil
+	return s.withConversationWrite(ctx, j.DeliveryChatID, func(db bun.IDB) error { _, e := db.NewInsert().Model(j).Exec(ctx); return e })
 }
 
 func (s *Store) GetAgentJob(ctx context.Context, id int64) (*domain.AgentJob, error) {
@@ -57,11 +55,17 @@ func (s *Store) CountAgentJobsByUser(ctx context.Context, userID string) (int, e
 
 func (s *Store) UpdateAgentJob(ctx context.Context, j *domain.AgentJob) error {
 	j.UpdatedAt = time.Now()
-	_, err := s.db.NewUpdate().Model(j).WherePK().Exec(ctx)
-	if err != nil {
-		return fmt.Errorf("updating agent job: %w", err)
-	}
-	return nil
+	return s.withConversationWrite(ctx, j.DeliveryChatID, func(db bun.IDB) error {
+		old := new(domain.AgentJob)
+		if e := db.NewSelect().Model(old).Where("id = ?", j.ID).Scan(ctx); e != nil {
+			return e
+		}
+		if e := conversationAvailable(ctx, db, old.DeliveryChatID); e != nil {
+			return e
+		}
+		_, e := db.NewUpdate().Model(j).WherePK().Exec(ctx)
+		return e
+	})
 }
 
 func (s *Store) DeleteAgentJob(ctx context.Context, id int64) error {

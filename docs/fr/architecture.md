@@ -127,7 +127,7 @@ Assistant — Phase 2 : Enrichissement
     │ envoyer l'evenement de statut "traitement"
     ▼
 Assistant — Phase 3 : Historique et compression
-    │ charger les 50 derniers messages
+    │ Historique complet du sujet privé vérifié ; historique borné ailleurs
     │ si tokens > 80% de la fenetre de contexte → compresser la moitie ancienne
     ▼
 Assistant — Phase 4 : Donnees de contexte
@@ -324,3 +324,10 @@ ui/                      # frontend SPA Vue 3 + Naive UI + UnoCSS
 skills/                  # fichiers de competences texte (Markdown)
 docs/                    # documentation
 ```
+
+
+## Telegram : mise à jour du code
+
+Les changements Telegram non encore publiés sont décrits dans le [guide complet en anglais](../en/telegram.md) : sujets et contexte, `/day`, météo, actions privées, alias et limites production/serveur de test. Les nouvelles cartes proposent EN/RU ; les autres langues utilisent le repli anglais.
+
+`telegram.day_widgets` et `telegram.day_actions` sont activés par défaut, même après mise à jour sans ces clés ; false explicite reste effectif. Ces réglages globaux nécessitent un redémarrage ; variables : `IULITA_TELEGRAM_DAY_WIDGETS` / `IULITA_TELEGRAM_DAY_ACTIONS`. Alias, preferred_username et test_environment sont détaillés dans le guide EN.

@@ -271,3 +271,10 @@ IULITA_PROXY_URL           → proxy.url
 3. **格式**：`base64(12字节nonce ‖ 密文)`
 4. **自动加密**：在 SKILL.md 中声明为 `secret_keys` 的键始终加密
 5. **不泄露**：仪表盘 API 对加密键返回空值
+
+
+## Telegram 源代码更新
+
+尚未发布的 Telegram 功能见[英文完整指南](../en/telegram.md)：话题与上下文、`/day`、天气卡片、私密操作、附加用户名及生产/测试服务器限制。新卡片提供 EN/RU 文案；其他语言使用英文回退。
+
+`telegram.day_widgets` 和 `telegram.day_actions` 默认启用，旧配置缺少这些键时升级后也启用；显式 false 保留。它们是全局设置，修改后需要重启；环境变量为 `IULITA_TELEGRAM_DAY_WIDGETS` / `IULITA_TELEGRAM_DAY_ACTIONS`。aliases、preferred_username 和 test_environment 详见英文指南。

@@ -81,6 +81,7 @@ type weatherInput struct {
 }
 
 func (s *Skill) Execute(ctx context.Context, raw json.RawMessage) (string, error) {
+	channel.SetWeatherCard(ctx, nil)
 	var in weatherInput
 	if err := json.Unmarshal(raw, &in); err != nil {
 		return "", fmt.Errorf("invalid input: %w", err)
@@ -104,7 +105,7 @@ func (s *Skill) Execute(ctx context.Context, raw json.RawMessage) (string, error
 
 	result, err := s.Forecast(ctx, location, days)
 	if err != nil {
-		return fmt.Sprintf("Unable to fetch weather for %q: %s. The service may be temporarily unavailable.", location, err), nil
+		return fmt.Sprintf("Unable to fetch weather for %q. The service may be temporarily unavailable.", displayLocation(location, location)), nil //nolint:nilerr // Tool failures return a neutral model-facing result without disclosing provider errors.
 	}
 
 	return result, nil
@@ -114,20 +115,15 @@ func (s *Skill) Execute(ctx context.Context, raw json.RawMessage) (string, error
 // interactive prompts or server IP geolocation. Errors remain errors so callers
 // can redact transport/provider details before returning them to a model.
 func (s *Skill) Forecast(ctx context.Context, location string, days int) (string, error) {
-	location = strings.TrimSpace(location)
-	if location == "" {
-		return "", fmt.Errorf("explicit weather location required")
-	}
-	if days < 1 {
-		days = 1
-	}
-	if days > 16 {
-		days = 16
-	}
-	result, err := s.buildBackendChain().Fetch(ctx, location, days)
+	channel.SetWeatherCard(ctx, nil)
+	result, err := s.fetchForecast(ctx, location, days)
 	if err != nil {
 		return "", err
 	}
+	if contextErr := ctx.Err(); contextErr != nil {
+		return "", contextErr
+	}
+	channel.SetWeatherCard(ctx, weatherCard(result, location, forecastDays(days)))
 	return formatForecast(result, channel.CapsFrom(ctx)), nil
 }
 

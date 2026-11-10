@@ -124,3 +124,14 @@ func TestSpoilerAndExpandableQuote(t *testing.T) {
 		})
 	}
 }
+
+func TestTopicMessagesCannotBeSavedOrDeletedAsRoot(t *testing.T) {
+	tr := newSentTracker()
+	tr.record(1, 100, "topic private context", 7)
+	if _, ok := tr.text(1, 100); ok {
+		t.Fatal("topic reaction resolved as root history")
+	}
+	if len(tr.deletable(1)) != 0 {
+		t.Fatal("root clear deletes topic")
+	}
+}

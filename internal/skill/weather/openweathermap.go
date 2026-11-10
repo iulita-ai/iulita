@@ -7,7 +7,10 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"time"
+
+	"github.com/iulita-ai/iulita/internal/domain"
 )
 
 const owmBaseURL = "https://api.openweathermap.org/data/2.5/forecast"
@@ -71,45 +74,78 @@ func (b *OWMBackend) Fetch(ctx context.Context, location string, days int) (*Wea
 		}
 	}
 
-	// Aggregate 3-hour entries into daily forecasts.
-	dayMap := make(map[string]*DayForecast)
-	var dayOrder []string
+	// Forecast buckets are dated in the city's offset, never the host timezone.
+	if data.City.Timezone == nil || *data.City.Timezone < -14*3600 || *data.City.Timezone > 14*3600 {
+		return nil, fmt.Errorf("OWM forecast timezone unavailable")
+	}
+	zone := time.FixedZone("", *data.City.Timezone)
+	sort.Slice(data.List, func(i, j int) bool { return data.List[i].Dt < data.List[j].Dt })
+	result := &WeatherResult{Location: displayLocation(location, resolvedLocation), Source: "openweathermap", RetrievedAt: time.Now().UTC()}
+	if data.City.Timezone != nil {
+		result.Timezone = time.Now().In(zone).Format("-07:00")
+	}
+	dayMap := map[string]*domain.WeatherDay{}
+	samples := map[string]*ForecastSample{}
+	descriptions := map[string]string{}
+	dayOrder := []string{}
 	for _, entry := range data.List {
-		date := time.Unix(entry.Dt, 0).Format("2006-01-02")
-		if _, exists := dayMap[date]; !exists {
-			t, _ := time.Parse("2006-01-02", date)
-			dayMap[date] = &DayForecast{
-				Date:     t,
-				TempMinC: entry.Main.TempMin,
-				TempMaxC: entry.Main.TempMax,
-			}
-			dayOrder = append(dayOrder, date)
+		if entry.Dt <= 0 {
+			continue
 		}
+		date := time.Unix(entry.Dt, 0).In(zone).Format("2006-01-02")
 		d := dayMap[date]
-		if entry.Main.TempMin < d.TempMinC {
-			d.TempMinC = entry.Main.TempMin
+		if d == nil {
+			d = &domain.WeatherDay{Date: date, Condition: domain.WeatherUnknown}
+			dayMap[date] = d
+			dayOrder = append(dayOrder, date)
+			samples[date] = &ForecastSample{Kind: "Available three-hour forecast periods"}
 		}
-		if entry.Main.TempMax > d.TempMaxC {
-			d.TempMaxC = entry.Main.TempMax
+		if v := validMetric(entry.Main.TempMin, -150, 100); v != nil && (d.TempMinC == nil || *v < *d.TempMinC) {
+			d.TempMinC = v
 		}
-		d.PrecipMM += entry.Rain.ThreeH + entry.Snow.ThreeH
-		if entry.Wind.Speed*3.6 > d.WindKph {
-			d.WindKph = entry.Wind.Speed * 3.6 // m/s → km/h
+		if v := validMetric(entry.Main.TempMax, -150, 100); v != nil && (d.TempMaxC == nil || *v > *d.TempMaxC) {
+			d.TempMaxC = v
 		}
-		if entry.Main.Humidity > d.Humidity {
-			d.Humidity = entry.Main.Humidity
+		if speed := validMetric(entry.Wind.Speed, 0, 140); speed != nil {
+			v := *speed * 3.6
+			if d.WindKph == nil || v > *d.WindKph {
+				d.WindKph = value(v)
+			}
+		}
+		// Rain/snow are 3-hour forecasts. Only aggregate present fields, never
+		// fabricate a measured dry day from absent records.
+		for _, v := range []*float64{entry.Rain.ThreeH, entry.Snow.ThreeH} {
+			if rain := validMetric(v, 0, 10000); rain != nil {
+				if samples[date].PrecipitationMM == nil {
+					samples[date].PrecipitationMM = value(0.0)
+				}
+				*samples[date].PrecipitationMM += *rain
+			}
+		}
+		if h := entry.Main.Humidity; h != nil && *h >= 0 && *h <= 100 && (samples[date].HumidityPercent == nil || *h > *samples[date].HumidityPercent) {
+			samples[date].HumidityPercent = value(*h)
 		}
 		if len(entry.Weather) > 0 {
-			d.Description = entry.Weather[0].Description
+			c := owmCondition(entry.Weather[0].ID)
+			if c != domain.WeatherUnknown {
+				d.Condition = c
+				descriptions[date] = safeDescription(entry.Weather[0].Description, c)
+			}
 		}
 	}
-
-	result := &WeatherResult{Location: resolvedLocation}
-	for i, date := range dayOrder {
-		if i >= days {
+	for _, date := range dayOrder {
+		if len(result.Days) >= days {
 			break
 		}
-		result.Days = append(result.Days, *dayMap[date])
+		d := dayMap[date]
+		validateBounds(d)
+		description := descriptions[date]
+		if description == "" {
+			description = conditionText(context.Background(), d.Condition)
+		}
+		legacy := legacyDay(*d, description)
+		legacy.Sample = samples[date]
+		result.Days = append(result.Days, legacy)
 	}
 
 	if len(result.Days) == 0 {
@@ -121,8 +157,9 @@ func (b *OWMBackend) Fetch(ctx context.Context, location string, days int) (*Wea
 
 type owmResponse struct {
 	City struct {
-		Name    string `json:"name"`
-		Country string `json:"country"`
+		Name     string `json:"name"`
+		Country  string `json:"country"`
+		Timezone *int   `json:"timezone"`
 	} `json:"city"`
 	List []owmEntry `json:"list"`
 }
@@ -130,20 +167,21 @@ type owmResponse struct {
 type owmEntry struct {
 	Dt   int64 `json:"dt"`
 	Main struct {
-		TempMin  float64 `json:"temp_min"`
-		TempMax  float64 `json:"temp_max"`
-		Humidity int     `json:"humidity"`
+		TempMin  *float64 `json:"temp_min"`
+		TempMax  *float64 `json:"temp_max"`
+		Humidity *int     `json:"humidity"`
 	} `json:"main"`
 	Weather []struct {
+		ID          int    `json:"id"`
 		Description string `json:"description"`
 	} `json:"weather"`
 	Wind struct {
-		Speed float64 `json:"speed"`
+		Speed *float64 `json:"speed"`
 	} `json:"wind"`
 	Rain struct {
-		ThreeH float64 `json:"3h"`
+		ThreeH *float64 `json:"3h"`
 	} `json:"rain"`
 	Snow struct {
-		ThreeH float64 `json:"3h"`
+		ThreeH *float64 `json:"3h"`
 	} `json:"snow"`
 }

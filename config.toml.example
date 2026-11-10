@@ -52,6 +52,15 @@ quota_global_bytes = 5000000000
 quota_user_bytes = 1000000000
 
 [telegram]
+# Optional verified secondary usernames assigned in BotFather (without @):
+# aliases = ["IulitaAgent"]
+# preferred_username = "IulitaAgent"
+# Telegram isolated test server only; requires test-server credentials:
+# test_environment = false
+# Enabled by default, including upgrades of configs without these keys.
+# Set false to disable cards or their confirmed task/reminder actions separately.
+day_widgets = true
+day_actions = true
 # Set via IULITA_TELEGRAM_TOKEN env var
 token = ""
 # Telegram user IDs allowed to use the bot (empty = allow all)

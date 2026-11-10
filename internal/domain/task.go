@@ -5,12 +5,15 @@ import "time"
 // TaskStatus represents the lifecycle state of a task.
 type TaskStatus string
 
+// Task lifecycle states are persisted in durable queue receipts.
 const (
-	TaskStatusPending TaskStatus = "pending"
-	TaskStatusClaimed TaskStatus = "claimed"
-	TaskStatusRunning TaskStatus = "running"
-	TaskStatusDone    TaskStatus = "done"
-	TaskStatusFailed  TaskStatus = "failed"
+	// TaskStatusPending identifies a task awaiting its scheduled claim.
+	TaskStatusPending   TaskStatus = "pending"
+	TaskStatusClaimed   TaskStatus = "claimed"
+	TaskStatusRunning   TaskStatus = "running"
+	TaskStatusDone      TaskStatus = "done"
+	TaskStatusFailed    TaskStatus = "failed"
+	TaskStatusCancelled TaskStatus = "cancelled"
 )
 
 // Task represents a unit of work in the distributed task scheduler.

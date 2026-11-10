@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +26,7 @@ type pendingConfirm struct {
 	domainUser string // domain user ID for the decision actor
 	nonce      string
 	chatID     int64
+	threadID   int
 	reason     string
 	msgID      int
 	expires    time.Time
@@ -47,7 +47,7 @@ func (cs *confirmState) set(nonce string, pc *pendingConfirm) {
 	// Concurrent prompt overwrite: a previous pending confirm is superseded —
 	// it must never remain answerable.
 	for previous, v := range cs.pending {
-		if v.replyCh != pc.replyCh && v.chatID == pc.chatID && v.expectFrom == pc.expectFrom {
+		if v.replyCh != pc.replyCh && v.chatID == pc.chatID && v.threadID == pc.threadID && v.expectFrom == pc.expectFrom {
 			delete(cs.pending, previous)
 			select {
 			case v.replyCh <- "0":
@@ -97,6 +97,7 @@ func (cs *confirmState) abandon(pc *pendingConfirm) {
 type telegramConfirmer struct {
 	channel    *Channel
 	chatID     int64
+	threadID   int
 	fromTg     int64 // requesting Telegram user captured for this turn
 	approvalMu sync.Mutex
 	approved   map[string]string // execution nonce to verified domain owner
@@ -129,9 +130,10 @@ func (tc *telegramConfirmer) Confirm(ctx context.Context, action interact.Confir
 	}
 
 	msg, err := tc.channel.bot.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:      tc.chatID,
-		Text:        text,
-		ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: keyboard},
+		ChatID:          tc.chatID,
+		MessageThreadID: tc.threadID,
+		Text:            text,
+		ReplyMarkup:     models.InlineKeyboardMarkup{InlineKeyboard: keyboard},
 	})
 	if err != nil {
 		return interact.Decision{}, fmt.Errorf("sending confirmation: %w", err)
@@ -141,6 +143,7 @@ func (tc *telegramConfirmer) Confirm(ctx context.Context, action interact.Confir
 	pc := &pendingConfirm{
 		replyCh:    replyCh,
 		chatID:     tc.chatID,
+		threadID:   tc.threadID,
 		reason:     action.Reason,
 		expectFrom: tc.fromTg,
 		domainUser: expect.UserID,
@@ -218,18 +221,28 @@ func (c *Channel) HandleConfirmCallback(cq *models.CallbackQuery) bool {
 	// One-shot nonce: consumed atomically; replays answer nothing.
 	pc, ok := c.confirms.takeBound(nonce, verdict, cq.From.ID, chatID, cq.Message.Message.ID)
 	if !ok {
-		_, _ = c.bot.AnswerCallbackQuery(context.Background(), &bot.AnswerCallbackQueryParams{ //nolint:errcheck // ack only
-			CallbackQueryID: cq.ID,
-			Text:            "This confirmation is no longer active.",
-		})
+		if _, ackErr := c.bot.AnswerCallbackQuery(context.Background(), &bot.AnswerCallbackQueryParams{CallbackQueryID: cq.ID, Text: "This confirmation is no longer active."}); ackErr != nil {
+			c.noteFailure("Telegram stale confirmation acknowledgement failed", ackErr)
+		}
 		return true
 	}
+	if _, ackErr := c.bot.AnswerCallbackQuery(context.Background(), &bot.AnswerCallbackQueryParams{CallbackQueryID: cq.ID, Text: map[string]string{"1": "Approved", "O": "Approved (always for this origin)", "G": "Approved (always)", "0": "Denied"}[verdict]}); ackErr != nil {
+		c.noteFailure("Telegram confirmation acknowledgement failed", ackErr)
+	}
 
-	_, _ = c.bot.AnswerCallbackQuery(context.Background(), &bot.AnswerCallbackQueryParams{ //nolint:errcheck // ack
-		CallbackQueryID: cq.ID,
-		Text:            map[string]string{"1": "Approved", "O": "Approved (always for this origin)", "G": "Approved (always)", "0": "Denied"}[verdict],
-	})
-
+	// A private receipt follows only a successfully verified, consumed callback.
+	// It carries no operation details and delivery failure never changes approval.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		receipt := "Decision recorded. No operation details are included in this receipt."
+		if strings.HasPrefix(cq.From.LanguageCode, "ru") {
+			receipt = "Решение принято. Подробности операции в эту квитанцию не включены."
+		}
+		if deliveryErr := c.SendPrivateCallbackReply(ctx, cq, receipt); deliveryErr != nil {
+			c.noteFailure("Telegram SendPrivateCallbackReply failed", deliveryErr)
+		}
+	}()
 	select {
 	case pc.replyCh <- verdict:
 	default:
@@ -258,14 +271,13 @@ func confirmOriginLabel(action interact.Confirmation) string {
 // ConfirmerFor returns a ConfirmationAsker bound to the chat and the
 // Telegram user who triggered the current turn.
 func (c *Channel) ConfirmerFor(chatID string) interact.ConfirmationAsker {
-	tgChatID, err := strconv.ParseInt(chatID, 10, 64)
-	if err != nil {
+	target, err := c.resolveTarget(context.Background(), chatID)
+	tgChatID := target.ChatID
+	if err != nil || !target.Private || target.OwnerID == "" || target.ChatID <= 0 {
 		return nil
 	}
-	c.confirmSendersMu.Lock()
-	fromTg := c.confirmSenders[chatID]
-	c.confirmSendersMu.Unlock()
-	return &telegramConfirmer{channel: c, chatID: tgChatID, fromTg: fromTg}
+	fromTg := target.ChatID
+	return &telegramConfirmer{channel: c, chatID: tgChatID, threadID: target.ThreadID, fromTg: fromTg}
 }
 
 // RecordTurnSender captures the Telegram user who sent the message that
@@ -296,6 +308,6 @@ func (tc *telegramConfirmer) DeliverPrivateResult(ctx context.Context, actor int
 	if actor.UserID == "" || tc.fromTg <= 0 || tc.chatID != tc.fromTg || owner != actor.UserID {
 		return errors.New("private SSH output requires requester private chat")
 	}
-	_, err := tc.channel.bot.SendDocument(ctx, &bot.SendDocumentParams{ChatID: tc.chatID, Document: &models.InputFileUpload{Filename: "ssh-" + executionID + ".txt", Data: strings.NewReader(text)}, Caption: "Original SSH output. Approved model analysis uses a separate filtered, limited copy.", ProtectContent: true})
+	_, err := tc.channel.bot.SendDocument(ctx, &bot.SendDocumentParams{ChatID: tc.chatID, MessageThreadID: tc.threadID, Document: &models.InputFileUpload{Filename: "ssh-" + executionID + ".txt", Data: strings.NewReader(text)}, Caption: "Original SSH output. Approved model analysis uses a separate filtered, limited copy.", ProtectContent: true})
 	return err
 }

@@ -233,3 +233,8 @@ La interfaz `Repository` en `internal/storage/storage.go` tiene mas de 60 metodo
 | Agent Jobs | CRUD, GetDue |
 | Google | Account CRUD, almacenamiento de tokens |
 | Habilidades Externas | Install, List, Get, Delete |
+
+
+## Telegram: actualización del código
+
+Los cambios de Telegram aún no publicados se describen en la [guía completa en inglés](../en/telegram.md): temas y contexto, `/day`, tarjetas de tiempo, acciones privadas, alias y límites production/test-server. Las nuevas tarjetas tienen textos EN/RU; otros idiomas usan el fallback inglés.

@@ -11,6 +11,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/eventbus"
 	"github.com/iulita-ai/iulita/internal/i18n"
 	"github.com/iulita-ai/iulita/internal/llm"
+	"github.com/iulita-ai/iulita/internal/security"
 	"github.com/iulita-ai/iulita/internal/skill"
 )
 
@@ -36,6 +37,9 @@ func (a *Assistant) hasTerminalCall(calls []llm.ToolCall) bool {
 // finishResponse has exactly one persistence/event path. Immutable native
 // operations bypass both mutating hooks and the self-improvement transcript.
 func (a *Assistant) finishResponse(ctx context.Context, chatID, userID, response string, immutable bool, iterations int, exchanges []llm.ToolExchange) (string, error) {
+	if err := a.guardConversation(context.WithoutCancel(ctx), chatID); err != nil {
+		return "", err
+	}
 	if !immutable {
 		a.runPostHooks(ctx, &response)
 	}
@@ -43,6 +47,9 @@ func (a *Assistant) finishResponse(ctx context.Context, chatID, userID, response
 	// completed work with a bounded context, without resubmitting the operation.
 	saveCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
+	if err := a.guardConversation(saveCtx, chatID); err != nil {
+		return "", err
+	}
 	id := a.saveAssistantResponse(saveCtx, chatID, response)
 	if immutable && id == 0 {
 		return "", fmt.Errorf("could not save completed operation result")
@@ -57,7 +64,7 @@ func (a *Assistant) finishResponse(ctx context.Context, chatID, userID, response
 		a.notifyStatus(saveCtx, chatID, channel.StatusEvent{Type: "skip_bookmark"})
 	}
 	if a.bus != nil {
-		a.bus.Publish(saveCtx, eventbus.Event{Type: eventbus.ResponseSent, Payload: eventbus.ResponseSentPayload{ChatID: chatID, Response: response, Time: time.Now()}})
+		a.bus.Publish(saveCtx, eventbus.Event{Type: eventbus.ResponseSent, Payload: eventbus.ResponseSentPayload{ChatID: chatID, Response: security.RedactSensitiveText(response), Time: time.Now()}})
 	}
 	return response, nil
 }

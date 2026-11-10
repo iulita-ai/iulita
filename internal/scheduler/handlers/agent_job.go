@@ -120,6 +120,17 @@ func (h *AgentJobHandler) runRemote(ctx context.Context, p agentJobPayload) (str
 	if d.Decode(&extra) != io.EOF {
 		return denied, nil
 	}
+	if e := ctx.Err(); e != nil {
+		return denied, nil
+	}
+	if g, ok := h.store.(interface {
+		ValidateAgentJob(context.Context, int64, string, string, string) (bool, error)
+	}); ok {
+		valid, e := g.ValidateAgentJob(ctx, p.JobID, p.UserID, p.Prompt, p.DeliveryChatID)
+		if e != nil || !valid {
+			return denied, nil
+		}
+	}
 	x, err := h.remote.ExecuteScheduledRunbook(ctx, p.UserID, fmt.Sprintf("job-%d-task-%d", p.JobID, scheduler.TaskIDFrom(ctx)), in)
 	if x.ID == "" && err != nil {
 		return denied, nil
@@ -141,8 +152,28 @@ func (h *AgentJobHandler) Handle(ctx context.Context, payload string) (string, e
 		return "", fmt.Errorf("invalid payload: %w", err)
 	}
 
+	validate := func() error {
+		if e := ctx.Err(); e != nil {
+			return e
+		}
+		if g, ok := h.store.(interface {
+			ValidateAgentJob(context.Context, int64, string, string, string) (bool, error)
+		}); ok {
+			valid, e := g.ValidateAgentJob(ctx, p.JobID, p.UserID, p.Prompt, p.DeliveryChatID)
+			if e != nil {
+				return e
+			}
+			if !valid {
+				return fmt.Errorf("scheduled job no longer authorized")
+			}
+		}
+		return nil
+	}
 	if strings.HasPrefix(p.Prompt, RemoteRunbookPromptPrefix) {
 		return h.runRemote(ctx, p)
+	}
+	if e := validate(); e != nil {
+		return "", e
 	}
 	// Bound wall-clock so a stuck job can't hold the worker forever.
 	ctx, cancel := context.WithTimeout(ctx, jobTaskTimeout)
@@ -167,6 +198,9 @@ func (h *AgentJobHandler) Handle(ctx context.Context, payload string) (string, e
 		}
 	}
 
+	if e := validate(); e != nil {
+		return "", e
+	}
 	content, err := h.run(ctx, p, memoryBlock)
 	if err != nil {
 		return "", err
@@ -176,6 +210,9 @@ func (h *AgentJobHandler) Handle(ctx context.Context, payload string) (string, e
 		return `{"status":"empty_response"}`, nil
 	}
 
+	if e := validate(); e != nil {
+		return "", e
+	}
 	if p.DeliveryChatID != "" && h.sender != nil {
 		msg := fmt.Sprintf("**%s**\n\n%s", p.JobName, content)
 		if sendErr := h.sender.SendMessage(ctx, p.DeliveryChatID, msg); sendErr != nil {
@@ -215,6 +252,23 @@ func (h *AgentJobHandler) run(ctx context.Context, p agentJobPayload, memoryBloc
 	runCtx := h.userContext(ctx, p)
 	runner := agent.NewRunner(h.provider, h.registry, nil, h.bus, p.DeliveryChatID, h.logger)
 	runner.SetUserID(p.UserID)
+	runner.SetExecutionGuard(func(check context.Context) error {
+		if e := check.Err(); e != nil {
+			return e
+		}
+		if g, ok := h.store.(interface {
+			ValidateAgentJob(context.Context, int64, string, string, string) (bool, error)
+		}); ok {
+			valid, e := g.ValidateAgentJob(check, p.JobID, p.UserID, p.Prompt, p.DeliveryChatID)
+			if e != nil {
+				return e
+			}
+			if !valid {
+				return fmt.Errorf("scheduled job no longer authorized")
+			}
+		}
+		return nil
+	})
 
 	task := p.Prompt
 	if memoryBlock != "" {

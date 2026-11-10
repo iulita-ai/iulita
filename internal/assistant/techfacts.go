@@ -3,6 +3,7 @@ package assistant
 import (
 	"context"
 	"fmt"
+	"time"
 	"unicode"
 
 	"go.uber.org/zap"
@@ -54,7 +55,7 @@ func (a *TechFactAnalyzer) detectLanguage(ctx context.Context, chatID, userID, t
 	// confidence stores the ratio in this message (averaged over time via UpsertTechFact).
 	if cyrillic > 0 {
 		ratio := float64(cyrillic) / float64(total)
-		if err := a.store.UpsertTechFact(ctx, &domain.TechFact{
+		if err := a.upsert(ctx, &domain.TechFact{
 			ChatID:     chatID,
 			UserID:     userID,
 			Category:   "language",
@@ -68,7 +69,7 @@ func (a *TechFactAnalyzer) detectLanguage(ctx context.Context, chatID, userID, t
 
 	if latin > 0 {
 		ratio := float64(latin) / float64(total)
-		if err := a.store.UpsertTechFact(ctx, &domain.TechFact{
+		if err := a.upsert(ctx, &domain.TechFact{
 			ChatID:     chatID,
 			UserID:     userID,
 			Category:   "language",
@@ -93,7 +94,7 @@ func (a *TechFactAnalyzer) detectMessageLength(ctx context.Context, chatID, user
 		style = "long"
 	}
 
-	if err := a.store.UpsertTechFact(ctx, &domain.TechFact{
+	if err := a.upsert(ctx, &domain.TechFact{
 		ChatID:     chatID,
 		UserID:     userID,
 		Category:   "style",
@@ -103,4 +104,24 @@ func (a *TechFactAnalyzer) detectMessageLength(ctx context.Context, chatID, user
 	}); err != nil {
 		a.logger.Debug("failed to upsert message length tech fact", zap.Error(err))
 	}
+}
+
+// Each derived write obeys the active turn's deletion lifetime as well as a
+// fresh durable tombstone. SQLite provides the final transaction fence.
+func (a *TechFactAnalyzer) upsert(ctx context.Context, fact *domain.TechFact) error {
+	if err := conversationContextError(ctx); err != nil {
+		return err
+	}
+	if store, ok := a.store.(conversationAvailability); ok {
+		check, cancel := context.WithTimeout(ctx, time.Second)
+		defer cancel()
+		unavailable, err := store.ConversationUnavailable(check, fact.ChatID)
+		if err != nil {
+			return err
+		}
+		if unavailable {
+			return domain.ErrConversationDeleted
+		}
+	}
+	return a.store.UpsertTechFact(ctx, fact)
 }

@@ -150,6 +150,7 @@ type SearchResult struct {
 type TaskInfo struct {
 	State        string `json:"state"` // todo, done, canceled
 	ScheduleDate string `json:"scheduleDate,omitempty"`
+	DeadlineDate string `json:"deadlineDate,omitempty"`
 }
 
 // Task represents a Craft task.

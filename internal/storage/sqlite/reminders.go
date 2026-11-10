@@ -5,15 +5,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/uptrace/bun"
+
 	"github.com/iulita-ai/iulita/internal/domain"
 )
 
 func (s *Store) CreateReminder(ctx context.Context, r *domain.Reminder) error {
-	_, err := s.db.NewInsert().Model(r).Exec(ctx)
-	if err != nil {
-		return fmt.Errorf("inserting reminder: %w", err)
-	}
-	return nil
+	return s.withConversationWrite(ctx, r.ChatID, func(db bun.IDB) error { _, e := db.NewInsert().Model(r).Exec(ctx); return e })
 }
 
 func (s *Store) ListReminders(ctx context.Context, chatID string) ([]domain.Reminder, error) {
@@ -62,7 +60,7 @@ func (s *Store) MarkReminderFired(ctx context.Context, id int64) error {
 	_, err := s.db.NewUpdate().
 		Model((*domain.Reminder)(nil)).
 		Set("status = ?", "fired").
-		Where("id = ?", id).
+		Where("id = ? AND status IN (?, ?)", id, "pending", "firing").
 		Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("marking reminder fired: %w", err)

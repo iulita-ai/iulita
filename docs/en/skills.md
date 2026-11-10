@@ -173,6 +173,8 @@ Features:
 - Multi-day forecasts with WMO weather code descriptions (translated in 6 languages)
 - Output adapts to channel capabilities (markdown vs plain text)
 
+Telegram adds `/weather CITY DAYS` and `/weather text CITY DAYS` (1–16 days; direct-command default four, Irkutsk without a city). Ordinary tool requests keep their existing default of one day. Illustrated cards preserve all returned days; actual current-model conditions and forecast-only fallback data remain distinct. Missing values are not replaced with zero or a sunny condition. Disabling the weather skill disables the slash-command fetch too. See [weather cards](telegram.md#weather-cards) and [My day](telegram.md#my-day) for the separate task-provider overview/actions.
+
 ### Geolocation
 
 | Tool | Input | Description |

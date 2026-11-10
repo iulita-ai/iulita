@@ -197,3 +197,8 @@ runs Iulita locally; it is not the new remote CLI. Remote mobile, CLI and servic
 integrations use [a separate OAuth/gRPC API](mobile-api.md), available from v0.48.0
 and disabled by default. `mobile-init`, `mobile-rotate` and `mobile-client` are
 operator commands, not an Android application or interactive remote chat client.
+
+
+## Telegram quick start
+
+See the [Telegram guide](telegram.md) for BotFather topic setup, `/day`, `/weather`, aliases, private actions and upgrade defaults. A normal root message starts a topic; `/topic` lists known topics. New Bot API 10.4 features require a build containing the unreleased changes.

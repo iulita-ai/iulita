@@ -32,7 +32,7 @@ var (
 // coordinates and enforces the per-chat hourly budget. Budget slots are
 // consumed on attempt, not success (fail-safe over-count). Implements the
 // telegram half of channel.LocationSender via channelmgr routing.
-func (c *Channel) SendLocation(chatID int64, loc channel.OutboundLocation) (int, error) {
+func (c *Channel) SendLocation(chatID int64, loc channel.OutboundLocation, threadID ...int) (int, error) {
 	if err := channel.ValidateCoords(loc.Latitude, loc.Longitude); err != nil {
 		return 0, err
 	}
@@ -41,6 +41,7 @@ func (c *Channel) SendLocation(chatID int64, loc channel.OutboundLocation) (int,
 	}
 	msg, err := c.bot.SendLocation(context.Background(), &bot.SendLocationParams{
 		ChatID:             chatID,
+		MessageThreadID:    firstThread(threadID),
 		Latitude:           round6(loc.Latitude),
 		Longitude:          round6(loc.Longitude),
 		HorizontalAccuracy: channel.ClampAccuracy(loc.Accuracy),
@@ -56,7 +57,7 @@ func (c *Channel) SendLocation(chatID int64, loc channel.OutboundLocation) (int,
 }
 
 // SendVenue sends a native venue card through the same chokepoint.
-func (c *Channel) SendVenue(chatID int64, v channel.OutboundVenue) (int, error) {
+func (c *Channel) SendVenue(chatID int64, v channel.OutboundVenue, threadID ...int) (int, error) {
 	if err := channel.ValidateCoords(v.Location.Latitude, v.Location.Longitude); err != nil {
 		return 0, err
 	}
@@ -71,6 +72,7 @@ func (c *Channel) SendVenue(chatID int64, v channel.OutboundVenue) (int, error) 
 		return 0, err
 	}
 	p := venueParams(chatID, v)
+	p.MessageThreadID = firstThread(threadID)
 	msg, err := c.bot.SendVenue(context.Background(), p)
 	if err != nil {
 		return 0, fmt.Errorf("sending venue: %w", sanitizeTGError(err))
@@ -121,3 +123,10 @@ func venueParams(chatID int64, v channel.OutboundVenue) *bot.SendVenueParams {
 // (The old tgbotapi AddNonZeroFloat zero-omission workaround is gone: this
 // library serializes 0.0 coordinates correctly.)
 func round6(v float64) float64 { return math.Round(v*1e6) / 1e6 }
+
+func firstThread(ids []int) int {
+	if len(ids) > 0 {
+		return ids[0]
+	}
+	return 0
+}

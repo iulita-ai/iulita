@@ -67,7 +67,7 @@ En plus du flux « remember » par chat, les utilisateurs peuvent mettre en sign
 
 ### Fonctionnement
 
-1. **Telegram** : un bouton 💾 de clavier en ligne apparait sous chaque reponse de l'assistant (y compris les messages multi-morceaux)
+1. **Telegram** : les réponses non sensibles éligibles peuvent proposer 💾 ; toutes les réponses et cartes ne le proposent pas.
 2. **WebChat** : une icone 💾 apparait au survol des messages de l'assistant
 3. Un clic sur le bouton sauvegarde **immediatement** la reponse complete comme fait avec `source_type="bookmark"`
 4. Une tache de planificateur en arriere-plan (`bookmark.refine`) envoie le contenu a un LLM pour resume
@@ -308,3 +308,8 @@ Analyse le Markdown, cree de nouveaux faits (les IDs originaux sont ignores — 
 | `skills.insights.quality_threshold` | 0 | Score de qualite minimum (0 = tout accepter) |
 | `embedding.model` | `KnightsAnalytics/all-MiniLM-L6-v2` | Nom du modele ONNX |
 | `embedding.enabled` | true | Activer les embeddings ONNX |
+
+
+## Telegram : mise à jour du code
+
+Les changements Telegram non encore publiés sont décrits dans le [guide complet en anglais](../en/telegram.md) : sujets et contexte, `/day`, météo, actions privées, alias et limites production/serveur de test. Les nouvelles cartes proposent EN/RU ; les autres langues utilisent le repli anglais.

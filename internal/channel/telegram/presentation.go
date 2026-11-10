@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -31,17 +32,24 @@ func verbatimParams(chatID int64, text string, replyTo int, receiverUserID int64
 	return params
 }
 
-func (c *Channel) sendVerbatimResponse(ctx context.Context, chatID int64, text string, replyTo int, receiverUserID int64) {
+func (c *Channel) sendVerbatimResponse(ctx context.Context, chatID int64, text string, replyTo int, receiverUserID int64, threadID ...int) error {
+	if receiverUserID < 0 {
+		return fmt.Errorf("invalid private recipient")
+	}
 	for _, params := range verbatimParams(chatID, text, replyTo, receiverUserID) {
+		if len(threadID) > 0 {
+			params.MessageThreadID = threadID[0]
+		}
 		message, err := c.bot.SendMessage(ctx, params)
 		if err != nil {
 			// Do not expose provider errors or retry a sensitive response as a
 			// public message when ephemeral delivery fails.
 			c.logger.Error("failed to deliver literal response", zap.Int64("chat_id", chatID))
-			return
+			return fmt.Errorf("literal delivery failed")
 		}
-		if c.sentMsgs != nil {
-			c.sentMsgs.record(chatID, message.ID, params.Text)
+		if c.sentMsgs != nil && receiverUserID == 0 {
+			c.sentMsgs.record(chatID, message.ID, params.Text, threadID...)
 		}
 	}
+	return nil
 }

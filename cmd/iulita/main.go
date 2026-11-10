@@ -30,6 +30,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/cost"
 	"github.com/iulita-ai/iulita/internal/credential"
 	"github.com/iulita-ai/iulita/internal/dashboard"
+	"github.com/iulita-ai/iulita/internal/dayview"
 	"github.com/iulita-ai/iulita/internal/doctor"
 	"github.com/iulita-ai/iulita/internal/domain"
 	"github.com/iulita-ai/iulita/internal/eventbus"
@@ -384,6 +385,10 @@ func main() {
 		if f, convErr := strconv.ParseFloat(v, 64); convErr == nil {
 			cfg.Skills.Memory.VectorWeight = f
 		}
+	}
+
+	if telegramErr := config.ApplyTelegramDayOverrides(&cfg.Telegram, cfgStore.GetEffective); telegramErr != nil {
+		logger.Fatal("invalid Telegram feature configuration", zap.Error(telegramErr))
 	}
 
 	// Mobile flags are restart-only and never reuse dashboard auth readiness.
@@ -963,7 +968,8 @@ func main() {
 	if err != nil {
 		logger.Warn("failed to load weather manifest", zap.Error(err))
 	}
-	registry.RegisterWithManifest(weather.New(store, registry, httpClient), weatherManifest)
+	weatherSkill := weather.New(store, registry, httpClient)
+	registry.RegisterWithManifest(weatherSkill, weatherManifest)
 
 	registry.Register(reminders.New(store))
 	registry.Register(directives.New(store))
@@ -1744,21 +1750,22 @@ func main() {
 	}
 
 	mgr := channelmgr.New(channelmgr.Config{
-		Store:                store,
-		CfgStore:             cfgStore,
-		CredentialResolver:   credStore,
-		HTTPClient:           tgHTTPClient,
-		UserResolver:         userResolver,
-		ClearFn:              store.ClearHistory,
-		ConfigToken:          effectiveTelegramToken(cfgStore, cfg.Telegram.Token),
-		ConfigAllowedIDs:     cfg.Telegram.AllowedIDs,
-		ConfigDebounce:       debounceWindow,
-		ConfigRateLimit:      configRateLimit,
-		ConfigRateWindow:     configRateWindow,
-		ConfigDraftStreaming: cfg.Telegram.DraftStreaming,
-		Transcriber:          transcriber,
-		Bus:                  bus,
-		Logger:               logger,
+		Store:                 store,
+		CfgStore:              cfgStore,
+		CredentialResolver:    credStore,
+		HTTPClient:            tgHTTPClient,
+		UserResolver:          userResolver,
+		ClearFn:               asst.ClearConversation,
+		ConfigToken:           effectiveTelegramToken(cfgStore, cfg.Telegram.Token),
+		ConfigAllowedIDs:      cfg.Telegram.AllowedIDs,
+		ConfigDebounce:        debounceWindow,
+		ConfigRateLimit:       configRateLimit,
+		ConfigRateWindow:      configRateWindow,
+		ConfigTestEnvironment: cfg.Telegram.TestEnvironment,
+		ConfigDraftStreaming:  cfg.Telegram.DraftStreaming,
+		Transcriber:           transcriber,
+		Bus:                   bus,
+		Logger:                logger,
 	})
 
 	// Subscribe channelmgr to credential changes for hot-reload.
@@ -1928,7 +1935,29 @@ func main() {
 	}
 
 	// Register chat commands on each channel instance as it starts.
+	if err := store.EnsureDaySchema(ctx); err != nil {
+		logger.Fatal("Telegram day schema initialization failed", zap.Error(err))
+	}
+	dayEnabled := func(name string) func() bool { return func() bool { _, ok := registry.Get(name); return ok } }
 	mgr.SetCommandRegistrar(func(tg *telegram.Channel) {
+		tg.SetWeatherController(&telegram.WeatherController{Fetch: weatherSkill.ForecastCard, Enabled: dayEnabled("weather"), Widgets: cfg.Telegram.DayWidgets})
+		tg.SetCompactFunc(asst.CompactContext)
+		tg.SetTopicDeletionFunc(asst.CancelConversation)
+		tg.SetInlineWidgetTestMode(tg.IsTestEnvironment())
+		if cfg.Telegram.DayWidgets {
+			tg.SetDayController(&telegram.DayController{Store: store, Actions: cfg.Telegram.DayActions, Service: func(conversation string) *dayview.Service {
+				return &dayview.Service{Sources: []dayview.Source{
+					todoist.DaySource{Skill: todoistSkill, Enabled: dayEnabled("todoist")},
+					googleskill.DayTasks{Client: googleClient, Enabled: dayEnabled("google_tasks")},
+					craft.DaySource{Client: craftClient, Enabled: dayEnabled("craft_tasks")},
+					googleskill.DayCalendar{Client: googleClient, Enabled: dayEnabled("google_calendar")},
+					sqlite.ReminderDaySource{Store: store, Chat: conversation},
+					sqlite.DayJobs{Store: store, Chat: conversation},
+					sqlite.DayOperations{Store: store, Chat: conversation},
+				}}
+			}})
+		}
+
 		tg.RegisterCommand("/usage", "Show token usage for this session", func(ctx context.Context, chatID string) string {
 			in, out, reqs := asst.SessionStats()
 			return fmt.Sprintf("Session usage:\nRequests: %d\nInput tokens: %d\nOutput tokens: %d\nTotal tokens: %d",
@@ -1951,7 +1980,7 @@ func main() {
 			for _, s := range registry.EnabledSkills() {
 				names = append(names, s.Name())
 			}
-			return "Available commands:\n/clear — Clear conversation history\n/usage — Show token usage\n/status — Show memory stats\n/version — Show bot version\n/help — Show this message\n\nSkills: " + strings.Join(names, ", ")
+			return "Available commands:\n/day — My day (use /day text for text mode)\n/topic — List topics; a root message starts a new topic\n/clear — Clear the current topic context\n/compact — Compact the current topic context and show its size\n/usage — Show token usage\n/status — Show memory stats\n/version — Show bot version\n/help — Show this message\n\nSkills: " + strings.Join(names, ", ")
 		})
 		tg.RegisterCommand("/version", "Show bot version", func(_ context.Context, _ string) string {
 			return "iulita " + version.String()
@@ -1964,6 +1993,8 @@ func main() {
 
 	// Background services tracked by WaitGroup for graceful shutdown.
 	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() { defer wg.Done(); store.RunDayMaintenance(ctx) }()
 
 	var mobileService *mobileruntime.Runtime
 	if cfg.Mobile.ChatEnabled || cfg.Mobile.DeviceEnabled {

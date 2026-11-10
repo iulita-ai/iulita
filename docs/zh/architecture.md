@@ -127,7 +127,7 @@ UserResolver（仅 Telegram/Console）
     │ 发送 "processing" 状态事件
     ▼
 助手 — 阶段 3：历史与压缩
-    │ 加载最近 50 条消息
+    │ 已验证私有话题的完整历史；其他通道使用受限历史
     │ 如果令牌数 > 上下文窗口的 80% → 压缩较旧的一半
     ▼
 助手 — 阶段 4：上下文数据
@@ -324,3 +324,10 @@ ui/                      # Vue 3 + Naive UI + UnoCSS 前端
 skills/                  # 文本技能文件（Markdown）
 docs/                    # 文档
 ```
+
+
+## Telegram 源代码更新
+
+尚未发布的 Telegram 功能见[英文完整指南](../en/telegram.md)：话题与上下文、`/day`、天气卡片、私密操作、附加用户名及生产/测试服务器限制。新卡片提供 EN/RU 文案；其他语言使用英文回退。
+
+`telegram.day_widgets` 和 `telegram.day_actions` 默认启用，旧配置缺少这些键时升级后也启用；显式 false 保留。它们是全局设置，修改后需要重启；环境变量为 `IULITA_TELEGRAM_DAY_WIDGETS` / `IULITA_TELEGRAM_DAY_ACTIONS`。aliases、preferred_username 和 test_environment 详见英文指南。

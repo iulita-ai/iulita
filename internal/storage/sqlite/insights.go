@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/uptrace/bun"
+
 	"github.com/iulita-ai/iulita/internal/domain"
 )
 
@@ -15,20 +17,24 @@ func (s *Store) SaveInsight(ctx context.Context, d *domain.Insight) error {
 	if d.CreatedAt.IsZero() {
 		d.CreatedAt = time.Now()
 	}
-	_, err := s.db.NewInsert().Model(d).Exec(ctx)
+	err := s.withConversationWrite(ctx, d.ChatID, func(db bun.IDB) error { _, e := db.NewInsert().Model(d).Exec(ctx); return e })
 	if err != nil {
 		return fmt.Errorf("inserting insight: %w", err)
 	}
 
 	// Auto-embed in background if embedding is configured.
 	if s.embedFunc != nil && d.ID > 0 {
-		go func(id int64, content string) {
-			bgCtx := context.Background()
+		go func(parentCtx context.Context, id int64, content, chat string) {
+			bgCtx, cancelEmbedding := context.WithTimeout(context.WithoutCancel(parentCtx), 30*time.Second)
+			defer cancelEmbedding()
+			if e := conversationAvailable(bgCtx, s.db, chat); e != nil {
+				return
+			}
 			vecs, err := s.embedFunc(bgCtx, []string{content})
 			if err == nil && len(vecs) > 0 {
 				s.SaveInsightVector(bgCtx, id, vecs[0])
 			}
-		}(d.ID, d.Content)
+		}(ctx, d.ID, d.Content, d.ChatID)
 	}
 
 	return nil

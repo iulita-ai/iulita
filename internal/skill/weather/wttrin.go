@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strconv"
 	"time"
+
+	"github.com/iulita-ai/iulita/internal/domain"
 )
 
 const wttrInURL = "https://wttr.in/"
@@ -72,26 +74,43 @@ func (b *WttrInBackend) Fetch(ctx context.Context, location string, days int) (*
 		}
 	}
 
-	result := &WeatherResult{Location: resolvedLocation}
+	result := &WeatherResult{Location: displayLocation(location, resolvedLocation), Source: "wttr.in", RetrievedAt: time.Now().UTC()}
 	for i, w := range data.Weather {
 		if i >= days {
 			break
 		}
-		date, _ := time.Parse("2006-01-02", w.Date)
-		forecast := DayForecast{
-			Date:     date,
-			TempMaxC: parseFloat(w.MaxTempC),
-			TempMinC: parseFloat(w.MinTempC),
-			UVIndex:  parseFloat(w.UVIndex),
+		if !validDate(w.Date) {
+			continue
 		}
+		d := domain.WeatherDay{Date: w.Date, TempMaxC: stringMetric(w.MaxTempC, -150, 100), TempMinC: stringMetric(w.MinTempC, -150, 100), UVIndexMax: nil, Condition: domain.WeatherUnknown}
+		description := "Conditions unavailable"
 		if len(w.Hourly) > 0 {
-			h := w.Hourly[len(w.Hourly)/2] // mid-day hourly entry
-			forecast.Description = firstValue(h.WeatherDesc)
-			forecast.WindKph = parseFloat(h.WindSpeedKmph)
-			forecast.PrecipMM = parseFloat(h.PrecipMM)
-			forecast.Humidity = parseInt(h.Humidity)
+			h := w.Hourly[len(w.Hourly)/2]
+			d.Condition = wttrCondition(h.WeatherCode)
+			// Midday samples are not authoritative daily sums/maxima or current data.
+			// Only min/max temperature and the known forecast condition enter the card.
+			if d.Condition != domain.WeatherUnknown {
+				description = safeDescription(firstValue(h.WeatherDesc), d.Condition)
+			}
 		}
-		result.Days = append(result.Days, forecast)
+		validateBounds(&d)
+		legacy := legacyDay(d, description)
+		sample := &ForecastSample{Kind: "Midday forecast sample", UVIndex: stringMetric(w.UVIndex, 0, 100)}
+		if len(w.Hourly) > 0 {
+			h := w.Hourly[len(w.Hourly)/2]
+			sample.WindKph = stringMetric(h.WindSpeedKmph, 0, 500)
+			sample.PrecipitationMM = stringMetric(h.PrecipMM, 0, 10000)
+			if n, e := strconv.Atoi(h.Humidity); e == nil && n >= 0 && n <= 100 {
+				sample.HumidityPercent = value(n)
+			}
+		}
+		legacy.Sample = sample
+		// Preserve the legacy model's supplied daily UV and midday samples, with
+		// explicit sample labels in the formatter; never promote them into Current.
+		if uv := stringMetric(w.UVIndex, 0, 100); uv != nil {
+			legacy.UVIndex = *uv
+		}
+		result.Days = append(result.Days, legacy)
 	}
 
 	if len(result.Days) == 0 {
@@ -115,6 +134,7 @@ type wttrWeather struct {
 }
 
 type wttrHourly struct {
+	WeatherCode   string      `json:"weatherCode"`
 	WeatherDesc   []wttrValue `json:"weatherDesc"`
 	WindSpeedKmph string      `json:"windspeedKmph"`
 	PrecipMM      string      `json:"precipMM"`

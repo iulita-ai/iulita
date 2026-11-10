@@ -197,3 +197,8 @@ iulita
 CLI и service используют [отдельный OAuth/gRPC API](mobile-api.md), доступный с v0.48.0
 и выключенный по умолчанию. `mobile-init`, `mobile-rotate`,
 `mobile-client` — команды оператора, а не Android-приложение или удалённый чат.
+
+
+## Быстрый старт Telegram
+
+См. [руководство Telegram](telegram.md): темы BotFather, `/day`, `/weather`, username, личные действия и значения после обновления. Обычное сообщение общего чата начинает тему, `/topic` выводит список. Функции Bot API 10.4 требуют сборки с соответствующими unreleased-изменениями.

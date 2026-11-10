@@ -119,9 +119,15 @@ Approval words are defined in all 6 language catalogs and include English as fal
 
 ## Telegram Security
 
-- **User whitelist**: `telegram.allowed_ids` restricts who can chat with the bot
-- **Empty whitelist**: allows all users (warning logged)
-- **Rate limiting**: per-chat sliding window rate limiter
+- `telegram.allowed_ids` restricts bot users; an empty list permits all and logs a warning. Rate limiting is per chat.
+- Ordinary shared-chat messages cannot read personal memory or run personal tools. A group personal-preview callback responds only to its actor, without a regular-message fallback of private content.
+- Responses are buffered until final privacy classification; unchecked partial replies are not streamed. Detected credentials/payment details use recipient-specific ephemeral delivery without bookmark/copy controls. Failure yields only a neutral error, not a public fallback containing the original text.
+- Card requests and mutations check the captured actor, owner, instance, chat/topic/message and revision. Mutations require an exact, expiring confirmation. An uncertain result does not authorize an automatic retry.
+- Incoming payment entities and best-effort card/TON/secret text detection are redacted before supported model/history/bookmark paths. OCR, binary content and obfuscation are not comprehensively covered. Rich quote positions must match the source in the same chat/topic; model HTML never becomes executable widget HTML.
+- Delete cleanup is scoped to a confirmed owned topic and its bound local work, preserving external tasks and account-wide explicitly saved facts. A legacy unpinned bot route requires explicit owner binding before automatic cleanup. Unknown errors during automatic deletion detection do not authorize cleanup. An explicitly confirmed delete has already committed local cleanup before attempting native deletion, even if that native result is unknown. Manual deletion detection is eventual, not guaranteed immediate.
+- Additional usernames are verified against numeric bot identity. They are links/command aliases, not independent credentials or account-migration authority.
+
+See [Telegram privacy](telegram.md#privacy-and-publication), [deletion scope](telegram.md#pause-and-delete-have-different-effects) and [platform availability](telegram.md#telegram-capabilities-and-availability).
 
 ## Shell Exec Security
 

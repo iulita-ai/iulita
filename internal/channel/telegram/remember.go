@@ -4,11 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
-	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/go-telegram/bot"
@@ -35,6 +32,7 @@ type rememberEntry struct {
 type rememberState struct {
 	mu      sync.Mutex
 	entries map[string]*rememberEntry // callbackData → entry
+	blocked map[string]bool
 }
 
 func newRememberState() *rememberState {
@@ -45,18 +43,27 @@ func newRememberState() *rememberState {
 
 func (rs *rememberState) store(key string, entry *rememberEntry) {
 	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	if rs.blocked[entry.chatID] {
+		return
+	}
 	rs.entries[key] = entry
-	rs.mu.Unlock()
 }
 
-func (rs *rememberState) take(key string) (*rememberEntry, bool) {
+// takeBound validates the actor and original message before consuming a button.
+func (rs *rememberState) takeBound(key string, cq *models.CallbackQuery) (*rememberEntry, bool) {
 	rs.mu.Lock()
+	defer rs.mu.Unlock()
 	e, ok := rs.entries[key]
-	if ok {
-		delete(rs.entries, key)
+	if !ok || cq.Message.Message == nil {
+		return nil, false
 	}
-	rs.mu.Unlock()
-	return e, ok
+	m := cq.Message.Message
+	if e.tgUserID == 0 || e.tgUserID != cq.From.ID || e.tgChatID != m.Chat.ID || e.msgID != m.ID || time.Since(e.createdAt) > 30*time.Minute {
+		return nil, false
+	}
+	delete(rs.entries, key)
+	return e, true
 }
 
 // startCleanup removes stale entries every 5 minutes.
@@ -99,13 +106,13 @@ func (c *Channel) HandleRememberCallback(cq *models.CallbackQuery) bool {
 		return false
 	}
 
-	entry, ok := c.remembers.take(cq.Data)
+	entry, ok := c.remembers.takeBound(cq.Data, cq)
 	if !ok {
 		// Already handled or expired.
 		tag := i18n.ResolveLocale("", "en")
 		_, _ = c.bot.AnswerCallbackQuery(context.Background(), &bot.AnswerCallbackQueryParams{ //nolint:errcheck // ack only
 			CallbackQueryID: cq.ID,
-			Text:            i18n.Tl(tag, "BookmarkAlreadySaved"),
+			Text:            i18n.Tl(tag, "TelegramBookmarkUnavailable"),
 		})
 		return true
 	}
@@ -172,6 +179,10 @@ func (c *Channel) HandleRememberCallback(cq *models.CallbackQuery) bool {
 // sendResponseWithBookmark sends a response with a 💾 bookmark button on the last chunk.
 // fullText is the complete response (all chunks) saved as the bookmark content.
 func (c *Channel) sendResponseWithBookmark(chatID int64, text string, replyTo int, chatIDStr, userID, locale string) {
+	target, err := c.resolveTarget(context.Background(), chatIDStr)
+	if err != nil {
+		return
+	}
 	// fullContent keeps the original Markdown (bookmark saves raw assistant output);
 	// only the displayed chunks are converted to Telegram's HTML dialect.
 	chunks := telegramHTMLChunks(text)
@@ -184,7 +195,7 @@ func (c *Channel) sendResponseWithBookmark(chatID int64, text string, replyTo in
 			// Last chunk: attach the bookmark + copy buttons.
 			c.sendSingleMessageWithBookmark(chatID, chunk, rt, text, chatIDStr, userID, locale)
 		} else {
-			_, _ = c.sendHTML(chatID, chunk, rt, nil, "") //nolint:errcheck // sendHTML logs failures
+			_, _ = c.sendHTML(chatID, chunk, rt, nil, "", target.ThreadID) //nolint:errcheck // sendHTML logs failures
 		}
 	}
 }
@@ -192,6 +203,10 @@ func (c *Channel) sendResponseWithBookmark(chatID int64, text string, replyTo in
 // sendSingleMessageWithBookmark sends a message with inline 💾 remember and
 // 📋 copy buttons (the copy button carries the full response, Bot API 7.11).
 func (c *Channel) sendSingleMessageWithBookmark(chatID int64, text string, replyTo int, fullContent, chatIDStr, userID, locale string) {
+	target, err := c.resolveTarget(context.Background(), chatIDStr)
+	if err != nil {
+		return
+	}
 	nonce := generateNonce()
 	cbData := "remember:" + nonce
 
@@ -203,14 +218,14 @@ func (c *Channel) sendSingleMessageWithBookmark(chatID int64, text string, reply
 		fullContent,
 	)
 
-	msgID, err := c.sendHTML(chatID, text, replyTo, markup, "")
+	msgID, err := c.sendHTML(chatID, text, replyTo, markup, "", target.ThreadID)
 	if err != nil {
 		return
 	}
 
 	c.remembers.store(cbData, &rememberEntry{
 		tgChatID:  chatID,
-		tgUserID:  chatID, // in DM, chatID == userID; in groups, still the recipient
+		tgUserID:  c.bookmarkActor(chatIDStr, chatID),
 		msgID:     msgID,
 		content:   fullContent,
 		chatID:    chatIDStr,
@@ -221,139 +236,8 @@ func (c *Channel) sendSingleMessageWithBookmark(chatID int64, text string, reply
 }
 
 // StartStreamWithBookmark implements channel.BookmarkStreamingSender.
-func (c *Channel) StartStreamWithBookmark(ctx context.Context, chatID string, replyTo int, userID string) (func(string), func(string), error) { //nolint:gocritic // naming return values reduces readability here
-	tgChatID, err := strconv.ParseInt(chatID, 10, 64)
-	if err != nil {
-		return nil, nil, fmt.Errorf("invalid chat ID: %w", err)
-	}
-
-	var msgID int
-	// Experimental draft streaming (see StartStream); degrades transparently.
-	draftID := ""
-	if c.draftStreaming {
-		draftID = "draft-" + generateNonce()
-	}
-
-	if draftID == "" {
-		// Reuse the status message if it was consumed by stream_start AND the task was quick.
-		if entry, ok := c.statusMsgs.get(chatID); ok && entry.isConsumed() && !entry.isLongTask() {
-			msgID = entry.getMsgID()
-			c.statusMsgs.remove(chatID)
-			_, _ = c.bot.EditMessageText(context.Background(), &bot.EditMessageTextParams{ //nolint:errcheck // best-effort placeholder
-				ChatID:    tgChatID,
-				MessageID: msgID,
-				Text:      "...",
-			})
-		} else {
-			if entry, ok := c.statusMsgs.get(chatID); ok && entry.isConsumed() {
-				c.finalizeStatusMessage(chatID, entry)
-			}
-			p := &bot.SendMessageParams{ChatID: tgChatID, Text: "..."}
-			if replyTo > 0 {
-				p.ReplyParameters = &models.ReplyParameters{MessageID: replyTo}
-			}
-			sent, sendErr := c.bot.SendMessage(context.Background(), p)
-			if sendErr != nil {
-				return nil, nil, fmt.Errorf("sending initial stream message: %w", sendErr)
-			}
-			msgID = sent.ID
-		}
-	}
-
-	var lastEditNs atomic.Int64
-	var done atomic.Bool
-
-	// Resolve locale from context for button label.
-	locale := ""
-	if tag := i18n.LocaleFrom(ctx); tag.String() != "und" {
-		locale = tag.String()
-	}
-
-	// bookmarkMarkup builds the 💾(+📋) keyboard and registers the remember entry.
-	bookmarkMarkup := func(text string) models.ReplyMarkup {
-		if c.rememberSvc == nil {
-			return nil
-		}
-		nonce := generateNonce()
-		cbData := "remember:" + nonce
-
-		tag := i18n.ResolveLocale(locale, "en")
-		markup := bookmarkKeyboard(
-			i18n.Tl(tag, "BookmarkButton"),
-			i18n.Tl(tag, "CopyButton"),
-			cbData,
-			text,
-		)
-
-		c.remembers.store(cbData, &rememberEntry{
-			tgChatID:  tgChatID,
-			tgUserID:  tgChatID, // in DM, chatID == userID
-			msgID:     msgID,
-			content:   text,
-			chatID:    chatID,
-			userID:    userID,
-			locale:    locale,
-			createdAt: time.Now(),
-		})
-		return markup
-	}
-
-	editFn := func(text string) {
-		if done.Load() {
-			return
-		}
-		now := time.Now().UnixNano()
-		if time.Duration(now-lastEditNs.Load()) < 1500*time.Millisecond {
-			return // coalesce edits
-		}
-		if draftID != "" {
-			if _, derr := c.bot.SendMessageDraft(context.Background(), &bot.SendMessageDraftParams{
-				ChatID:  tgChatID,
-				DraftID: draftID,
-				Text:    text,
-			}); derr == nil {
-				lastEditNs.Store(time.Now().UnixNano())
-				return
-			} else {
-				c.logger.Debug("draft streaming failed, falling back to placeholder edits", zap.Error(derr))
-				draftID = ""
-				if sent, sendErr := c.bot.SendMessage(context.Background(), &bot.SendMessageParams{ChatID: tgChatID, Text: "..."}); sendErr == nil {
-					msgID = sent.ID
-				}
-			}
-		}
-		if msgID == 0 {
-			return
-		}
-		if _, eerr := c.bot.EditMessageText(context.Background(), &bot.EditMessageTextParams{
-			ChatID:    tgChatID,
-			MessageID: msgID,
-			Text:      text,
-		}); eerr != nil {
-			c.logger.Debug("stream edit failed", zap.Error(eerr))
-		}
-		lastEditNs.Store(time.Now().UnixNano())
-	}
-
-	doneFn := func(text string) {
-		done.Store(true)
-		markup := bookmarkMarkup(text)
-
-		if draftID != "" {
-			// Final message replaces the draft bubble.
-			if _, err := c.sendHTML(tgChatID, toTelegramHTML(text), replyTo, markup, ""); err == nil {
-				c.sentMsgs.record(tgChatID, msgID, text)
-			}
-			return
-		}
-		if msgID == 0 {
-			return
-		}
-		c.editHTML(tgChatID, msgID, toTelegramHTML(text), markup)
-		c.sentMsgs.record(tgChatID, msgID, text)
-	}
-
-	return editFn, doneFn, nil
+func (c *Channel) StartStreamWithBookmark(ctx context.Context, chatID string, replyTo int, userID string) (editFn, doneFn func(string), err error) {
+	return c.bufferedStream(ctx, chatID, replyTo, userID)
 }
 
 // generateNonce creates a short random hex string for callback data.
@@ -361,4 +245,15 @@ func generateNonce() string {
 	b := make([]byte, 6)
 	rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+// bookmarkActor never substitutes a group ID for the initiating user.
+func (c *Channel) bookmarkActor(conversationID string, chatID int64) int64 {
+	if actor := c.turnSender(conversationID); actor != 0 {
+		return actor
+	}
+	if chatID > 0 {
+		return chatID
+	}
+	return 0
 }

@@ -233,3 +233,8 @@ L'interface `Repository` dans `internal/storage/storage.go` possede plus de 60 m
 | Agent Jobs | CRUD, GetDue |
 | Google | Account CRUD, stockage de jetons |
 | Competences externes | Install, List, Get, Delete |
+
+
+## Telegram : mise à jour du code
+
+Les changements Telegram non encore publiés sont décrits dans le [guide complet en anglais](../en/telegram.md) : sujets et contexte, `/day`, météo, actions privées, alias et limites production/serveur de test. Les nouvelles cartes proposent EN/RU ; les autres langues utilisent le repli anglais.

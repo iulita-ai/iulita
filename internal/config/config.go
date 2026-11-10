@@ -222,6 +222,12 @@ type ProxyConfig struct {
 }
 
 type TelegramConfig struct {
+	Aliases           []string `koanf:"aliases"`
+	PreferredUsername string   `koanf:"preferred_username"`
+	TestEnvironment   bool     `koanf:"test_environment"` // isolated Telegram test server; requires dedicated test credentials
+	DayWidgets        bool     `koanf:"day_widgets"`      // default on; explicit false disables cards
+	DayActions        bool     `koanf:"day_actions"`      // default on; writes still require owner checks and confirmation
+
 	Token          string  `koanf:"token"`
 	AllowedIDs     []int64 `koanf:"allowed_ids"`
 	DebounceWindow string  `koanf:"debounce_window"` // Go duration, e.g. "1.5s". 0 = disabled.
@@ -499,6 +505,17 @@ func Load(path string, paths *Paths) (*Config, *koanf.Koanf, bool, error) {
 
 	// Layer 3: environment variables
 	if err := k.Load(env.Provider("IULITA_", ".", func(s string) string {
+		// Preserve Telegram feature leaf names for explicit environment opt-outs.
+		switch s {
+		case "IULITA_TELEGRAM_PREFERRED_USERNAME":
+			return "telegram.preferred_username"
+		case "IULITA_TELEGRAM_TEST_ENVIRONMENT":
+			return "telegram.test_environment"
+		case "IULITA_TELEGRAM_DAY_WIDGETS":
+			return "telegram.day_widgets"
+		case "IULITA_TELEGRAM_DAY_ACTIONS":
+			return "telegram.day_actions"
+		}
 		// Native backend and infrastructure leaves contain underscores. Preserve their complete koanf key;
 		// the legacy underscore-to-dot mapping otherwise produces chat.enabled.
 		if key, ok := mobileEnvironmentKey(s); ok {
@@ -660,6 +677,15 @@ func structToMap(cfg *Config) map[string]interface{} {
 	m["embedding.model_dir"] = cfg.Embedding.ModelDir
 
 	// Telegram
+	if len(cfg.Telegram.Aliases) > 0 {
+		m["telegram.aliases"] = cfg.Telegram.Aliases
+	}
+	if cfg.Telegram.PreferredUsername != "" {
+		m["telegram.preferred_username"] = cfg.Telegram.PreferredUsername
+	}
+	m["telegram.test_environment"] = cfg.Telegram.TestEnvironment
+	m["telegram.day_widgets"] = cfg.Telegram.DayWidgets
+	m["telegram.day_actions"] = cfg.Telegram.DayActions
 	m["telegram.debounce_window"] = cfg.Telegram.DebounceWindow
 	m["telegram.rate_window"] = cfg.Telegram.RateWindow
 

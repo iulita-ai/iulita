@@ -412,3 +412,15 @@ other = "I have not verified the requested MCP operation in this turn. A connect
 
 [MCPPrivateExecution]
 other = "The MCP operation completed successfully. Its result is private and was not provided to the model; view it in MCP settings. Execution:"
+
+[TelegramPromptOther]
+other = "Enter manually"
+
+[TelegramPromptTypeAnswer]
+other = "Type your answer:"
+
+[TelegramBookmarkUnavailable]
+other = "This button is unavailable. Open a new response."
+
+[TelegramPromptCancel]
+other = "Cancel"

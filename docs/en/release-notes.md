@@ -1,23 +1,44 @@
 # Release guide
 
-This guide summarizes the public releases from v0.38.0 through v0.51.0. Follow the linked release for its
+This guide summarizes the public releases from v0.38.0 through v0.55.3. Follow the linked release for its
 exact changelog. A source feature is not automatically available in an older
 container or binary.
 
 
 
-## Unreleased: remote MCP client
+## Unreleased: Telegram topics and Bot API 10.4 cards
 
-Owner-managed remote HTTPS MCP connections add reviewed tools, resources and
-prompts to chat and the dashboard. Exact one-use approvals, encrypted credentials,
-private results and durable execution states protect each operation. Deployment
-configuration controls execution and permitted server origins; proxy-only egress
-rejects private DNS answers and pins destinations.
+Private topic conversations now have full persisted context, explicit `/clear` and `/compact`, committed compression-size notices, confirmed lifecycle operations and scoped cleanup of bound reminders/background work. Day and weather cards share a theme-aware visual system; actions retain exact owner confirmation and durable uncertain-outcome handling. Verified extra usernames, rich quotes, private callback replies and read-only identity checks complete the integration.
 
-Local stdio servers and Podman MCP workers are disabled in the application. SSH
-worker packaging and existing mobile contracts are retained. See the
-[remote MCP guide](./mcp) for configuration, permissions and rollback preparation.
-This section describes source changes and does not announce a published release.
+Day widgets/actions default on when upgrading configs that omit the keys; explicit false remains effective. Ordinary replies are buffered for final privacy classification. Production widgets are private-only; inline/shared/public exports remain test-server-only. See the [Telegram guide](telegram.md) for commands, setup, compatibility limits, deletion scope and English previews. This entry describes source work, not a released tag or deployment.
+
+## v0.55.1–v0.55.3: MCP chat fixes and private attachments
+
+- [v0.55.1](https://github.com/iulita-ai/iulita/releases/tag/v0.55.1) clarifies discovered/allowed MCP catalog counts and whether descriptors were included. It distinguishes server origins from full endpoints; private endpoint details still require an owner detail read.
+- [v0.55.2](https://github.com/iulita-ai/iulita/releases/tag/v0.55.2) grounds MCP chat claims in actual operation results and distinguishes an expired confirmation from a completed request.
+- [v0.55.3](https://github.com/iulita-ai/iulita/releases/tag/v0.55.3) accepts Telegram `.torrent` files as opaque attachments and supports forwarding private current-message attachments through the controlled HTTP path. This does not itself start a torrent download or grant unrestricted file access; see the [HTTP skill](skills.md).
+
+## v0.55.0: remote MCP client
+
+[v0.55.0](https://github.com/iulita-ai/iulita/releases/tag/v0.55.0) publishes owner-managed remote HTTPS MCP connections for chat and the dashboard. Owners review discovered tools, resources and prompts and approve exact one-use requests. Credentials and private results are encrypted and owner-scoped; an uncertain execution is not automatically repeated.
+
+Execution defaults off. Deployment setup must explicitly enable MCP, allow exact HTTPS origins, configure its deployment-owned proxy and provide the public OAuth callback. Local stdio servers and MCP Podman workers remain disabled in the application. Existing SSH behavior/worker packaging and mobile contracts are retained. Back up the database and encryption key before upgrading; see the [remote MCP guide](mcp.md).
+
+## v0.54.0: consent-bound SSH output analysis
+
+[v0.54.0](https://github.com/iulita-ai/iulita/releases/tag/v0.54.0) permits analysis of SSH command output with explicit consent. Command execution and permission to send the output for analysis remain separate decisions.
+
+## v0.53.0–v0.53.2: managed SSH access
+
+[v0.53.0](https://github.com/iulita-ai/iulita/releases/tag/v0.53.0) adds native SSH access, SFTP, runbooks, background jobs and a terminal, with an isolated SSH worker packaged for releases. [v0.53.1](https://github.com/iulita-ai/iulita/releases/tag/v0.53.1) preserves SSH catalog IDs across HTTP requests. [v0.53.2](https://github.com/iulita-ai/iulita/releases/tag/v0.53.2) adds permanent SSH access grants and private command-result delivery. These features do not silently authorize access to a host; configure the connection and review the applicable grants.
+
+## v0.52.0: translation through the managed Z.ai connection
+
+[v0.52.0](https://github.com/iulita-ai/iulita/releases/tag/v0.52.0) adds the `translate` skill using Z.ai Translation Agent and the existing managed Z.ai connection, without an additional API key or provider profile. It is disabled by default in new installations and can be enabled by an administrator in Skills settings. Finished translations are delivered directly in WebChat, Telegram and Slack. Inputs/concurrency are bounded, with a single upstream attempt; unavailable usage/pricing remains unknown rather than invented.
+
+## v0.51.1: PDF log privacy
+
+[v0.51.1](https://github.com/iulita-ai/iulita/releases/tag/v0.51.1) keeps extracted PDF text and document summaries out of INFO logs.
 
 ## v0.51.0: Telegram PDF summaries and saved facts
 
@@ -236,7 +257,7 @@ See [voice input](channels.md#voice-input).
   failure can fall back to a regular message; this is not a guaranteed privacy
   boundary.
 
-See [Channels](channels.md) for current behavior.
+This paragraph records historical v0.43 behavior. The unreleased Telegram update supersedes it: responses are buffered for final privacy classification and sensitive-delivery failure does not publish the original text through an ordinary send. See the [Telegram guide](telegram.md#privacy-and-publication) for current source behavior.
 
 ## v0.39: model profiles and browser sessions
 

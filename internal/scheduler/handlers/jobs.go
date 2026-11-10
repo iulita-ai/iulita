@@ -265,7 +265,7 @@ func ReminderJob(store storage.Repository, logger *zap.Logger) scheduler.JobDefi
 					ReminderID: r.ID,
 					ChatID:     r.ChatID,
 					Title:      r.Title,
-					DueAt:      r.DueAt.Format(time.RFC3339),
+					DueAt:      r.DueAt.Format(time.RFC3339Nano),
 					Timezone:   r.Timezone,
 				})
 				tasks = append(tasks, domain.Task{
@@ -273,7 +273,7 @@ func ReminderJob(store storage.Repository, logger *zap.Logger) scheduler.JobDefi
 					Payload:      string(payload),
 					Capabilities: "telegram,storage",
 					MaxAttempts:  3,
-					UniqueKey:    fmt.Sprintf("reminder.fire:%d", r.ID),
+					UniqueKey:    fmt.Sprintf("reminder.fire:%d:%d", r.ID, r.DueAt.UnixNano()),
 				})
 			}
 			return tasks

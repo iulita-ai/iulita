@@ -276,3 +276,8 @@ WebChat uses `/ws/chat`, validates the current account and derives identity on
 the server. Both validate a supplied Origin and close on access-token expiration.
 The frontend refreshes credentials before reconnecting. The [remote API](mobile-api.md)
 uses separate OAuth and gRPC, not these dashboard sessions.
+
+
+## Open an owned Telegram topic
+
+The chat overview can show **Open Telegram topic** for an eligible selected conversation. `GET /api/chats` includes optional `topic_url` only when the authenticated account is the exact private-topic owner and the active bot instance can resolve it. Admin status does not bypass this ownership check. A generated username/link is a navigation aid, not an authorization credential. See [topic commands](telegram.md#commands).

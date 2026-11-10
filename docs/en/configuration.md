@@ -136,10 +136,20 @@ Runtime-editable configuration stored in the `config_overrides` SQLite table. Ma
 ### Telegram
 
 | Key | Default | Description |
-|-----|---------|-------------|
-| `telegram.token` | — | Bot token (hot-reloadable) |
-| `telegram.allowed_ids` | `[]` | User ID whitelist (empty = all) |
-| `telegram.debounce_window` | 1.5s | Message coalescing window |
+| --- | --- | --- |
+| `telegram.token` | `—` | Bot token; secret configuration. |
+| `telegram.allowed_ids` | `[]` | Numeric user allowlist; empty permits all. |
+| `telegram.day_widgets` | `true` | Enables `/day`, `/day text` and weather widgets; false keeps weather text only. Restart required. |
+| `telegram.day_actions` | `true` | Confirmed day-card changes; restart required. |
+| `telegram.aliases` | `[]` | Already-active additional usernames, without @. |
+| `telegram.preferred_username` | `empty` | Verified name used for generated bot/topic links. |
+| `telegram.test_environment` | `false` | Isolated Telegram test server; requires separate credentials. |
+| `telegram.debounce_window` | `1.5s` | Coalescing interval, with actor/topic isolation. |
+| `telegram.rate_limit` | `0` | Messages per rate window; 0 means unlimited. |
+| `telegram.rate_window` | `1m` | Per-chat rate window. |
+| `telegram.draft_streaming` | `false` | Compatibility option; final privacy classification still buffers replies. |
+
+Missing day keys default to true after upgrades; explicit false values and persisted dashboard overrides remain effective. Use `IULITA_TELEGRAM_DAY_WIDGETS` and `IULITA_TELEGRAM_DAY_ACTIONS` for environment overrides. These two switches are global across Telegram instances. Usernames are assigned by the owner through BotFather and verified by Iulita, not registered by configuration. See the [Telegram guide](telegram.md#settings-and-upgrades).
 
 ### Storage
 

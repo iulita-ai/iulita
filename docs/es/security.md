@@ -165,3 +165,8 @@ Ventana fija: conteo total de acciones LLM/herramientas por hora en todos los ch
 - **Deteccion de codigo**: rechaza habilidades con archivos de codigo a menos que esten correctamente aisladas
 - **Escaneo de inyeccion de prompts**: advierte sobre patrones sospechosos en el cuerpo de la habilidad
 - **Tamano maximo de archivo**: configurable (predeterminado 50MB para ClawhHub)
+
+
+## Telegram: actualización del código
+
+Los cambios de Telegram aún no publicados se describen en la [guía completa en inglés](../en/telegram.md): temas y contexto, `/day`, tarjetas de tiempo, acciones privadas, alias y límites production/test-server. Las nuevas tarjetas tienen textos EN/RU; otros idiomas usan el fallback inglés.

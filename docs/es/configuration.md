@@ -271,3 +271,10 @@ Los valores secretos de configuracion en la BD estan cifrados:
 3. **Formato**: `base64(12-byte-nonce ‖ ciphertext)`
 4. **Auto-cifrado**: las claves declaradas como `secret_keys` en SKILL.md siempre se cifran
 5. **Sin fugas**: la API del panel devuelve valores vacios para claves cifradas
+
+
+## Telegram: actualización del código
+
+Los cambios de Telegram aún no publicados se describen en la [guía completa en inglés](../en/telegram.md): temas y contexto, `/day`, tarjetas de tiempo, acciones privadas, alias y límites production/test-server. Las nuevas tarjetas tienen textos EN/RU; otros idiomas usan el fallback inglés.
+
+Las claves `telegram.day_widgets` y `telegram.day_actions` están activadas por defecto incluso al actualizar configuraciones antiguas sin ellas; false explícito se conserva. Son globales, requieren reinicio y admiten `IULITA_TELEGRAM_DAY_WIDGETS` / `IULITA_TELEGRAM_DAY_ACTIONS`. Consulte también aliases, preferred_username y test_environment en la guía EN.

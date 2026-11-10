@@ -3,6 +3,9 @@ package channelmgr
 import (
 	"context"
 	"strconv"
+	"strings"
+
+	"github.com/iulita-ai/iulita/internal/domain"
 
 	"go.uber.org/zap"
 
@@ -23,6 +26,26 @@ import (
 // precedent. Returns channel.ErrLocationUnsupported when no unambiguous
 // Telegram instance can serve the chat.
 func (m *Manager) locationTargetFor(ctx context.Context, chatID string) (*telegram.Channel, int64, error) {
+	if strings.HasPrefix(chatID, "tgconv:") {
+		routes, ok := m.store.(interface {
+			GetTelegramRoute(context.Context, string) (*domain.TelegramConversationRoute, error)
+		})
+		if !ok {
+			return nil, 0, channel.ErrLocationUnsupported
+		}
+		r, e := routes.GetTelegramRoute(ctx, chatID)
+		if e != nil || r == nil {
+			return nil, 0, channel.ErrLocationUnsupported
+		}
+		m.mu.RLock()
+		mc := m.running[r.InstanceID]
+		m.mu.RUnlock()
+		if mc == nil || mc.tg == nil {
+			return nil, 0, channel.ErrLocationUnsupported
+		}
+		return mc.tg, r.ChatID, nil
+	}
+
 	chatID64, err := strconv.ParseInt(chatID, 10, 64)
 	if err != nil {
 		return nil, 0, channel.ErrLocationUnsupported // "console", web:*, slack:*
@@ -79,7 +102,7 @@ func (m *Manager) SendLocationToChat(ctx context.Context, chatID string, loc cha
 	if err != nil {
 		return 0, err
 	}
-	return tg.SendLocation(chatID64, loc)
+	return tg.SendLocation(chatID64, loc, m.telegramThreadID(ctx, chatID))
 }
 
 // SendVenueToChat sends a native venue card to a chat. Implements
@@ -89,7 +112,7 @@ func (m *Manager) SendVenueToChat(ctx context.Context, chatID string, v channel.
 	if err != nil {
 		return 0, err
 	}
-	return tg.SendVenue(chatID64, v)
+	return tg.SendVenue(chatID64, v, m.telegramThreadID(ctx, chatID))
 }
 
 // CanSendLocations reports whether a native pin can be sent to chatID.
@@ -97,4 +120,16 @@ func (m *Manager) SendVenueToChat(ctx context.Context, chatID string, v channel.
 func (m *Manager) CanSendLocations(chatID string) bool {
 	_, _, err := m.locationTargetFor(context.Background(), chatID)
 	return err == nil
+}
+
+func (m *Manager) telegramThreadID(ctx context.Context, id string) int {
+	if rstore, ok := m.store.(interface {
+		GetTelegramRoute(context.Context, string) (*domain.TelegramConversationRoute, error)
+	}); ok {
+		r, e := rstore.GetTelegramRoute(ctx, id)
+		if e == nil && r != nil {
+			return r.ThreadID
+		}
+	}
+	return 0
 }

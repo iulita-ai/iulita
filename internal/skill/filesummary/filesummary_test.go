@@ -266,3 +266,19 @@ func TestCanceledGateWait(t *testing.T) {
 		t.Fatalf("canceled waiter executed: %s %v", out, err)
 	}
 }
+
+func TestPaymentDetailsNeverReachSummaryModelOrSavedFact(t *testing.T) {
+	card := "4111111111111111"
+	p := &testProvider{content: "Payment card " + card}
+	store := &testStore{}
+	_, err := New(p, store).Execute(testContext("Pay to "+card), json.RawMessage(`{"save_to_facts":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.requests) != 1 || strings.Contains(p.requests[0].Message, card) {
+		t.Fatal("unmasked source sent to summary model")
+	}
+	if len(store.facts) != 1 || strings.Contains(store.facts[0].Content, card) {
+		t.Fatal("unmasked generated card saved")
+	}
+}

@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -23,7 +24,7 @@ func (s *Store) CreateTask(ctx context.Context, t *domain.Task) error {
 	if t.MaxAttempts == 0 {
 		t.MaxAttempts = 3
 	}
-	_, err := s.db.NewInsert().Model(t).Exec(ctx)
+	err := s.insertTaskFenced(ctx, t)
 	if err != nil {
 		return fmt.Errorf("inserting task: %w", err)
 	}
@@ -64,7 +65,7 @@ func (s *Store) CreateTaskIfNotExists(ctx context.Context, t *domain.Task) (bool
 		return false, nil
 	}
 
-	_, err = s.db.NewInsert().Model(t).Exec(ctx)
+	err = s.insertTaskFenced(ctx, t)
 	if err != nil {
 		// Unique constraint violation is expected in race conditions.
 		if strings.Contains(err.Error(), "UNIQUE constraint") {
@@ -159,18 +160,23 @@ func (s *Store) CompleteTask(ctx context.Context, taskID int64, result string) e
 	}
 
 	if t.DeleteAfterRun {
-		_, err = s.db.NewDelete().
+		res, deleteErr := s.db.NewDelete().
 			Model((*domain.Task)(nil)).
 			Where("id = ? AND status = ?", taskID, domain.TaskStatusRunning).
 			Exec(ctx)
-		if err != nil {
-			return fmt.Errorf("deleting task %d after run: %w", taskID, err)
+		if deleteErr != nil {
+			return fmt.Errorf("deleting task %d after run: %w", taskID, deleteErr)
+		}
+		if n, e := res.RowsAffected(); e != nil {
+			return e
+		} else if n != 1 {
+			return domain.ErrConversationDeleted
 		}
 		return nil
 	}
 
 	now := time.Now()
-	_, err = s.db.NewUpdate().
+	res, err := s.db.NewUpdate().
 		Model((*domain.Task)(nil)).
 		Set("status = ?", domain.TaskStatusDone).
 		Set("finished_at = ?", now).
@@ -180,6 +186,11 @@ func (s *Store) CompleteTask(ctx context.Context, taskID int64, result string) e
 		Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("completing task %d: %w", taskID, err)
+	}
+	if n, e := res.RowsAffected(); e != nil {
+		return e
+	} else if n != 1 {
+		return domain.ErrConversationDeleted
 	}
 	return nil
 }
@@ -197,13 +208,20 @@ func (s *Store) FailTask(ctx context.Context, taskID int64, errMsg string) error
 		return fmt.Errorf("loading task %d: %w", taskID, err)
 	}
 
+	if t.Status == domain.TaskStatusCancelled {
+		return domain.ErrConversationDeleted
+	}
+	if t.Status == domain.TaskStatusDone || t.Status == domain.TaskStatusFailed {
+		return nil
+	}
+	var res sql.Result
 	newStatus := domain.TaskStatusFailed
 	if t.Attempts < t.MaxAttempts {
 		// Re-queue for retry with a backoff delay.
 		newStatus = domain.TaskStatusPending
 		backoff := time.Duration(t.Attempts) * 30 * time.Second
 		retryAt := now.Add(backoff)
-		_, err = s.db.NewUpdate().
+		res, err = s.db.NewUpdate().
 			Model((*domain.Task)(nil)).
 			Set("status = ?", newStatus).
 			Set("error = ?", errMsg).
@@ -211,21 +229,26 @@ func (s *Store) FailTask(ctx context.Context, taskID int64, errMsg string) error
 			Set("claimed_at = NULL").
 			Set("started_at = NULL").
 			Set("scheduled_at = ?", retryAt).
-			Where("id = ?", taskID).
+			Where("id = ? AND status = ?", taskID, t.Status).
 			Exec(ctx)
 	} else {
-		_, err = s.db.NewUpdate().
+		res, err = s.db.NewUpdate().
 			Model((*domain.Task)(nil)).
 			Set("status = ?", newStatus).
 			Set("finished_at = ?", now).
 			Set("error = ?", errMsg).
 			Set("unique_key = ''"). // free the key so the job can be re-created
-			Where("id = ?", taskID).
+			Where("id = ? AND status = ?", taskID, t.Status).
 			Exec(ctx)
 	}
 
 	if err != nil {
 		return fmt.Errorf("failing task %d: %w", taskID, err)
+	}
+	if n, e := res.RowsAffected(); e != nil {
+		return e
+	} else if n != 1 {
+		return domain.ErrConversationDeleted
 	}
 	return nil
 }

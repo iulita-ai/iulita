@@ -222,3 +222,10 @@ Fields:
 - `delivery_chat_id` — where to send the result (optional)
 
 Managed via dashboard: `GET/POST/PUT/DELETE /api/agent-jobs/`
+
+
+## Telegram-bound work and uncertain delivery
+
+Reminders and background schedules can be bound to a Telegram conversation, including a private topic. Pausing the topic suppresses new delivery; resume does not replay missed or suppressed reminders automatically. Confirmed deletion cancels bound reminders and queued/running local work and disables bound schedules. The worker and storage recheck deletion before dispatch/commit; other conversations and external task-provider records are preserved. An external request already dispatched can still finish.
+
+Unknown delivery/mutation outcomes are persisted instead of automatically repeating a possibly executed action. The day card's Jobs section exposes these receipts. Read-only reconciliation does not prove causation; explicit acknowledgement accepts uncertainty, not retroactive success. See [My day](telegram.md#my-day) and [deletion](telegram.md#pause-and-delete-have-different-effects).

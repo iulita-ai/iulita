@@ -9,6 +9,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/uptrace/bun"
+
 	"github.com/iulita-ai/iulita/internal/domain"
 )
 
@@ -78,20 +80,32 @@ func (s *Store) CreateVectorTables(ctx context.Context) error {
 
 // SaveFactVector stores the embedding for a fact as a binary BLOB.
 func (s *Store) SaveFactVector(ctx context.Context, factID int64, embedding []float32) error {
-	data := encodeVector(embedding)
-	_, err := s.db.ExecContext(ctx,
-		`INSERT OR REPLACE INTO fact_vectors (fact_id, embedding, created_at) VALUES (?, ?, ?)`,
-		factID, data, time.Now())
-	return err
+	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		f := new(domain.Fact)
+		if e := tx.NewSelect().Model(f).Where("id = ?", factID).Scan(ctx); e != nil {
+			return e
+		}
+		if e := conversationAvailable(ctx, tx, f.ChatID); e != nil {
+			return e
+		}
+		_, e := tx.ExecContext(ctx, `INSERT OR REPLACE INTO fact_vectors (fact_id, embedding, created_at) VALUES (?, ?, ?)`, factID, encodeVector(embedding), time.Now())
+		return e
+	})
 }
 
 // SaveInsightVector stores the embedding for an insight as a binary BLOB.
 func (s *Store) SaveInsightVector(ctx context.Context, insightID int64, embedding []float32) error {
-	data := encodeVector(embedding)
-	_, err := s.db.ExecContext(ctx,
-		`INSERT OR REPLACE INTO insight_vectors (insight_id, embedding, created_at) VALUES (?, ?, ?)`,
-		insightID, data, time.Now())
-	return err
+	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		f := new(domain.Insight)
+		if e := tx.NewSelect().Model(f).Where("id = ?", insightID).Scan(ctx); e != nil {
+			return e
+		}
+		if e := conversationAvailable(ctx, tx, f.ChatID); e != nil {
+			return e
+		}
+		_, e := tx.ExecContext(ctx, `INSERT OR REPLACE INTO insight_vectors (insight_id, embedding, created_at) VALUES (?, ?, ?)`, insightID, encodeVector(embedding), time.Now())
+		return e
+	})
 }
 
 type vectorRow struct {

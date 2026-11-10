@@ -24,14 +24,15 @@ const maxSpecSystemPrompt = 4000
 // no approvals, and no streaming. It runs in a fresh context with only
 // the tools assigned to the agent type.
 type Runner struct {
-	provider     llm.Provider
-	registry     *skill.Registry
-	notifier     channel.StatusNotifier
-	bus          *eventbus.Bus
-	chatID       string
-	userID       string
-	logger       *zap.Logger
-	allowedTools map[string]bool // runtime allowlist — only these tools can be executed
+	executionGuard func(context.Context) error
+	provider       llm.Provider
+	registry       *skill.Registry
+	notifier       channel.StatusNotifier
+	bus            *eventbus.Bus
+	chatID         string
+	userID         string
+	logger         *zap.Logger
+	allowedTools   map[string]bool // runtime allowlist — only these tools can be executed
 }
 
 // NewRunner constructs a Runner.
@@ -56,6 +57,19 @@ func NewRunner(
 // SetUserID sets the user ID for usage tracking events.
 func (r *Runner) SetUserID(userID string) {
 	r.userID = userID
+}
+
+// SetExecutionGuard attaches live authorization for a scheduled run. Set it
+// before Run; each runner owns its callback and does not mutate other runners.
+func (r *Runner) SetExecutionGuard(guard func(context.Context) error) { r.executionGuard = guard }
+func (r *Runner) checkExecution(ctx context.Context) error {
+	if ctx.Err() != nil {
+		return context.Cause(ctx)
+	}
+	if r.executionGuard != nil {
+		return r.executionGuard(ctx)
+	}
+	return nil
 }
 
 // Run executes the sub-agent and returns a result.
@@ -133,11 +147,14 @@ func (r *Runner) Run(ctx context.Context, spec AgentSpec, budget Budget, sharedT
 
 	maxTurns := budget.EffectiveMaxTurns()
 	var lastResp llm.Response
+	executionStopped := false
 
+turnLoop:
 	for turn := 0; turn < maxTurns; turn++ {
-		// Check context cancellation.
-		if ctx.Err() != nil {
-			result.Err = ctx.Err()
+		// Re-read live authorization as well as cooperative cancellation.
+		if err := r.checkExecution(ctx); err != nil {
+			result.Err = err
+			executionStopped = true
 			break
 		}
 
@@ -154,6 +171,11 @@ func (r *Runner) Run(ctx context.Context, spec AgentSpec, budget Budget, sharedT
 
 		var err error
 		lastResp, err = r.provider.Complete(ctx, req)
+		if guardErr := r.checkExecution(ctx); guardErr != nil {
+			result.Err = guardErr
+			executionStopped = true
+			break
+		}
 		if err != nil {
 			result.Err = fmt.Errorf("LLM call failed (turn %d): %w", turn, err)
 			break
@@ -227,13 +249,31 @@ func (r *Runner) Run(ctx context.Context, spec AgentSpec, budget Budget, sharedT
 		}
 
 		for _, tc := range lastResp.ToolCalls {
-			toolResult := r.executeTool(ctx, tc)
+			toolResult, guardErr := r.executeToolChecked(ctx, tc)
+			if guardErr != nil {
+				result.Err = guardErr
+				executionStopped = true
+				break turnLoop
+			}
 			exchange.Results = append(exchange.Results, toolResult)
 		}
 
 		req.ToolExchanges = append(req.ToolExchanges, exchange)
 	}
 
+	if executionStopped {
+		result.Output = ""
+		result.Duration = time.Since(start)
+		return result
+	}
+	// A provider/skill may ignore cancellation. Never return its late text or
+	// tool output after revocation, even via the exhausted-turn fallback.
+	if err := r.checkExecution(ctx); err != nil {
+		result.Err = err
+		result.Output = ""
+		result.Duration = time.Since(start)
+		return result
+	}
 	// If we exhausted turns without a final text response, use whatever we have.
 	if result.Output == "" && lastResp.Content != "" {
 		result.Output = lastResp.Content
@@ -304,6 +344,20 @@ func (r *Runner) buildTools(spec AgentSpec, profile AgentTypeProfile) []llm.Tool
 // Sub-agents skip approval checks — they run in trusted context.
 // Runtime enforcement: only tools in r.allowedTools (set by buildTools) can be executed.
 func (r *Runner) executeTool(ctx context.Context, tc llm.ToolCall) llm.ToolResult {
+	result, executionErr := r.executeToolChecked(ctx, tc)
+	if executionErr != nil {
+		result.IsError = true
+		result.Content = "error: execution no longer authorized"
+	}
+	return result
+}
+func (r *Runner) executeToolChecked(ctx context.Context, tc llm.ToolCall) (llm.ToolResult, error) {
+	denied := func(err error) (llm.ToolResult, error) {
+		return llm.ToolResult{ToolCallID: tc.ID, IsError: true, Content: "error: execution no longer authorized"}, err
+	}
+	if err := r.checkExecution(ctx); err != nil {
+		return denied(err)
+	}
 	// Runtime allowlist enforcement — defense in depth against hallucinated tool calls.
 	if !r.allowedTools[tc.Name] {
 		r.logger.Warn("sub-agent: tool call blocked by allowlist",
@@ -312,7 +366,7 @@ func (r *Runner) executeTool(ctx context.Context, tc llm.ToolCall) llm.ToolResul
 			ToolCallID: tc.ID,
 			Content:    fmt.Sprintf("error: tool %q is not available to this agent", tc.Name),
 			IsError:    true,
-		}
+		}, nil
 	}
 
 	s, ok := r.registry.Get(tc.Name)
@@ -322,11 +376,11 @@ func (r *Runner) executeTool(ctx context.Context, tc llm.ToolCall) llm.ToolResul
 			ToolCallID: tc.ID,
 			Content:    fmt.Sprintf("error: unknown skill %q", tc.Name),
 			IsError:    true,
-		}
+		}, nil
 	}
 
 	if scope, ok := s.(skill.MainLoopOnly); ok && scope.MainLoopOnly() {
-		return llm.ToolResult{ToolCallID: tc.ID, Content: "error: tool is only available in the main conversation", IsError: true}
+		return llm.ToolResult{ToolCallID: tc.ID, Content: "error: tool is only available in the main conversation", IsError: true}, nil
 	}
 	start := time.Now()
 	caller := skill.RemoteCallerFrom(ctx)
@@ -334,7 +388,13 @@ func (r *Runner) executeTool(ctx context.Context, tc llm.ToolCall) llm.ToolResul
 		caller = "delegate"
 	}
 	ctx = skill.WithRemoteCaller(skill.WithUserID(ctx, r.userID), caller)
+	if err := r.checkExecution(ctx); err != nil {
+		return denied(err)
+	}
 	output, err := s.Execute(ctx, tc.Input)
+	if guardErr := r.checkExecution(ctx); guardErr != nil {
+		return denied(guardErr)
+	}
 	durationMs := time.Since(start).Milliseconds()
 
 	if r.bus != nil {
@@ -360,13 +420,13 @@ func (r *Runner) executeTool(ctx context.Context, tc llm.ToolCall) llm.ToolResul
 			ToolCallID: tc.ID,
 			Content:    fmt.Sprintf("error: %v", err),
 			IsError:    true,
-		}
+		}, nil
 	}
 
 	return llm.ToolResult{
 		ToolCallID: tc.ID,
 		Content:    output,
-	}
+	}, nil
 }
 
 // clampRunes truncates s to at most max runes (rune-safe, never splits a

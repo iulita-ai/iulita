@@ -19,6 +19,9 @@ func (s *Store) ReplaceMessagesWithSummary(ctx context.Context, chatID string, l
 	summaryCopy := *summary
 	summaryCopy.ID = lastOldID
 	return s.db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+		if e := conversationAvailable(ctx, tx, chatID); e != nil {
+			return e
+		}
 		if _, err := tx.NewDelete().Model((*domain.ChatMessage)(nil)).Where("chat_id = ?", chatID).Where("id <= ?", lastOldID).Exec(ctx); err != nil {
 			return err
 		}

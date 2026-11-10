@@ -1,0 +1,11 @@
+<html><head><!--CARD_STYLE--></head><body>
+<header><div class="pill" id="label"></div><h1 id="heading"></h1><p class="meta" id="subheading"></p></header>
+<article class="surface"><p class="content" id="text"></p></article>
+<nav class="nav"><button class="arrow" id="prev">←</button><button id="refresh"></button><button class="arrow" id="next">→</button></nav><p class="notice" id="status" role="status"></p>
+<script>
+const W=TelegramWidget,$=id=>document.getElementById(id);const ru=!!(W.viewer&&String(W.viewer.language_code||'').indexOf('ru')===0);let busy=false,state={};
+function controls(){[['prev',state.p],['next',state.n],['refresh',state.q]].forEach(x=>{let b=$(x[0]);b.disabled=busy||!x[1]||W.isPreview;b.onclick=()=>request(x[1]);});}
+function request(v){if(!v||busy)return;busy=true;controls();$('status').textContent=ru?'Обновляем…':'Updating…';W.request(v).then(a=>{busy=false;try{draw(JSON.parse(a.result||'{}'));$('status').textContent='';}catch(e){$('status').textContent=ru?'Не удалось обновить результат.':'Could not update the result.';controls();}},()=>{busy=false;$('status').textContent=ru?'Не удалось обновить результат.':'Could not update the result.';controls();});}
+function draw(s){if(!s){try{s=JSON.parse(W.publicData||'{}')}catch(e){return}}state=s;document.querySelector('nav').style.display=s.w?'none':'flex';$('label').textContent=ru?'Публично':'Public';$('heading').textContent=s.w?(ru?'Результат отозван':'Result withdrawn'):(ru?'Общий результат':'Shared result');$('subheading').textContent=s.w?(ru?'Существующие копии могут сохраниться.':'Existing copies may remain.'):(ru?'Доступен получателям этой карточки':'Visible to recipients of this card');$('text').textContent=s.w?(ru?'Публикация больше недоступна.':'This publication is no longer available.'):(s.t||'');$('refresh').textContent=ru?'Обновить':'Refresh';$('prev').setAttribute('aria-label',ru?'Предыдущая страница':'Previous page');$('next').setAttribute('aria-label',ru?'Следующая страница':'Next page');controls();}
+W.onEvent('publicDataChanged',()=>draw());try{W.watchPublicData()}catch(e){}draw();W.ready();
+</script></body></html>

@@ -34,3 +34,8 @@ Welcome to the Iulita documentation. Choose a topic to get started.
 - [i18n / l10n](./i18n.md)
 - [Security](./security.md)
 - [Deployment](./deployment.md)
+
+
+## Telegram conversations and cards
+
+[Topics, day/weather cards, private actions and English previews](telegram.md) — current source features, commands, upgrade settings and platform availability.

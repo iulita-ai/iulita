@@ -67,7 +67,7 @@ domain.Fact {
 
 ### 工作原理
 
-1. **Telegram**：每个助手回复（包括多分块消息）下方显示 💾 内联键盘按钮
+1. **Telegram**：符合条件的非敏感回复可显示 💾；并非所有回复或卡片都包含书签按钮。
 2. **WebChat**：悬停在助手消息上时显示 💾 图标
 3. 点击按钮**立即**将完整回复保存为 `source_type="bookmark"` 的事实
 4. 后台调度器任务（`bookmark.refine`）将内容发送给 LLM 进行摘要
@@ -308,3 +308,8 @@ memory.ImportFacts(ctx, store, chatID, markdownContent)
 | `skills.insights.quality_threshold` | 0 | 最低质量分数（0 = 接受所有） |
 | `embedding.model` | `KnightsAnalytics/all-MiniLM-L6-v2` | ONNX 模型名称 |
 | `embedding.enabled` | true | 启用 ONNX 嵌入 |
+
+
+## Telegram 源代码更新
+
+尚未发布的 Telegram 功能见[英文完整指南](../en/telegram.md)：话题与上下文、`/day`、天气卡片、私密操作、附加用户名及生产/测试服务器限制。新卡片提供 EN/RU 文案；其他语言使用英文回退。

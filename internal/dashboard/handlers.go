@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"context"
 	"runtime"
 	"strconv"
 	"time"
@@ -110,6 +111,7 @@ func (s *Server) handleChats(c *fiber.Ctx) error {
 	type chatInfo struct {
 		ChatID   string `json:"chat_id"`
 		Messages int    `json:"messages"`
+		TopicURL string `json:"topic_url,omitempty"`
 	}
 
 	result := make([]chatInfo, 0, len(chatIDs))
@@ -121,7 +123,18 @@ func (s *Server) handleChats(c *fiber.Ctx) error {
 		if err != nil {
 			return s.errorResponse(c, err)
 		}
-		result = append(result, chatInfo{ChatID: id, Messages: count})
+		info := chatInfo{ChatID: id, Messages: count}
+		if claims := auth.GetClaims(c); claims != nil && claims.UserID != "" {
+			if links, ok := s.channelManager.(interface {
+				TelegramTopicLink(context.Context, string, string) (string, error)
+			}); ok {
+				// Exact authenticated owner only; admin role grants no topic access.
+				if url, err := links.TelegramTopicLink(ctx, id, claims.UserID); err == nil {
+					info.TopicURL = url
+				}
+			}
+		}
+		result = append(result, info)
 	}
 
 	return c.JSON(result)

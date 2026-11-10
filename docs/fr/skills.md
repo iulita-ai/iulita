@@ -292,3 +292,8 @@ force_triggers: [weather, погода, météo]
 Lorsque le message de l'utilisateur contient un mot-cle declencheur (correspondance de sous-chaine insensible a la casse), `ForceTool` est defini sur la requete LLM pour l'iteration 0. Cela garantit que le LLM appelle toujours l'outil plutot que de repondre a partir de ses donnees d'entrainement.
 
 Les declencheurs de memoire (ex. "remember", "zapomni") sont configures separement et forcent l'outil `remember`.
+
+
+## Telegram : mise à jour du code
+
+Les changements Telegram non encore publiés sont décrits dans le [guide complet en anglais](../en/telegram.md) : sujets et contexte, `/day`, météo, actions privées, alias et limites production/serveur de test. Les nouvelles cartes proposent EN/RU ; les autres langues utilisent le repli anglais.
