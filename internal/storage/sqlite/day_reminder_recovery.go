@@ -18,7 +18,7 @@ type reminderDeliveryClaim struct {
 }
 
 func (s *Store) claimReminder(ctx context.Context, id int64, chat string, due time.Time) (out *domain.Reminder, err error) {
-	err = s.db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+	err = s.runWriteTransaction(ctx, func(ctx context.Context, tx bun.IDB) error {
 		if e := conversationAvailable(ctx, tx, chat); e != nil {
 			return e
 		}

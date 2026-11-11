@@ -15,7 +15,7 @@ func (s *Store) BindLegacyTelegramTopic(ctx context.Context, scope domain.Telegr
 	if scope.BotID <= 0 || scope.ChatID <= 0 || scope.ThreadID <= 0 || scope.ConversationID == "" || scope.InstanceID == "" || scope.OwnerID == "" || scope.OperationID == "" || scope.Digest == "" {
 		return fmt.Errorf("invalid legacy topic binding scope")
 	}
-	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+	return s.runWriteTransaction(ctx, func(ctx context.Context, tx bun.IDB) error {
 		if e := conversationAvailable(ctx, tx, scope.ConversationID); e != nil {
 			return e
 		}

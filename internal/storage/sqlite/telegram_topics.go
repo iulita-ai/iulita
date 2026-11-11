@@ -73,29 +73,30 @@ func (s *Store) PutTelegramTopicState(ctx context.Context, v *domain.TelegramTop
 func (s *Store) ClaimTelegramTopicOperation(ctx context.Context, op *domain.TelegramTopicOperation) (*domain.TelegramTopicOperation, bool, error) {
 	// Serialize unresolved logical create commands in SQLite, including after a
 	// process crash. No worker retries a Telegram create automatically.
-	tx, e := s.db.BeginTx(ctx, nil)
-	if e != nil {
-		return nil, false, e
+	var result *domain.TelegramTopicOperation
+	claimed := false
+	err := s.runWriteTransaction(ctx, func(ctx context.Context, tx bun.IDB) error {
+		prior := new(domain.TelegramTopicOperation)
+		e := tx.NewSelect().Model(prior).Where("id = ? OR (digest = ? AND status IN (?, ?, ?))", op.ID, op.Digest, "running", "unknown_outcome", "created").Order("updated_at DESC").Limit(1).Scan(ctx)
+		if e == nil {
+			result = prior
+			return nil
+		}
+		if !errors.Is(e, sql.ErrNoRows) {
+			return e
+		}
+		op.Status = "running"
+		op.UpdatedAt = time.Now()
+		if _, e = tx.NewInsert().Model(op).Exec(ctx); e != nil {
+			return e
+		}
+		result, claimed = op, true
+		return nil
+	})
+	if err != nil {
+		return nil, false, err
 	}
-	defer tx.Rollback() //nolint:errcheck // Best-effort cleanup; operation/Commit errors are returned, while committed transactions yield ErrTxDone.
-	prior := new(domain.TelegramTopicOperation)
-	e = tx.NewSelect().Model(prior).Where("id = ? OR (digest = ? AND status IN (?, ?, ?))", op.ID, op.Digest, "running", "unknown_outcome", "created").Order("updated_at DESC").Limit(1).Scan(ctx)
-	if e == nil {
-		return prior, false, nil
-	}
-	if !errors.Is(e, sql.ErrNoRows) {
-		return nil, false, e
-	}
-	op.Status = "running"
-	op.UpdatedAt = time.Now()
-	_, e = tx.NewInsert().Model(op).Exec(ctx)
-	if e != nil {
-		return nil, false, e
-	}
-	if commitErr := tx.Commit(); commitErr != nil {
-		return nil, false, commitErr
-	}
-	return op, true, nil
+	return result, claimed, nil
 }
 
 // SaveTelegramTopicOperation persists the outcome of an already claimed native operation.
@@ -118,50 +119,48 @@ func (s *Store) GetTelegramTopicOperation(ctx context.Context, id, owner, instan
 // ApplyLocalTelegramTopicOperation is a local application gate, not a Telegram
 // forum close/reopen. State and durable result commit together, without any API call.
 func (s *Store) ApplyLocalTelegramTopicOperation(ctx context.Context, op *domain.TelegramTopicOperation, state *domain.TelegramTopicState) error {
-	tx, e := s.db.BeginTx(ctx, nil)
-	if e != nil {
-		return e
-	}
-	defer tx.Rollback() //nolint:errcheck // Best-effort cleanup; operation/Commit errors are returned, while committed transactions yield ErrTxDone.
-	if op.ThreadID <= 0 {
-		return errors.New("local pause requires an actual topic")
-	}
-	if (op.Action != "pause" || state.Status != "paused") && (op.Action != "resume" || state.Status != "open") {
-		return errors.New("invalid local topic transition")
-	}
-	route := new(domain.TelegramConversationRoute)
-	if e = tx.NewSelect().Model(route).Where("conversation_id = ? AND owner_id = ? AND instance_id = ? AND chat_id = ? AND thread_id = ? AND private = ?", state.ConversationID, op.OwnerID, op.InstanceID, op.ChatID, op.ThreadID, true).Scan(ctx); e != nil {
-		return errors.New("local topic route ownership mismatch")
-	}
-	prior := new(domain.TelegramTopicState)
-	e = tx.NewSelect().Model(prior).Where("conversation_id = ?", state.ConversationID).Scan(ctx)
-	if e != nil && !errors.Is(e, sql.ErrNoRows) {
-		return e
-	}
-	if e == nil && prior.Status == "deleted" {
-		return errors.New("deleted topic cannot be resumed")
-	}
-	if availabilityErr := conversationAvailable(ctx, tx, state.ConversationID); availabilityErr != nil {
-		return availabilityErr
-	}
-	state.UpdatedAt = time.Now()
-	_, e = tx.NewInsert().Model(state).On("CONFLICT (conversation_id) DO UPDATE").Set("name = EXCLUDED.name").Set("status = EXCLUDED.status").Set("updated_at = EXCLUDED.updated_at").Exec(ctx)
-	if e != nil {
-		return e
-	}
-	result, e := tx.NewUpdate().Model((*domain.TelegramTopicOperation)(nil)).Set("status = ?", "succeeded").Set("updated_at = ?", time.Now()).Where("id = ? AND owner_id = ? AND instance_id = ? AND chat_id = ? AND thread_id = ? AND action = ? AND digest = ? AND status = ?", op.ID, op.OwnerID, op.InstanceID, op.ChatID, op.ThreadID, op.Action, op.Digest, "running").Exec(ctx)
-	if e != nil {
-		return e
-	}
-	n, e := result.RowsAffected()
-	if e != nil {
-		return e
-	}
-	if n != 1 {
-		return errors.New("local topic operation no longer claimable")
-	}
-	if commitErr := tx.Commit(); commitErr != nil {
-		return commitErr
+	err := s.runWriteTransaction(ctx, func(ctx context.Context, tx bun.IDB) error {
+		if op.ThreadID <= 0 {
+			return errors.New("local pause requires an actual topic")
+		}
+		if (op.Action != "pause" || state.Status != "paused") && (op.Action != "resume" || state.Status != "open") {
+			return errors.New("invalid local topic transition")
+		}
+		route := new(domain.TelegramConversationRoute)
+		if e := tx.NewSelect().Model(route).Where("conversation_id = ? AND owner_id = ? AND instance_id = ? AND chat_id = ? AND thread_id = ? AND private = ?", state.ConversationID, op.OwnerID, op.InstanceID, op.ChatID, op.ThreadID, true).Scan(ctx); e != nil {
+			return errors.New("local topic route ownership mismatch")
+		}
+		prior := new(domain.TelegramTopicState)
+		e := tx.NewSelect().Model(prior).Where("conversation_id = ?", state.ConversationID).Scan(ctx)
+		if e != nil && !errors.Is(e, sql.ErrNoRows) {
+			return e
+		}
+		if e == nil && prior.Status == "deleted" {
+			return errors.New("deleted topic cannot be resumed")
+		}
+		if availabilityErr := conversationAvailable(ctx, tx, state.ConversationID); availabilityErr != nil {
+			return availabilityErr
+		}
+		state.UpdatedAt = time.Now()
+		_, e = tx.NewInsert().Model(state).On("CONFLICT (conversation_id) DO UPDATE").Set("name = EXCLUDED.name").Set("status = EXCLUDED.status").Set("updated_at = EXCLUDED.updated_at").Exec(ctx)
+		if e != nil {
+			return e
+		}
+		result, e := tx.NewUpdate().Model((*domain.TelegramTopicOperation)(nil)).Set("status = ?", "succeeded").Set("updated_at = ?", time.Now()).Where("id = ? AND owner_id = ? AND instance_id = ? AND chat_id = ? AND thread_id = ? AND action = ? AND digest = ? AND status = ?", op.ID, op.OwnerID, op.InstanceID, op.ChatID, op.ThreadID, op.Action, op.Digest, "running").Exec(ctx)
+		if e != nil {
+			return e
+		}
+		n, e := result.RowsAffected()
+		if e != nil {
+			return e
+		}
+		if n != 1 {
+			return errors.New("local topic operation no longer claimable")
+		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 	op.Status = "succeeded"
 	return nil

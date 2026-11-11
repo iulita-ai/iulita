@@ -110,7 +110,7 @@ func (s *Store) DeleteFactByID(ctx context.Context, id int64) error {
 }
 
 func (s *Store) UpdateFactContent(ctx context.Context, id int64, content string) error {
-	err := s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+	err := s.runWriteTransaction(ctx, func(ctx context.Context, tx bun.IDB) error {
 		f := new(domain.Fact)
 		if e := tx.NewSelect().Model(f).Where("id = ?", id).Scan(ctx); e != nil {
 			return e

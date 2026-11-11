@@ -59,7 +59,7 @@ func (s *Store) ClaimDayOperation(ctx context.Context, o *dayview.Operation) (cl
 		}
 		o.ResourceKey = dayResourceKey(o.Owner, command.Item)
 	}
-	err = s.db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+	err = s.runWriteTransaction(ctx, func(ctx context.Context, tx bun.IDB) error {
 		if e := conversationAvailable(ctx, tx, o.Conversation); e != nil {
 			return e
 		}

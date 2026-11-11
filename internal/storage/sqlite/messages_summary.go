@@ -2,7 +2,6 @@ package sqlite
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 
 	"github.com/iulita-ai/iulita/internal/domain"
@@ -18,7 +17,7 @@ func (s *Store) ReplaceMessagesWithSummary(ctx context.Context, chatID string, l
 	}
 	summaryCopy := *summary
 	summaryCopy.ID = lastOldID
-	return s.db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+	return s.runWriteTransaction(ctx, func(ctx context.Context, tx bun.IDB) error {
 		if e := conversationAvailable(ctx, tx, chatID); e != nil {
 			return e
 		}
