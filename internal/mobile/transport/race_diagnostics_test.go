@@ -12,6 +12,55 @@ import (
 	"github.com/iulita-ai/iulita/internal/mobile/sqlitedb"
 )
 
+// Dispatch and STARTED receipt acknowledgement are not parent-completion ACKs.
+// Observe exact, committed lifecycle metadata without creating the account-guard
+// write reservations that repeated authenticated GetTurn calls would acquire.
+func waitPhoneParentCompleted(t *testing.T, h *harness, task simulatedTask, owner string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	db, err := sqlitedb.OpenReadOnly(ctx, h.paths[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	poll := time.NewTicker(20 * time.Millisecond)
+	defer poll.Stop()
+	var state string
+	for {
+		select {
+		case stopped := <-h.run:
+			h.run <- stopped // Preserve the completion for harness cleanup.
+			t.Fatalf("mobile worker stopped before parent completion: %v; %s", stopped, phoneFailureState(t, h, task.command))
+		case <-task.stream.Context().Done():
+			t.Fatalf("native stream expired before parent completion: %v; %s", task.stream.Context().Err(), phoneFailureState(t, h, task.command))
+		case <-ctx.Done():
+			t.Fatalf("phone parent completion timeout, state=%s; %s", state, phoneFailureState(t, h, task.command))
+		default:
+		}
+		err = db.QueryRowContext(ctx, `SELECT state FROM mobile_turns WHERE owner_id=? AND conversation_id=? AND id=?`, owner, task.command.Origin.ConversationId, task.command.Origin.TurnId).Scan(&state)
+		if err != nil {
+			t.Fatalf("phone parent metadata unavailable: %v; %s", err, phoneFailureState(t, h, task.command))
+		}
+		switch state {
+		case "completed":
+			return
+		case "failed", "cancelled", "unknown_outcome":
+			t.Fatalf("phone parent terminated unexpectedly, state=%s; %s", state, phoneFailureState(t, h, task.command))
+		}
+		select {
+		case <-poll.C:
+		case stopped := <-h.run:
+			h.run <- stopped
+			t.Fatalf("mobile worker stopped before parent completion: %v; %s", stopped, phoneFailureState(t, h, task.command))
+		case <-task.stream.Context().Done():
+			t.Fatalf("native stream expired before parent completion: %v; %s", task.stream.Context().Err(), phoneFailureState(t, h, task.command))
+		case <-ctx.Done():
+			t.Fatalf("phone parent completion timeout, state=%s; %s", state, phoneFailureState(t, h, task.command))
+		}
+	}
+}
+
 // Report bounded fixture lifecycle metadata without message/tool/phone content.
 func nativeFailureState(t *testing.T, n *nativeSimulator) string {
 	t.Helper()
