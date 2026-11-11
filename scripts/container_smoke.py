@@ -237,7 +237,9 @@ def worker(fixture, directory):
         assert base64.b64decode(reply["result"]["Stdout"]) == b"iulita-container-smoke"
         assert signed(body)[0] == 409
         run("docker", "restart", name)
-        assert wait_for(lambda: request(port, context, "/"))[0] == 404
+        # Docker can allocate a different ephemeral host port on restart.
+        port = published_port(name, 8443)
+        assert wait_for(worker_ready)[0] == 404
         replay = json.loads(body)
         replay["issued_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         assert signed(json.dumps(replay, separators=(",", ":")).encode())[0] == 409
@@ -306,7 +308,9 @@ def gateway(fixture, directory, tools):
         body, status, protocol = curl("/iulita.mobile.v1.Smoke/Check", grpc=True, authorized=authorized)
         assert status == 200 and protocol.startswith("2")
         assert "x-iulita-smoke-backend: verified" in body.lower()
-        assert f"grpc-status: {0 if authorized else 16}" in body.lower()
+        expected = "0" if authorized else "16"
+        grpc_status = re.findall(r"(?im)^grpc-status:\s*(\d+)\s*$", body)
+        assert grpc_status == [expected], f"fixture gRPC response: {body[:1500]!r}"
         if authorized:
             assert "\0\0\0\0\2\10\1" in body
     # Version inspection runs in a separate one-shot container of the same image.
