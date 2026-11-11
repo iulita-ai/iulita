@@ -202,6 +202,15 @@ func setupHarnessWithOptions(t *testing.T, options devices.Options, assistantSco
 		oauth.Close()
 		db.Close()
 	})
+	// Admission must not race execution-runtime initialization in the fixture.
+	select {
+	case <-processor.Ready():
+	case err := <-run:
+		run <- err // Keep the completion available to cleanup.
+		t.Fatalf("mobile worker stopped during startup: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("mobile worker startup timeout")
+	}
 	return h
 }
 func (h *harness) http(path string, form url.Values, cookie *http.Cookie) *httptest.ResponseRecorder {
