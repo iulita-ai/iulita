@@ -42,7 +42,7 @@ func (b *WttrInBackend) Fetch(ctx context.Context, location string, days int) (*
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := b.client.Do(req)
+	resp, err := doWeatherRequest(b.client, req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}

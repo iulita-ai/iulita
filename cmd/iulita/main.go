@@ -1940,7 +1940,7 @@ func main() {
 	}
 	dayEnabled := func(name string) func() bool { return func() bool { _, ok := registry.Get(name); return ok } }
 	mgr.SetCommandRegistrar(func(tg *telegram.Channel) {
-		tg.SetWeatherController(&telegram.WeatherController{Fetch: weatherSkill.ForecastCard, Enabled: dayEnabled("weather"), Widgets: cfg.Telegram.DayWidgets})
+		tg.SetWeatherController(&telegram.WeatherController{Fetch: weatherSkill.ForecastCard, ResolveLocation: weatherSkill.ResolveCommandLocation, Enabled: dayEnabled("weather"), Widgets: cfg.Telegram.DayWidgets})
 		tg.SetCompactFunc(asst.CompactContext)
 		tg.SetTopicDeletionFunc(asst.CancelConversation)
 		tg.SetInlineWidgetTestMode(tg.IsTestEnvironment())
@@ -1963,18 +1963,7 @@ func main() {
 			return fmt.Sprintf("Session usage:\nRequests: %d\nInput tokens: %d\nOutput tokens: %d\nTotal tokens: %d",
 				reqs, in, out, in+out)
 		})
-		tg.RegisterCommand("/status", "Show memory stats and counts", func(ctx context.Context, chatID string) string {
-			msgs, _ := store.CountMessages(ctx, chatID)
-			insights, _ := store.CountInsights(ctx, chatID)
-			reminders, _ := store.ListReminders(ctx, chatID)
-			taskCounts, _ := store.CountTasksByStatus(ctx)
-			var pending int
-			for _, v := range taskCounts {
-				pending += v
-			}
-			return fmt.Sprintf("Status:\nMessages: %d\nInsights: %d\nReminders: %d\nTasks: %d",
-				msgs, insights, len(reminders), pending)
-		})
+		tg.RegisterStatusCommand()
 		tg.RegisterCommand("/help", "Show available commands", func(_ context.Context, _ string) string {
 			var names []string
 			for _, s := range registry.EnabledSkills() {

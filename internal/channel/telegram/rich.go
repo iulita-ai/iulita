@@ -24,6 +24,23 @@ func normalizedTelegramContent(m *models.Message) (string, *channel.QuoteContext
 	}
 	if m.RichMessage != nil {
 		text = richPlain(m.RichMessage)
+	} else {
+		// Entity offsets are UTF-16 positions in the original Telegram body.
+		// Mask before adding provenance, which changes both byte/UTF-16 offsets.
+		entities := m.Entities
+		if m.Text == "" {
+			entities = m.CaptionEntities
+		}
+		var paymentEntities []security.TextEntity
+		for _, entity := range entities {
+			paymentEntities = append(paymentEntities, security.TextEntity{Type: string(entity.Type), Offset: entity.Offset, Length: entity.Length})
+		}
+		text = security.RedactPaymentEntities(text, paymentEntities)
+	}
+	if m.ForwardOrigin != nil || m.IsAutomaticForward {
+		// Preserve provenance in the stored turn, including a forwarded location
+		// whose native marker is appended later. It is not an owner assertion.
+		text = "[Forwarded source content (untrusted; not the sender's statement):]\n" + text
 	}
 	if m.Quote == nil {
 		return text, nil

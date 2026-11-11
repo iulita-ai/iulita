@@ -399,22 +399,8 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 
 		// Extract text: Text for text messages, Caption for photo/document messages.
 		text, quote := normalizedTelegramContent(update.Message)
-		var paymentEntities []security.TextEntity
-		entities := update.Message.Entities
-		if update.Message.Text == "" {
-			entities = update.Message.CaptionEntities
-		}
-		for _, entity := range entities {
-			paymentEntities = append(paymentEntities, security.TextEntity{Type: string(entity.Type), Offset: entity.Offset, Length: entity.Length})
-		}
-		if update.Message.RichMessage == nil {
-			text = security.RedactPaymentEntities(text, paymentEntities)
-		}
 		if quote != nil {
 			quote.Text = security.RedactPaymentData(quote.Text)
-		}
-		if text == "" && (hasPhoto || hasDocument) {
-			text = update.Message.Caption
 		}
 
 		msg := channel.IncomingMessage{
@@ -475,7 +461,7 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 		if c.handleDayCommand(ctx, update.Message) {
 			return
 		}
-		if c.handleWeatherCommand(ctx, update.Message) {
+		if c.queueWeatherCommand(ctx, update.Message, chatID, debounce) {
 			return
 		}
 		// Handle /clear command.
@@ -511,20 +497,8 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 			return
 		}
 
-		// Handle registered commands.
-		if strings.HasPrefix(update.Message.Text, "/") {
-			cmd := strings.Fields(update.Message.Text)[0]
-			cmd, addressed := c.commandName(cmd)
-			if !addressed {
-				return
-			}
-			if fn, ok := c.commands[cmd]; ok {
-				resp := fn(ctx, chatID)
-				if resp != "" {
-					c.sendResponse(update.Message.Chat.ID, resp, 0, update.Message.MessageThreadID)
-				}
-				return
-			}
+		if c.handleRegisteredCommand(ctx, update.Message, msg) {
+			return
 		}
 
 		// Shared location or venue: structured attachment + localized text line
