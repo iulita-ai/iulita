@@ -25,7 +25,7 @@ make build         # frontend + Go binary → ./bin/iulita
 make build-go      # Go binary only (skip frontend rebuild)
 ```
 
-**Prerequisites**: Go 1.26+ (toolchain 1.27.2), Node.js 22+, npm
+**Prerequisites**: Go 1.26+ (toolchain 1.27.4), Node.js 22+, npm
 
 ## Docker
 
@@ -43,6 +43,16 @@ services:
       - ./skills:/app/skills:ro
     restart: unless-stopped
 ```
+
+### Image security checks
+
+The source Dockerfiles use Alpine 3.24.4 and Go toolchain 1.27.4. They pin base-image digests and upgrade installed APK packages during a fresh build. The release workflow pulls bases and disables build-layer reuse so a cached package-install step cannot hide new security patches. Both the app and SSH worker keep their existing non-root users and data paths. The separate `Dockerfile.mobile-gateway` refreshes the unprivileged nginx gateway and its OS packages.
+
+Container Security checks run on pull requests, main, weekly and on demand. They exercise the app on amd64, and the worker and gateway on amd64 and arm64. Runtime fixtures cover SQLite writes/reads, offline preloaded embeddings, PDF extraction, OGG/Opus-to-MP3 conversion, worker TLS/HMAC with isolated SSH execution and durable replay rejection, and gateway TLS/HTTP2 routes. These checks use disposable data and keys.
+
+A pinned Trivy scanner reads each exact image archive without a Docker socket or publication credentials. Full findings, CycloneDX SBOMs and database metadata are retained as workflow artifacts. Fixable HIGH/CRITICAL findings and scanner failures block publication; unfixed findings remain visible in the full report. A successful scan is not a claim that every reported vulnerability is exploitable, or that every possible vulnerability is known.
+
+On a release tag, a separate publisher verifies all five archive receipts and checksums, then publishes those same images without rebuilding. Worker and gateway manifests are published before the app. Scheduled checks do not silently replace published version tags. Deployment-specific pins for the SSH worker or mobile gateway need separate updates; updating only the application does not update them. Host-kernel patches remain a separate operation.
 
 ### First Run (Web Wizard)
 
@@ -70,15 +80,15 @@ docker compose up -d
 ### Dockerfile (Multi-Stage)
 
 ```
-Stage 1 (ui-builder): node:22-alpine
+Stage 1 (ui-builder): node:22-alpine3.24
     → npm ci + npm run build
 
-Stage 2 (go-builder): golang:1.27.2-alpine
+Stage 2 (go-builder): golang:1.27.4-alpine3.24
     → CGO_ENABLED=1 (container build; SQLite itself is pure Go)
     → Copies UI dist before Go build
 
-Stage 3 (runtime): alpine:3.21
-    → ca-certificates + tzdata + ffmpeg
+Stage 3 (runtime): alpine:3.24.4
+    → ca-certificates + tzdata + ffmpeg + poppler-utils
     → Non-root user "iulita" (UID 1000)
     → Exposes port 8080
     → Entrypoint: iulita --server

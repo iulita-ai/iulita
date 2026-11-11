@@ -1,0 +1,119 @@
+name: Container Security
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_call:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 5 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Image ${{ matrix.role }} ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - role: app
+            arch: amd64
+            dockerfile: Dockerfile
+          - role: ssh-worker
+            arch: amd64
+            dockerfile: Dockerfile.ssh-worker
+          - role: ssh-worker
+            arch: arm64
+            dockerfile: Dockerfile.ssh-worker
+          - role: mobile-gateway
+            arch: amd64
+            dockerfile: Dockerfile.mobile-gateway
+          - role: mobile-gateway
+            arch: arm64
+            dockerfile: Dockerfile.mobile-gateway
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Check publication trust boundary
+        if: matrix.role == 'app'
+        run: python3 -m unittest discover -s scripts -p test_container_security.py -v
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build exact image with fresh system packages
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/${{ matrix.arch }}
+          load: true
+          push: false
+          pull: true
+          no-cache: true
+          tags: local/iulita-${{ matrix.role }}:checked
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          build-args: |
+            VERSION=${{ github.ref_type == 'tag' && github.ref_name || 'dev-security-check' }}
+            COMMIT=${{ github.sha }}
+            DATE=${{ github.event.head_commit.timestamp || '' }}
+
+      - name: Export isolated smoke helper without changing runtime image
+        if: matrix.role != 'ssh-worker'
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: Dockerfile
+          target: ${{ matrix.role == 'app' && 'smoke-tools' || 'gateway-tools' }}
+          platforms: linux/amd64
+          outputs: type=local,dest=${{ runner.temp }}/iulita-smoke-tools
+          build-args: |
+            VERSION=${{ github.ref_type == 'tag' && github.ref_name || 'dev-security-check' }}
+            COMMIT=${{ github.sha }}
+            DATE=${{ github.event.head_commit.timestamp || '' }}
+
+      - name: Exercise packaged runtime with isolated fixtures
+        env:
+          ROLE: ${{ matrix.role }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p artifacts/reports
+          python3 scripts/container_smoke.py "$ROLE" "local/iulita-${ROLE}:checked" "linux/${ARCH}" artifacts/reports/runtime.json "${RUNNER_TEMP}/iulita-smoke-tools"
+
+      - name: Scan exact archive and enforce security gate
+        env:
+          ROLE: ${{ matrix.role }}
+          ARCH: ${{ matrix.arch }}
+        run: python3 scripts/container_security.py scan "$ROLE" "$ARCH" "local/iulita-${ROLE}:checked" artifacts
+
+      - name: Retain full findings, SBOM and runtime evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: security-${{ matrix.role }}-${{ matrix.arch }}-${{ github.run_attempt }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            artifacts/reports/*.json
+            artifacts/reports/*.txt
+            artifacts/receipt.json
+
+      - name: Hand checked archive to this release's privileged publisher
+        if: success() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: checked-${{ matrix.role }}-${{ matrix.arch }}-${{ github.run_attempt }}
+          retention-days: 3
+          compression-level: 1
+          if-no-files-found: error
+          path: |
+            artifacts/image.tar
+            artifacts/receipt.json

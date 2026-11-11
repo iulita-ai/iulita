@@ -2,7 +2,7 @@ module github.com/iulita-ai/iulita
 
 go 1.26.0
 
-toolchain go1.27.2
+toolchain go1.27.4
 
 require (
 	codeberg.org/readeck/go-readability/v2 v2.1.1

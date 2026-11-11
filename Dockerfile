@@ -1,5 +1,7 @@
 # --- Stage 1: Build frontend ---
-FROM node:22-alpine AS ui-builder
+FROM node:22-alpine3.24@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202 AS ui-builder
+
+RUN apk upgrade --no-cache
 
 WORKDIR /app/ui
 COPY ui/package.json ui/package-lock.json* ./
@@ -8,13 +10,13 @@ COPY ui/ ./
 RUN npm run build
 
 # --- Stage 2: Build Go binary ---
-FROM golang:1.27.2-alpine AS go-builder
+FROM golang:1.27.4-alpine3.24@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf AS go-builder
 
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG DATE=unknown
 
-RUN apk add --no-cache gcc musl-dev
+RUN apk upgrade --no-cache && apk add --no-cache gcc musl-dev
 
 WORKDIR /app
 COPY go.mod go.sum ./
@@ -31,17 +33,20 @@ RUN CGO_ENABLED=1 go build \
       -X github.com/iulita-ai/iulita/internal/version.Date=${DATE}" \
     -o /iulita ./cmd/iulita/
 
+# Exported separately for CI; never included in the production runtime image.
+RUN CGO_ENABLED=1 go build -trimpath -o /imagecheck ./cmd/imagecheck/
+
 # Pre-fetch the ONNX embedding model into the image (requires network at build
 # time) so the first runtime start needs no download. Baked OUTSIDE the data
 # volume; consumed read-only via IULITA_MODEL_PRELOAD_DIR in the runtime stage.
 RUN /iulita download-model /opt/iulita/models
 
 # --- Stage 3: Runtime ---
-FROM alpine:3.21
+FROM alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS runtime
 
 # ffmpeg: voice transcription transcodes Telegram's OGG/Opus to mp3 —
 # GLM-ASR (and some other Whisper-compatible endpoints) only accept wav/mp3.
-RUN apk add --no-cache ca-certificates tzdata ffmpeg poppler-utils
+RUN apk upgrade --no-cache && apk add --no-cache ca-certificates tzdata ffmpeg poppler-utils
 
 RUN adduser -D -u 1000 -h /app iulita
 WORKDIR /app
@@ -70,3 +75,17 @@ VOLUME ["/app/data"]
 EXPOSE 8080
 
 ENTRYPOINT ["iulita", "--server"]
+
+FROM scratch AS smoke-tools
+COPY --from=go-builder /imagecheck /imagecheck
+
+FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine3.24@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf AS gateway-check-builder
+WORKDIR /check
+COPY cmd/gatewaycheck/main.go ./main.go
+RUN CGO_ENABLED=0 go build -trimpath -o /gatewaycheck main.go
+
+FROM scratch AS gateway-tools
+COPY --from=gateway-check-builder /gatewaycheck /gatewaycheck
+
+# Keep the production image the default target for existing docker build users.
+FROM runtime AS production
