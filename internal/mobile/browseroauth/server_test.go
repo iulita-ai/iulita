@@ -380,7 +380,7 @@ func TestLiveAccountFlagsAndFlowExpiryBeforeConsent(t *testing.T) {
 func TestStrictAuthorizationAndTransport(t *testing.T) {
 	f := setup(t)
 	for _, tc := range []struct{ key, value string }{
-		{"redirect_uri", "https://evil.test/callback"}, {"code_challenge_method", "plain"}, {"code_challenge", ""}, {"iulita_installation_key_thumbprint", ""}, {"state", "short"}, {"response_type", "token"}, {"scope", "chats:read chats:read"}, {"scope", "unknown"}, {"unknown", "x"}, {"iulita_device_id", "not-a-uuid"},
+		{"redirect_uri", "https://evil.test/callback"}, {"code_challenge_method", "plain"}, {"code_challenge", ""}, {"iulita_installation_key_thumbprint", ""}, {"state", "short"}, {"response_type", "token"}, {"scope", "chats:read chats:read"}, {"scope", "unknown"}, {"unknown", "x"}, {"iulita_device_id", "not-a-uuid"}, {"request", "untrusted.jwt.payload"}, {"request_uri", "https://unreachable.invalid/request.jwt"},
 	} {
 		t.Run(tc.key+tc.value, func(t *testing.T) {
 			u, _ := url.Parse(authURL(f.a))

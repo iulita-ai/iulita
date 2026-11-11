@@ -12,6 +12,37 @@ import (
 	"github.com/iulita-ai/iulita/internal/mobile/sqlitedb"
 )
 
+// Report bounded fixture lifecycle metadata without message/tool/phone content.
+func nativeFailureState(t *testing.T, n *nativeSimulator) string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	var result strings.Builder
+	for index, path := range n.harness.paths {
+		db, err := sqlitedb.OpenReadOnly(ctx, path)
+		if err != nil {
+			fmt.Fprintf(&result, "db%d: %v;", index, err)
+			continue
+		}
+		query := `SELECT state,outcome_reason FROM mobile_turns LIMIT 16`
+		if index == 1 {
+			query = `SELECT t.state,t.reason,c.state FROM mobile_phone_tasks t LEFT JOIN mobile_phone_commands c ON c.task_id=t.id WHERE t.session_id=? LIMIT 16`
+		}
+		var args []any
+		if index == 1 {
+			args = []any{n.session}
+		}
+		rows, queryErr := db.QueryContext(ctx, query, args...)
+		if queryErr != nil {
+			fmt.Fprintf(&result, "db%d: %v;", index, queryErr)
+		} else {
+			appendFailureRows(&result, rows, index, 0)
+		}
+		db.Close()
+	}
+	return result.String()
+}
+
 // Only authority metadata is inspected on test failure, never phone content.
 func phoneFailureState(t *testing.T, h *harness, command *v1.Command) string {
 	t.Helper()

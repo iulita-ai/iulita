@@ -149,7 +149,9 @@ func (n *nativeSimulator) send(t *testing.T, body any) {
 }
 func (n *nativeSimulator) command(t *testing.T) *v1.Command {
 	t.Helper()
-	timer := time.NewTimer(5 * time.Second)
+	// This bounds only observation by the test client on a loaded race runner.
+	// The server's control lease, command expiry and authority checks still apply.
+	timer := time.NewTimer(15 * time.Second)
 	defer timer.Stop()
 	for {
 		select {
@@ -159,8 +161,11 @@ func (n *nativeSimulator) command(t *testing.T) *v1.Command {
 			}
 		case err := <-n.faults:
 			t.Fatal(err)
+		case err := <-n.harness.run:
+			n.harness.run <- err // Keep the completion available to cleanup.
+			t.Fatalf("mobile worker stopped before command: %v; %s", err, nativeFailureState(t, n))
 		case <-timer.C:
-			t.Fatal("simulator command timeout")
+			t.Fatalf("simulator command timeout; %s", nativeFailureState(t, n))
 		}
 	}
 }
