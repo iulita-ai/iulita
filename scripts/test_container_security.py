@@ -1,17 +1,44 @@
 """Publication must fail before any Docker call for untrusted archive receipts."""
 import hashlib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
 import tempfile
 import subprocess
+import tarfile
 import unittest
 from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location("security", Path(__file__).with_name("container_security.py"))
 security = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(security)
+
+
+class ArchiveIdentityTests(unittest.TestCase):
+    def archive(self, directory, manifests):
+        path = Path(directory) / "image.tar"
+        config = b'{"architecture":"amd64","os":"linux","rootfs":{"diff_ids":[]}}'
+        with tarfile.open(path, "w") as archive:
+            for name, data in [("manifest.json", json.dumps(manifests).encode()), ("config.json", config)]:
+                member = tarfile.TarInfo(name)
+                member.size = len(data)
+                archive.addfile(member, io.BytesIO(data))
+        return path, config
+
+    def test_config_identity_comes_from_archive_bytes_not_store_manifest_id(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, raw = self.archive(directory, [{"Config": "config.json", "RepoTags": ["local/fixture:checked"], "Layers": []}])
+            identity, config = security.archive_config(path)
+            self.assertEqual(identity, "sha256:" + hashlib.sha256(raw).hexdigest())
+            self.assertEqual(config["architecture"], "amd64")
+
+    def test_multiple_images_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, _ = self.archive(directory, [{"Config": "config.json"}, {"Config": "config.json"}])
+            with self.assertRaisesRegex(RuntimeError, "Ambiguous image archive"):
+                security.archive_config(path)
 
 
 class PublicationBoundaryTests(unittest.TestCase):

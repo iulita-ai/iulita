@@ -70,10 +70,10 @@ class Fixture:
         self.names = []
         self.networks = []
 
-    def oneshot(self, entrypoint, *args, mounts=(), env=()):
+    def oneshot(self, entrypoint, *args, mounts=(), env=(), network="none"):
         name = "iulita-imagecheck-" + uuid.uuid4().hex
         self.names.append(name)
-        command = ["docker", "run", "--rm", "--name", name, "--platform", self.platform, "--network", "none",
+        command = ["docker", "run", "--rm", "--name", name, "--platform", self.platform, "--network", network,
                    "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
                    "--memory=2g", "--cpus=2", "--tmpfs", "/tmp:rw,nosuid,size=512m"]
         for mount in mounts:
@@ -111,6 +111,17 @@ class Fixture:
         for network in self.networks:
             subprocess.run(["docker", "network", "rm", network], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
 
+    def require_running(self, name):
+        state = json.loads(run("docker", "inspect", "--format", "{{json .State}}", name))
+        if not state["Running"]:
+            logs = run("docker", "logs", name, stderr=subprocess.STDOUT)
+            known = ["SSH worker must run as a non-root user", "worker key file must be private (0o600)",
+                     "cannot read worker key", "SSH worker state directory must be private (0o700)",
+                     "worker TLS certificate/key unavailable or invalid", "worker TLS certificate outside validity period",
+                     "permission denied", "operation not permitted"]
+            reason = next((item for item in known if item in logs), "unrecognized startup failure")
+            raise RuntimeError(f"Fixture exited with code {state['ExitCode']}: {reason}")
+
 
 def app(fixture, directory, tools):
     assert fixture.oneshot("id", "-u") == "1000"
@@ -137,7 +148,7 @@ def app(fixture, directory, tools):
 def certificates(directory):
     cert, key = directory / "server.crt", directory / "server.key"
     subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
-                    "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost,DNS:backend,DNS:mobile.fixture,IP:127.0.0.1",
+                    "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost,DNS:backend,DNS:gateway,DNS:mobile.fixture,IP:127.0.0.1",
                     "-keyout", str(key), "-out", str(cert)], check=True, capture_output=True)
     cert.chmod(0o644)
     return cert, key
@@ -205,7 +216,10 @@ def worker(fixture, directory):
                              "--allow-cidrs", f"{gateway}/32", mounts=[f"{directory}:/fixture:ro", f"{state}:/state:rw"], port=8443)
         port = published_port(name, 8443)
         context = ssl.create_default_context(cafile=str(cert))
-        assert wait_for(lambda: request(port, context, "/"))[0] == 404
+        def worker_ready():
+            fixture.require_running(name)
+            return request(port, context, "/")
+        assert wait_for(worker_ready)[0] == 404
         assert request(port, context, "/execute", b"{}", "invalid")[0] == 401
         def envelope(address):
             return json.dumps({"id": uuid.uuid4().hex, "issued_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -260,42 +274,43 @@ def gateway(fixture, directory, tools):
                       "proxy_ssl_server_name on; proxy_ssl_name backend; proxy_ssl_verify on; "
                       "proxy_ssl_trusted_certificate /fixture/server.crt; proxy_ssl_protocols TLSv1.3; } } }\n")
     config.chmod(0o644)
-    name = fixture.start("-c", "/fixture/nginx.conf", "-g", "daemon off;", entrypoint="nginx",
-                         mounts=[f"{directory}:/fixture:ro"], port=8445, network=network)
-    port = published_port(name, 8445)
-    context = ssl.create_default_context(cafile=str(cert))
-    assert wait_for(lambda: request(port, context, "/ready"))[0] == 200
+    fixture.start("-c", "/fixture/nginx.conf", "-g", "daemon off;", entrypoint="nginx",
+                  mounts=[f"{directory}:/fixture:ro"], network=network, alias="gateway")
+    def curl(path, host="mobile.fixture", grpc=False, authorized=False):
+        args = ["--silent", "--show-error", "--max-time", "10", "--http2", "--noproxy", "*",
+                "--cacert", "/server.crt", "-H", "Host: " + host, "--write-out", "\n%{http_code}\n%{http_version}"]
+        mounts = [f"{cert}:/server.crt:ro"]
+        if grpc:
+            message = directory / "request.grpc"
+            message.write_bytes(b"\0\0\0\0\0")
+            message.chmod(0o644)
+            mounts += [f"{message}:/request.grpc:ro"]
+            args += ["-H", "Content-Type: application/grpc", "-H", "TE: trailers", "--data-binary", "@/request.grpc", "--dump-header", "-"]
+            if authorized:
+                args += ["-H", "Authorization: Bearer isolated-fixture"]
+        raw = fixture.oneshot("curl", *args, "https://gateway:8445" + path, mounts=mounts, network=network)
+        body, status, protocol = raw.rsplit("\n", 2)
+        return body, int(status), protocol
     def metadata():
-        status, raw = request(port, context, "/.well-known/oauth-authorization-server", host="mobile.fixture")
+        body, status, protocol = curl("/.well-known/oauth-authorization-server")
         if status != 200:
             raise OSError("fixture backend not ready")
-        return json.loads(raw)
+        assert protocol.startswith("2")
+        return json.loads(body)
     assert wait_for(metadata)["issuer"] == "https://mobile.fixture"
-    assert request(port, context, "/.well-known/oauth-authorization-server", host="wrong.fixture")[0] == 400
-    assert request(port, context, "/bad-upstream-name", host="mobile.fixture")[0] == 502
-    assert json.loads(request(port, context, "/oauth2/jwks", host="mobile.fixture")[1])["keys"][0]["kty"] == "RSA"
-    assert request(port, context, "/protected", host="mobile.fixture")[0] == 401
-    message = directory / "request.grpc"
-    message.write_bytes(b"\0\0\0\0\0")
+    assert curl("/.well-known/oauth-authorization-server", host="wrong.fixture")[1] == 400
+    assert curl("/bad-upstream-name")[1] == 502
+    assert json.loads(curl("/oauth2/jwks")[0])["keys"][0]["kty"] == "RSA"
+    assert curl("/protected")[1] == 401
     for authorized in [False, True]:
-        headers, body = directory / "response.headers", directory / "response.grpc"
-        command = ["curl", "--fail-with-body", "--silent", "--show-error", "--max-time", "15", "--http2",
-                   "--noproxy", "*", "--cacert", str(cert), "--resolve", f"mobile.fixture:{port}:127.0.0.1",
-                   "-H", "Content-Type: application/grpc", "-H", "TE: trailers", "--data-binary", "@" + str(message),
-                   "--dump-header", str(headers), "--output", str(body)]
+        body, status, protocol = curl("/iulita.mobile.v1.Smoke/Check", grpc=True, authorized=authorized)
+        assert status == 200 and protocol.startswith("2")
+        assert "x-iulita-smoke-backend: verified" in body.lower()
+        assert f"grpc-status: {0 if authorized else 16}" in body.lower()
         if authorized:
-            command += ["-H", "Authorization: Bearer isolated-fixture"]
-        run(*command, f"https://mobile.fixture:{port}/iulita.mobile.v1.Smoke/Check")
-        response_headers = headers.read_text().lower()
-        assert "x-iulita-smoke-backend: verified" in response_headers
-        assert f"grpc-status: {0 if authorized else 16}" in response_headers
-        if authorized:
-            assert body.read_bytes() == b"\0\0\0\0\2\10\1"
-    context.set_alpn_protocols(["h2"])
-    with socket.create_connection(("127.0.0.1", port), timeout=10) as sock:
-        with context.wrap_socket(sock, server_hostname="localhost") as tls:
-            assert tls.selected_alpn_protocol() == "h2"
-    version = run("docker", "exec", name, "nginx", "-v", stderr=subprocess.STDOUT)
+            assert "\0\0\0\0\2\10\1" in body
+    # Version inspection runs in a separate one-shot container of the same image.
+    version = fixture.oneshot("sh", "-c", "nginx -v 2>&1")
     found = re.search(r"nginx/(\d+)\.(\d+)\.(\d+)", version)
     assert found and tuple(map(int, found.groups())) >= (1, 30, 6), version
     return {"tls_verified": True, "http2_alpn": True, "fixture_tls13_proxy_host_preserved": True,
@@ -318,6 +333,14 @@ def main():
             result["role"], result["platform"] = role, platform
             Path(output).write_text(json.dumps(result, indent=2) + "\n")
             print(json.dumps(result))
+    except Exception as error:
+        # Keep diagnostics even if a fixture fails before producing its receipt.
+        # Only an exception class and known startup classification are retained.
+        failure = {"role": role, "platform": platform, "passed": False, "error_type": type(error).__name__}
+        if isinstance(error, RuntimeError) and str(error).startswith("Fixture exited with code "):
+            failure["startup_error"] = str(error)
+        Path(output).write_text(json.dumps(failure, indent=2) + "\n")
+        raise
     finally:
         fixture.close()
 

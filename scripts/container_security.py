@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tarfile
 
 SCANNER = "ghcr.io/aquasecurity/trivy@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb"
 EXPECTED = {("app", "amd64"), ("ssh-worker", "amd64"), ("ssh-worker", "arm64"),
@@ -28,6 +29,21 @@ def sha256(path):
         return hashlib.file_digest(handle, "sha256").hexdigest()
 
 
+def archive_config(path):
+    # Docker's containerd image store can report a manifest/index ID where Trivy
+    # reports the config ID. Bind the scanner to the config bytes in the archive,
+    # and independently check the uncompressed layer identities/platform.
+    with tarfile.open(path, "r:") as archive:
+        manifest = archive.getmember("manifest.json")
+        require(manifest.size <= 1 << 20, "Oversized archive manifest")
+        manifests = json.load(archive.extractfile(manifest))
+        require(len(manifests) == 1, "Ambiguous image archive")
+        member = archive.getmember(manifests[0]["Config"])
+        require(member.size <= 4 << 20 and member.isfile(), "Invalid archive config")
+        data = archive.extractfile(member).read()
+    return "sha256:" + hashlib.sha256(data).hexdigest(), json.loads(data)
+
+
 def scan(role, arch, image, output):
     require((role, arch) in EXPECTED, "Unexpected image/platform")
     output = Path(output).resolve()
@@ -38,6 +54,9 @@ def scan(role, arch, image, output):
     inspect = json.loads(run("docker", "image", "inspect", image))[0]
     require(inspect["Os"] == "linux" and inspect["Architecture"] == arch, "Wrong local image platform")
     run("docker", "save", "-o", str(archive), image)
+    config_id, config = archive_config(archive)
+    require(config["architecture"] == arch and config["os"] == "linux", "Archive platform differs from local image")
+    require(config["rootfs"]["diff_ids"] == inspect["RootFS"]["Layers"], "Archive layers differ from local image")
 
     # Scanner sees only this archive and its own output/cache. No Docker socket,
     # Git checkout, credentials, user home or fixture private keys are mounted.
@@ -49,7 +68,8 @@ def scan(role, arch, image, output):
                "--scanners", "vuln", "--ignorefile", "", "--timeout", "15m"]
     run(*command, "--format", "json", "--list-all-pkgs", "--output", "/output/vulnerabilities.json", "--exit-code", "0")
     report = json.loads((reports / "vulnerabilities.json").read_text())
-    require(report.get("Metadata", {}).get("ImageID") == inspect["Id"], "Scanner inspected a different image")
+    require(report.get("Metadata", {}).get("ImageID") == config_id, "Scanner inspected a different archive config")
+    require(report.get("Metadata", {}).get("DiffIDs") == config["rootfs"]["diff_ids"], "Scanner inspected different archive layers")
     require(report.get("Metadata", {}).get("OS", {}).get("Family") == "alpine", "OS was not identified")
     require(str(report["Metadata"]["OS"].get("Name", "")).startswith("3.24"), "Unexpected or unsupported Alpine branch")
     require(not report["Metadata"]["OS"].get("EOSL", False), "Alpine branch is no longer supported")
@@ -80,7 +100,7 @@ def scan(role, arch, image, output):
         subprocess.run(command + ["--severity", "HIGH,CRITICAL", "--ignore-unfixed", "--exit-code", "1"],
                        text=True, stdout=handle, stderr=subprocess.STDOUT, timeout=1800, check=True)
     require(sha256(reports / "cache/db/metadata.json") == database_digest, "Database changed between security outputs")
-    receipt = {"role": role, "arch": arch, "platform": "linux/" + arch, "image_id": inspect["Id"],
+    receipt = {"role": role, "arch": arch, "platform": "linux/" + arch, "image_id": inspect["Id"], "config_id": config_id,
                "archive_sha256": sha256(archive), "source_sha": os.environ["GITHUB_SHA"],
                "run_id": os.environ["GITHUB_RUN_ID"], "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
                "scanner": SCANNER, "gate": "passed", "database_updated_at": database["UpdatedAt"]}
