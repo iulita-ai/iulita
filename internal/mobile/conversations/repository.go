@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/iulita-ai/iulita/internal/mobile/securetoken"
 	"github.com/iulita-ai/iulita/internal/mobile/sqlitedb"
+	"golang.org/x/sync/semaphore"
 )
 
 // Errors distinguish invalid input, stale authority and unavailable resources.
@@ -54,6 +55,7 @@ type Repository struct {
 	db             *sql.DB
 	authorityReads *sql.DB
 	cursors        *securetoken.Signer
+	writers        *semaphore.Weighted
 }
 
 // OpenExisting opens an initialized conversation store without bootstrapping it.
@@ -74,7 +76,7 @@ func OpenExisting(ctx context.Context, path string, cursors *securetoken.Signer)
 		db.Close() //nolint:errcheck,gosec // Preserve the reader initialization error.
 		return nil, err
 	}
-	return &Repository{db: db, authorityReads: reads, cursors: cursors}, nil
+	return &Repository{db: db, authorityReads: reads, cursors: cursors, writers: semaphore.NewWeighted(1)}, nil
 }
 
 // Close releases the resources owned by this instance.

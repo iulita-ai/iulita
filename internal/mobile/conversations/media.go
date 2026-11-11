@@ -196,7 +196,7 @@ func (r *Repository) ConfigureMedia(key []byte) error {
 	if err != nil {
 		return err
 	}
-	tx, err := r.db.BeginTx(context.Background(), nil)
+	tx, err := r.begin(context.Background())
 	if err != nil {
 		return err
 	}

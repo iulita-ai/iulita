@@ -213,7 +213,7 @@ func (e *Engine) Accept(ctx context.Context, owner, conversation string, in conv
 func (e *Engine) Run(ctx context.Context) error {
 	rt, err := e.Repo.AcquireRuntime(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("acquiring mobile runtime: %w", err)
 	}
 	e.startOnce.Do(func() { close(e.started) })
 	defer func() {
@@ -242,17 +242,17 @@ func (e *Engine) Run(ctx context.Context) error {
 		case <-renew.C:
 			if err = e.Repo.RenewRuntime(root, rt); err != nil {
 				cancel()
-				return err
+				return fmt.Errorf("renewing mobile runtime: %w", err)
 			}
 		case <-ticker.C:
 			if err = e.Repo.ReconcileSecurity(root); err != nil {
 				cancel()
-				return err
+				return fmt.Errorf("reconciling mobile security: %w", err)
 			}
 			owners, err := e.Repo.PendingOwners(root)
 			if err != nil {
 				cancel()
-				return err
+				return fmt.Errorf("listing mobile pending owners: %w", err)
 			}
 			for _, owner := range owners {
 				for i := 0; i < 2; i++ {
@@ -272,7 +272,7 @@ func (e *Engine) Run(ctx context.Context) error {
 							break
 						}
 						cancel()
-						return err
+						return fmt.Errorf("claiming mobile turn: %w", err)
 					}
 					wg.Add(1)
 					go func() {

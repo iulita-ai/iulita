@@ -211,7 +211,7 @@ func (r *Repository) DeliverReminder(ctx context.Context, id int64, verify func(
 		if deliveryErr != nil && ctx.Err() == nil {
 			// Recoverable failures must not monopolize the oldest due batch. Never
 			// mark delivered or erase private intent on an operational failure.
-			_, retryErr := r.db.ExecContext(ctx, `UPDATE mobile_reminders SET retry_at=? WHERE id=? AND state='pending'`, time.Now().Add(time.Minute).UnixMilli(), id)
+			retryErr := r.execWriter(ctx, `UPDATE mobile_reminders SET retry_at=? WHERE id=? AND state='pending'`, time.Now().Add(time.Minute).UnixMilli(), id)
 			deliveryErr = errors.Join(deliveryErr, retryErr)
 		}
 	}()
