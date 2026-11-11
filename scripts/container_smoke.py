@@ -287,14 +287,20 @@ def gateway(fixture, directory, tools):
             message.write_bytes(b"\0\0\0\0\0")
             message.chmod(0o644)
             mounts += [f"{message}:/request.grpc:ro"]
-            args += ["-H", "Content-Type: application/grpc", "-H", "TE: trailers", "--data-binary", "@/request.grpc", "--dump-header", "-"]
+            args += ["-H", "Content-Type: application/grpc", "-H", "TE: trailers", "--data-binary", "@/request.grpc"]
             if authorized:
                 args += ["-H", "Authorization: Bearer isolated-fixture"]
-        raw = fixture.oneshot("curl", *args, "https://gateway:8445" + path, mounts=mounts, network=network)
-        body, status, protocol = raw.rsplit("\n", 2)
-        return body, int(status), protocol
+        # Keep binary DATA separate from headers/trailers even when DATA has no
+        # trailing newline. Base64 keeps the Docker stdout envelope unambiguous.
+        raw = fixture.oneshot("sh", "-ec",
+                              'curl "$@" --output /tmp/body --dump-header /tmp/headers > /tmp/meta; '
+                              'base64 /tmp/headers; printf "\\n--fixture-body--\\n"; base64 /tmp/body; cat /tmp/meta',
+                              "fixture-curl", *args, "https://gateway:8445" + path, mounts=mounts, network=network)
+        headers, remainder = raw.split("\n--fixture-body--\n", 1)
+        body, status, protocol = remainder.rsplit("\n", 2)
+        return base64.b64decode(body).decode(), int(status), protocol, base64.b64decode(headers).decode()
     def metadata():
-        body, status, protocol = curl("/.well-known/oauth-authorization-server")
+        body, status, protocol, _ = curl("/.well-known/oauth-authorization-server")
         if status != 200:
             raise OSError("fixture backend not ready")
         assert protocol.startswith("2")
@@ -305,14 +311,16 @@ def gateway(fixture, directory, tools):
     assert json.loads(curl("/oauth2/jwks")[0])["keys"][0]["kty"] == "RSA"
     assert curl("/protected")[1] == 401
     for authorized in [False, True]:
-        body, status, protocol = curl("/iulita.mobile.v1.Smoke/Check", grpc=True, authorized=authorized)
+        body, status, protocol, headers = curl("/iulita.mobile.v1.Smoke/Check", grpc=True, authorized=authorized)
         assert status == 200 and protocol.startswith("2")
-        assert "x-iulita-smoke-backend: verified" in body.lower()
+        assert "x-iulita-smoke-backend: verified" in headers.lower()
         expected = "0" if authorized else "16"
-        grpc_status = re.findall(r"(?im)^grpc-status:\s*(\d+)\s*$", body)
-        assert grpc_status == [expected], f"fixture gRPC response: {body[:1500]!r}"
+        grpc_status = re.findall(r"(?im)^grpc-status:[ \t]*(\d+)[ \t]*\r?$", headers)
+        assert grpc_status == [expected], f"fixture gRPC headers: {headers[:1500]!r}"
         if authorized:
-            assert "\0\0\0\0\2\10\1" in body
+            assert body == "\0\0\0\0\2\10\1"
+        else:
+            assert body == ""
     # Version inspection runs in a separate one-shot container of the same image.
     version = fixture.oneshot("sh", "-c", "nginx -v 2>&1")
     found = re.search(r"nginx/(\d+)\.(\d+)\.(\d+)", version)

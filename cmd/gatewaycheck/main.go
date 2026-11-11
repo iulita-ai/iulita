@@ -70,8 +70,13 @@ func serve() error {
 			}
 			w.Header().Set("Content-Type", "application/grpc")
 			w.Header().Set("Trailer", "Grpc-Status")
+			w.WriteHeader(http.StatusOK)
+			// Send streaming headers before completion, without an inferred
+			// Content-Length that lets clients finish before reading trailers.
+			if flushErr := http.NewResponseController(w).Flush(); flushErr != nil {
+				return
+			}
 			if r.Header.Get("Authorization") != "Bearer isolated-fixture" {
-				w.WriteHeader(http.StatusOK)
 				w.Header().Set("Grpc-Status", "16")
 				return
 			}
