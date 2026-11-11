@@ -20,6 +20,7 @@ RUN apk upgrade --no-cache && apk add --no-cache gcc musl-dev
 
 WORKDIR /app
 COPY go.mod go.sum ./
+COPY third_party/fosite ./third_party/fosite
 RUN go mod download
 
 COPY . .

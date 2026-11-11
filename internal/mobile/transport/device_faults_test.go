@@ -24,7 +24,12 @@ type simulatedTask struct {
 
 func startSimulatedTask(t *testing.T, h *harness, source, deviceID, viewer string) simulatedTask {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(tokenContext(source), 8*time.Second)
+	return startSimulatedTaskWithTimeout(t, h, source, deviceID, viewer, 8*time.Second)
+}
+
+func startSimulatedTaskWithTimeout(t *testing.T, h *harness, source, deviceID, viewer string, timeout time.Duration) simulatedTask {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(tokenContext(source), timeout)
 	t.Cleanup(cancel)
 	client := v1.NewDeviceServiceClient(h.conn)
 	stream, err := client.Control(ctx)
@@ -238,24 +243,22 @@ func TestNativeStopImmediatelyDeniesResultsAndCannotReviveSameGeneration(t *test
 func TestCompletedTurnCancellationRevokesAsynchronousPhoneTask(t *testing.T) {
 	h := setupHarness(t)
 	token, deviceID := h.login(t, "owner")
-	task := startSimulatedTask(t, h, token, deviceID, token)
+	// This test observes parent finalization independently of native dispatch.
+	// Give only its client stream enough time for the bounded observer below;
+	// server control leases, task/session expiry and authority remain unchanged.
+	task := startSimulatedTaskWithTimeout(t, h, token, deviceID, token, 30*time.Second)
 	task.receipt(t, task.started())
+	waitPhoneParentCompleted(t, h, task, h.owners["owner"])
 	chat := v1.NewChatServiceClient(h.conn)
-	ctx := tokenContext(token)
+	ctx, cancel := context.WithTimeout(tokenContext(token), 15*time.Second)
+	defer cancel()
 	lookup := &v1.GetTurnRequest{Client: clientContext(), ConversationId: task.command.Origin.ConversationId, Lookup: &v1.GetTurnRequest_TurnId{TurnId: task.command.Origin.TurnId}}
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		turn, err := chat.GetTurn(ctx, lookup)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if turn.State == v1.TurnState_TURN_STATE_COMPLETED {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("phone parent did not complete", turn)
-		}
-		time.Sleep(5 * time.Millisecond)
+	// Verify the committed state through the real authenticated API once. Tight
+	// GetTurn polling takes account-guard write reservations and can itself delay
+	// the worker's finalization transaction on a loaded race runner.
+	completed, err := chat.GetTurn(ctx, lookup)
+	if err != nil || completed.State != v1.TurnState_TURN_STATE_COMPLETED {
+		t.Fatal("completed phone parent unavailable through API", completed, err)
 	}
 	turn, err := chat.CancelTurn(ctx, &v1.CancelTurnRequest{Client: clientContext(), Operation: operation(), ConversationId: lookup.ConversationId, TurnId: task.command.Origin.TurnId, HistoryGeneration: 1})
 	if err != nil || turn.State != v1.TurnState_TURN_STATE_COMPLETED || !turn.CancellationRequested {

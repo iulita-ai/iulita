@@ -4,6 +4,7 @@ ARG TARGETARCH
 RUN apk upgrade --no-cache
 WORKDIR /src
 COPY go.mod go.sum ./
+COPY third_party/fosite ./third_party/fosite
 COPY internal ./internal
 COPY cmd/ssh-worker ./cmd/ssh-worker
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -mod=readonly -trimpath -o /ssh-worker ./cmd/ssh-worker

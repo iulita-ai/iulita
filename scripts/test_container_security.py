@@ -16,6 +16,37 @@ security = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(security)
 
 
+class JoseInventoryTests(unittest.TestCase):
+    @staticmethod
+    def inventory(*packages):
+        return [{"Target": "usr/local/bin/iulita", "Packages": [{"Name": name, "Version": version} for name, version in packages]}]
+
+    def test_app_requires_fixed_official_jose_and_excludes_v3(self):
+        fixed = ("github.com/go-jose/go-jose/v4", "v4.1.9")
+        security.check_jose_inventory("app", self.inventory(fixed))
+        for packages in [(), ((fixed[0], "v4.1.5"),), (fixed, ("github.com/go-jose/go-jose/v3", "v3.0.5"))]:
+            with self.subTest(packages=packages), self.assertRaises(RuntimeError):
+                security.check_jose_inventory("app", self.inventory(*packages))
+
+    def test_worker_need_not_link_jose_but_cannot_link_v3(self):
+        security.check_jose_inventory("ssh-worker", self.inventory())
+        with self.assertRaisesRegex(RuntimeError, "Vulnerable JOSE v3"):
+            security.check_jose_inventory("ssh-worker", self.inventory(("github.com/go-jose/go-jose/v3", "v3.0.5")))
+
+    def test_secondary_go_binary_and_gateway_cannot_hide_v3(self):
+        for role in ("app", "ssh-worker", "mobile-gateway"):
+            results = self.inventory(("github.com/go-jose/go-jose/v4", "v4.1.9"))
+            results.append({"Target": "unexpected/helper", "Packages": [{"Name": "github.com/go-jose/go-jose/v3", "Version": "v3.0.5"}]})
+            with self.subTest(role=role), self.assertRaisesRegex(RuntimeError, "Vulnerable JOSE v3"):
+                security.check_jose_inventory(role, results)
+
+    def test_fixed_jose_in_helper_cannot_replace_app_inventory(self):
+        results = self.inventory(("github.com/go-jose/go-jose/v4", "v4.1.9"))
+        results[0]["Target"] = "unexpected/helper"
+        with self.assertRaisesRegex(RuntimeError, "inventory is missing"):
+            security.check_jose_inventory("app", results)
+
+
 class ArchiveIdentityTests(unittest.TestCase):
     def archive(self, directory, manifests):
         path = Path(directory) / "image.tar"

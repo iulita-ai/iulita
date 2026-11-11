@@ -10,6 +10,28 @@ permissions:
   contents: read
 
 jobs:
+  fosite-compatibility:
+    name: Fosite JOSE Migration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Create UI embed placeholder
+        run: mkdir -p ui/dist && touch ui/dist/.gitkeep
+      - name: Verify canonical source and bounded migration patch
+        run: python3 scripts/check_fosite.py verify
+      - name: Test the complete Fosite suite with application-selected modules
+        run: python3 scripts/check_fosite.py test
+      - name: Check the complete Fosite suite for races
+        run: python3 scripts/check_fosite.py race
+      - name: Resume pre-migration credentials and persisted state
+        run: python3 scripts/check_fosite.py upgrade
+      - name: Check every command dependency closure
+        run: python3 scripts/check_fosite.py graph
+
   mobile-contract:
     name: Mobile Contract Generation
     runs-on: ubuntu-latest

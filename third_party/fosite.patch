@@ -1,0 +1,925 @@
+--- a/authorize_request_handler.go
++++ b/authorize_request_handler.go
+@@ -10,7 +10,7 @@
+ 	"net/http"
+ 	"strings"
+ 
+-	"github.com/go-jose/go-jose/v3"
++	"github.com/go-jose/go-jose/v4"
+ 	"go.opentelemetry.io/otel/trace"
+ 
+ 	"github.com/ory/fosite/i18n"
+--- a/authorize_request_handler_oidc_request_test.go
++++ b/authorize_request_handler_oidc_request_test.go
+@@ -16,7 +16,7 @@
+ 
+ 	"github.com/pkg/errors"
+ 
+-	"github.com/go-jose/go-jose/v3"
++	"github.com/go-jose/go-jose/v4"
+ 	"github.com/stretchr/testify/assert"
+ 	"github.com/stretchr/testify/require"
+ 
+--- a/client.go
++++ b/client.go
+@@ -4,7 +4,7 @@
+ package fosite
+ 
+ import (
+-	"github.com/go-jose/go-jose/v3"
++	"github.com/go-jose/go-jose/v4"
+ )
+ 
+ // Client represents a client or an app.
+--- a/client_authentication.go
++++ b/client_authentication.go
+@@ -16,7 +16,7 @@
+ 
+ 	"github.com/ory/x/errorsx"
+ 
+-	"github.com/go-jose/go-jose/v3"
++	"github.com/go-jose/go-jose/v4"
+ 	"github.com/pkg/errors"
+ 
+ 	"github.com/ory/fosite/token/jwt"
+--- a/client_authentication_jwks_strategy.go
++++ b/client_authentication_jwks_strategy.go
+@@ -13,7 +13,7 @@
+ 
+ 	"github.com/ory/x/errorsx"
+ 
+-	"github.com/go-jose/go-jose/v3"
++	"github.com/go-jose/go-jose/v4"
+ )
+ 
+ const defaultJWKSFetcherStrategyCachePrefix = "github.com/ory/fosite.DefaultJWKSFetcherStrategy:"
+--- a/client_authentication_jwks_strategy_test.go
++++ b/client_authentication_jwks_strategy_test.go
+@@ -17,7 +17,7 @@
+ 
+ 	"github.com/ory/fosite/internal/gen"
+ 
+-	"github.com/go-jose/go-jose/v3"
++	"github.com/go-jose/go-jose/v4"
+ 	"github.com/stretchr/testify/assert"
+ 	"github.com/stretchr/testify/require"
+ )
+--- a/client_authentication_test.go
++++ b/client_authentication_test.go
+@@ -20,7 +20,7 @@
+ 
+ 	"github.com/ory/fosite/internal/gen"
+ 
+-	"github.com/go-jose/go-jose/v3"
++	"github.com/go-jose/go-jose/v4"
+ 	"github.com/pkg/errors"
+ 	"github.com/stretchr/testify/assert"
+ 	"github.com/stretchr/testify/require"
+--- a/go.mod
++++ b/go.mod
+@@ -4,7 +4,7 @@
+ 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
+ 	github.com/cristalhq/jwt/v4 v4.0.2
+ 	github.com/dgraph-io/ristretto v1.0.0
+-	github.com/go-jose/go-jose/v3 v3.0.3
++	github.com/go-jose/go-jose/v4 v4.1.9
+ 	github.com/golang/mock v1.6.0
+ 	github.com/google/uuid v1.3.1
+ 	github.com/gorilla/mux v1.8.0
+@@ -88,6 +88,4 @@
+ 	gopkg.in/yaml.v3 v3.0.1 // indirect
+ )
+ 
+-go 1.22
+-
+-toolchain go1.23.1
++go 1.24.0
+--- a/go.sum
++++ b/go.sum
+@@ -30,11 +30,11 @@
+ cloud.google.com/go/pubsub v1.2.0/go.mod h1:jhfEVHT8odbXTkndysNHCcx0awwzvfOlguIAii9o8iA=
+ cloud.google.com/go/pubsub v1.3.1/go.mod h1:i+ucay31+CNRpDW4Lu78I4xXG+O1r/MAHgjpRVR+TSU=
+ cloud.google.com/go/storage v1.0.0/go.mod h1:IhtSnM/ZTZV8YYJWCY8RULGVqBDmpoyjwiyrjsg+URw=
++cloud.google.com/go/storage v1.10.0/go.mod h1:FLPqc6j+Ki4BU591ie1oL6qBQGu2Bl/tZ9ullr3+Kg0=
++cloud.google.com/go/storage v1.14.0/go.mod h1:GrKmX003DSIwi9o29oFT7YDnHYwZoctc3fOKtUw0Xmo=
+ cloud.google.com/go/storage v1.5.0/go.mod h1:tpKbwo567HUNpVclU5sGELwQWBDZ8gh0ZeosJ0Rtdos=
+ cloud.google.com/go/storage v1.6.0/go.mod h1:N7U0C8pVQ/+NIKOBQyamJIeKQKkZ+mxpohlUTyfDhBk=
+ cloud.google.com/go/storage v1.8.0/go.mod h1:Wv1Oy7z6Yz3DshWRJFhqM/UCfaWIRTdp0RXyy7KQOVs=
+-cloud.google.com/go/storage v1.10.0/go.mod h1:FLPqc6j+Ki4BU591ie1oL6qBQGu2Bl/tZ9ullr3+Kg0=
+-cloud.google.com/go/storage v1.14.0/go.mod h1:GrKmX003DSIwi9o29oFT7YDnHYwZoctc3fOKtUw0Xmo=
+ dmitri.shuralyov.com/gpu/mtl v0.0.0-20190408044501-666a987793e9/go.mod h1:H6x//7gZCb22OMCxBHrMx7a5I7Hp++hsVxbQ4BYO7hU=
+ github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
+ github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
+@@ -92,8 +92,8 @@
+ github.com/go-gl/glfw v0.0.0-20190409004039-e6da0acd62b1/go.mod h1:vR7hzQXu2zJy9AVAgeJqvqgH9Q5CA+iKCZ2gyEVpxRU=
+ github.com/go-gl/glfw/v3.3/glfw v0.0.0-20191125211704-12ad95a8df72/go.mod h1:tQ2UAYgL5IevRw8kRxooKSPJfGvJ9fJQFa0TUsXzTg8=
+ github.com/go-gl/glfw/v3.3/glfw v0.0.0-20200222043503-6f7a984d4dc4/go.mod h1:tQ2UAYgL5IevRw8kRxooKSPJfGvJ9fJQFa0TUsXzTg8=
+-github.com/go-jose/go-jose/v3 v3.0.3 h1:fFKWeig/irsp7XD2zBxvnmA/XaRWp5V3CBsZXJF7G7k=
+-github.com/go-jose/go-jose/v3 v3.0.3/go.mod h1:5b+7YgP7ZICgJDBdfjZaIt+H/9L9T/YQrVfLAMboGkQ=
++github.com/go-jose/go-jose/v4 v4.1.9 h1:pKfeQkig1NmgK4hJrZYXLEYURXfoJB61Larw0uIW4gY=
++github.com/go-jose/go-jose/v4 v4.1.9/go.mod h1:x4oUasVrzR7071A4TnHLGSPpNOm2a21K9Kf04k1rs08=
+ github.com/go-kit/log v0.1.0/go.mod h1:zbhenjAZHb184qTLMA9ZjW7ThYL0H2mk7Q6pNt4vbaY=
+ github.com/go-logfmt/logfmt v0.5.0/go.mod h1:wCYkCAKZfumFQihp8CzCvQ3paCTfi41vtzG1KdI/P7A=
+ github.com/go-logr/logr v1.2.2/go.mod h1:jdQByPbusPIv2/zmleS9BjJVeZ6kBagPoEUsqbVz/1A=
+@@ -145,8 +145,8 @@
+ github.com/golang/protobuf v1.3.3/go.mod h1:vzj43D7+SQXF/4pzW/hwtAqwc6iTitCiVSaWz5lYuqw=
+ github.com/golang/protobuf v1.3.4/go.mod h1:vzj43D7+SQXF/4pzW/hwtAqwc6iTitCiVSaWz5lYuqw=
+ github.com/golang/protobuf v1.3.5/go.mod h1:6O5/vntMXwX2lRkT1hjjk0nAC1IDOTvTlVgjlRvqsdk=
++github.com/golang/protobuf v1.4.0-rc.1.0.20200221234624-67d41d38c208/go.mod h1:xKAWHe0F5eneWXFV3EuXVDTCmh+JuBKY0li0aMyXATA=
+ github.com/golang/protobuf v1.4.0-rc.1/go.mod h1:ceaxUfeHdC40wWswd/P6IGgMaK3YpKi5j83Wpe3EHw8=
+-github.com/golang/protobuf v1.4.0-rc.1.0.20200221234624-67d41d38c208/go.mod h1:xKAWHe0F5eneWXFV3EuXVDTCmh+JuBKY0li0aMyXATA=
+ github.com/golang/protobuf v1.4.0-rc.2/go.mod h1:LlEzMj4AhA7rCAGe4KMBDvJI+AwstrUpVNzEA03Pprs=
+ github.com/golang/protobuf v1.4.0-rc.4.0.20200313231945-b860323f09d0/go.mod h1:WU3c8KckQ9AFe+yFwt9sWVRKCVIyN9cPHBJSNnbL67w=
+ github.com/golang/protobuf v1.4.0/go.mod h1:jodUvKwWbYaEsadDk5Fwe5c77LiNKVO9IDvqG2KuDX0=
+@@ -169,7 +169,6 @@
+ github.com/google/go-cmp v0.5.2/go.mod h1:v8dTdLbMG2kIc/vJvl+f65V22dbkXbowE6jgT/gNBxE=
+ github.com/google/go-cmp v0.5.4/go.mod h1:v8dTdLbMG2kIc/vJvl+f65V22dbkXbowE6jgT/gNBxE=
+ github.com/google/go-cmp v0.5.5/go.mod h1:v8dTdLbMG2kIc/vJvl+f65V22dbkXbowE6jgT/gNBxE=
+-github.com/google/go-cmp v0.5.9/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
+ github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
+ github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
+ github.com/google/martian v2.1.0+incompatible/go.mod h1:9I4somxYTbIHy5NJKHRl3wXiIaQGbYVAs8BPL6v8lEs=
+@@ -222,10 +221,10 @@
+ github.com/jackc/pgconn v0.0.0-20190420214824-7e0022ef6ba3/go.mod h1:jkELnwuX+w9qN5YIfX0fl88Ehu4XC3keFuOJJk9pcnA=
+ github.com/jackc/pgconn v0.0.0-20190824142844-760dd75542eb/go.mod h1:lLjNuW/+OfW9/pnVKPazfWOgNfH2aPem8YQ7ilXGvJE=
+ github.com/jackc/pgconn v0.0.0-20190831204454-2fabfa3c18b7/go.mod h1:ZJKsE/KZfsUgOEh9hBm+xYTstcNHg7UPMVJqRfQxq4s=
++github.com/jackc/pgconn v1.13.0/go.mod h1:AnowpAqO4CMIIJNZl2VJp+KrkAZciAkhEl0W0JIobpI=
+ github.com/jackc/pgconn v1.8.0/go.mod h1:1C2Pb36bGIP9QHGBYCjnyhqu7Rv3sGshaQUvmfGIB/o=
+ github.com/jackc/pgconn v1.9.0/go.mod h1:YctiPyvzfU11JFxoXokUOOKQXQmDMoJL9vJzHH8/2JY=
+ github.com/jackc/pgconn v1.9.1-0.20210724152538-d89c8390a530/go.mod h1:4z2w8XhRbP1hYxkpTuBjTS3ne3J48K83+u0zoyvg2pI=
+-github.com/jackc/pgconn v1.13.0/go.mod h1:AnowpAqO4CMIIJNZl2VJp+KrkAZciAkhEl0W0JIobpI=
+ github.com/jackc/pgio v1.0.0/go.mod h1:oP+2QK2wFfUWgr+gxjoBH9KGBb31Eio69xUb0w5bYf8=
+ github.com/jackc/pgmock v0.0.0-20190831213851-13a1b77aafa2/go.mod h1:fGZlG77KXmcq05nJLRkk0+p82V8B8Dw8KN2/V9c/OAE=
+ github.com/jackc/pgmock v0.0.0-20201204152224-4fe30f7445fd/go.mod h1:hrBW0Enj2AZTNpt/7Y5rr2xe/9Mn757Wtb2xeBzPv2c=
+@@ -234,8 +233,8 @@
+ github.com/jackc/pgproto3 v1.1.0/go.mod h1:eR5FA3leWg7p9aeAqi37XOTgTIbkABlvcPB3E5rlc78=
+ github.com/jackc/pgproto3/v2 v2.0.0-alpha1.0.20190420180111-c116219b62db/go.mod h1:bhq50y+xrl9n5mRYyCBFKkpRVTLYJVWeCc+mEAI3yXA=
+ github.com/jackc/pgproto3/v2 v2.0.0-alpha1.0.20190609003834-432c2951c711/go.mod h1:uH0AWtUmuShn0bcesswc4aBTWGvw0cAxIJp+6OB//Wg=
++github.com/jackc/pgproto3/v2 v2.0.0-rc3.0.20190831210041-4c03ce451f29/go.mod h1:ryONWYqW6dqSg1Lw6vXNMXoBJhpzvWKnT95C46ckYeM=
+ github.com/jackc/pgproto3/v2 v2.0.0-rc3/go.mod h1:ryONWYqW6dqSg1Lw6vXNMXoBJhpzvWKnT95C46ckYeM=
+-github.com/jackc/pgproto3/v2 v2.0.0-rc3.0.20190831210041-4c03ce451f29/go.mod h1:ryONWYqW6dqSg1Lw6vXNMXoBJhpzvWKnT95C46ckYeM=
+ github.com/jackc/pgproto3/v2 v2.0.6/go.mod h1:WfJCnwN3HIg9Ish/j3sgWXnAfK8A9Y0bwXYU5xKaEdA=
+ github.com/jackc/pgproto3/v2 v2.1.1/go.mod h1:WfJCnwN3HIg9Ish/j3sgWXnAfK8A9Y0bwXYU5xKaEdA=
+ github.com/jackc/pgproto3/v2 v2.3.1/go.mod h1:WfJCnwN3HIg9Ish/j3sgWXnAfK8A9Y0bwXYU5xKaEdA=
+@@ -243,8 +242,8 @@
+ github.com/jackc/pgtype v0.0.0-20190421001408-4ed0de4755e0/go.mod h1:hdSHsc1V01CGwFsrv11mJRHWJ6aifDLfdV3aVjFF0zg=
+ github.com/jackc/pgtype v0.0.0-20190824184912-ab885b375b90/go.mod h1:KcahbBH1nCMSo2DXpzsoWOAfFkdEtEJpPbVLq8eE+mc=
+ github.com/jackc/pgtype v0.0.0-20190828014616-a8802b16cc59/go.mod h1:MWlu30kVJrUS8lot6TQqcg7mtthZ9T0EoIBFiJcmcyw=
++github.com/jackc/pgtype v1.12.0/go.mod h1:LUMuVrfsFfdKGLw+AFFVv6KtHOFMwRgDDzBt76IqCA4=
+ github.com/jackc/pgtype v1.8.1-0.20210724151600-32e20a603178/go.mod h1:C516IlIV9NKqfsMCXTdChteoXmwgUceqaLfjg2e3NlM=
+-github.com/jackc/pgtype v1.12.0/go.mod h1:LUMuVrfsFfdKGLw+AFFVv6KtHOFMwRgDDzBt76IqCA4=
+ github.com/jackc/pgx/v4 v4.0.0-20190420224344-cc3461e65d96/go.mod h1:mdxmSJJuR08CZQyj1PVQBHy9XOp5p8/SHH6a0psbY9Y=
+ github.com/jackc/pgx/v4 v4.0.0-20190421002000-1b8f0016e912/go.mod h1:no/Y67Jkk/9WuGR0JG/JseM9irFbnEPbuWV2EELPNuM=
+ github.com/jackc/pgx/v4 v4.0.0-pre1.0.20190824185557-6972a5742186/go.mod h1:X+GQnOEnf1dqHGpw7JmHqHc1NxDoalibchSk9/RWuDc=
+@@ -286,26 +285,26 @@
+ github.com/kr/text v0.2.0/go.mod h1:eLer722TekiGuMkidMxC/pM04lWEeraHUUmBw8l2grE=
+ github.com/lib/pq v1.0.0/go.mod h1:5WUZQaWbwv1U+lTReE5YruASi9Al49XbQIvNi/34Woo=
+ github.com/lib/pq v1.1.0/go.mod h1:5WUZQaWbwv1U+lTReE5YruASi9Al49XbQIvNi/34Woo=
+-github.com/lib/pq v1.2.0/go.mod h1:5WUZQaWbwv1U+lTReE5YruASi9Al49XbQIvNi/34Woo=
+ github.com/lib/pq v1.10.2/go.mod h1:AlVN5x4E4T544tWzH6hKfbfQvm3HdbOxrmggDNAPY9o=
+ github.com/lib/pq v1.10.7/go.mod h1:AlVN5x4E4T544tWzH6hKfbfQvm3HdbOxrmggDNAPY9o=
++github.com/lib/pq v1.2.0/go.mod h1:5WUZQaWbwv1U+lTReE5YruASi9Al49XbQIvNi/34Woo=
+ github.com/luna-duclos/instrumentedsql v1.1.3/go.mod h1:9J1njvFds+zN7y85EDhN9XNQLANWwZt2ULeIC8yMNYs=
+ github.com/magiconair/properties v1.8.7 h1:IeQXZAiQcpL9mgcAe1Nu6cX9LLw6ExEHKjN0VQdvPDY=
+ github.com/magiconair/properties v1.8.7/go.mod h1:Dhd985XPs7jluiymwWYZ0G4Z61jb3vdS329zhj2hYo0=
+ github.com/mattn/go-colorable v0.1.1/go.mod h1:FuOcm+DKB9mbwrcAfNl7/TZVBZ6rcnceauSikq3lYCQ=
++github.com/mattn/go-colorable v0.1.13 h1:fFA4WZxdEF4tXPZVKMLwD8oUnCTTo08duU7wxecdEvA=
++github.com/mattn/go-colorable v0.1.13/go.mod h1:7S9/ev0klgBDR4GtXTXX8a3vIGJpMovkB8vQcUbaXHg=
+ github.com/mattn/go-colorable v0.1.6/go.mod h1:u6P/XSegPjTcexA+o6vUJrdnUu04hMope9wVRipJSqc=
+ github.com/mattn/go-colorable v0.1.9/go.mod h1:u6P/XSegPjTcexA+o6vUJrdnUu04hMope9wVRipJSqc=
+-github.com/mattn/go-colorable v0.1.13 h1:fFA4WZxdEF4tXPZVKMLwD8oUnCTTo08duU7wxecdEvA=
+-github.com/mattn/go-colorable v0.1.13/go.mod h1:7S9/ev0klgBDR4GtXTXX8a3vIGJpMovkB8vQcUbaXHg=
+-github.com/mattn/go-isatty v0.0.5/go.mod h1:Iq45c/XA43vh69/j3iqttzPXn0bhXyGjM0Hdxcsrc5s=
+-github.com/mattn/go-isatty v0.0.7/go.mod h1:Iq45c/XA43vh69/j3iqttzPXn0bhXyGjM0Hdxcsrc5s=
+ github.com/mattn/go-isatty v0.0.12/go.mod h1:cbi8OIDigv2wuxKPP5vlRcQ1OAZbq2CE4Kysco4FUpU=
+ github.com/mattn/go-isatty v0.0.14/go.mod h1:7GGIvUiUoEMVVmxf/4nioHXj79iQHKdU27kJ6hsGG94=
+ github.com/mattn/go-isatty v0.0.20 h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWEY=
+ github.com/mattn/go-isatty v0.0.20/go.mod h1:W+V8PltTTMOvKvAeJH7IuucS94S2C6jfK/D7dTCTo3Y=
+-github.com/mattn/go-sqlite3 v1.14.6/go.mod h1:NyWgC/yNuGj7Q9rpYnZvas74GogHl5/Z4A/KQRfk6bU=
++github.com/mattn/go-isatty v0.0.5/go.mod h1:Iq45c/XA43vh69/j3iqttzPXn0bhXyGjM0Hdxcsrc5s=
++github.com/mattn/go-isatty v0.0.7/go.mod h1:Iq45c/XA43vh69/j3iqttzPXn0bhXyGjM0Hdxcsrc5s=
+ github.com/mattn/go-sqlite3 v1.14.15/go.mod h1:2eHXhiwb8IkHr+BDWZGa96P6+rkvnG63S2DGjv9HUNg=
+ github.com/mattn/go-sqlite3 v1.14.16/go.mod h1:2eHXhiwb8IkHr+BDWZGa96P6+rkvnG63S2DGjv9HUNg=
++github.com/mattn/go-sqlite3 v1.14.6/go.mod h1:NyWgC/yNuGj7Q9rpYnZvas74GogHl5/Z4A/KQRfk6bU=
+ github.com/mattn/goveralls v0.0.12 h1:PEEeF0k1SsTjOBQ8FOmrOAoCu4ytuMaWCnWe94zxbCg=
+ github.com/mattn/goveralls v0.0.12/go.mod h1:44ImGEUfmqH8bBtaMrYKsM65LXfNLWmwaxFGjZwgMSQ=
+ github.com/microcosm-cc/bluemonday v1.0.20/go.mod h1:yfBmMi8mxvaZut3Yytv+jTXRY8mxyjJ0/kQBTElld50=
+@@ -348,10 +347,10 @@
+ github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
+ github.com/prometheus/client_model v0.0.0-20190812154241-14fe0d1b01d4/go.mod h1:xMI15A0UPsDsEKsMN9yxemIoYk6Tm2C1GtYGdfGttqA=
+ github.com/rogpeppe/go-charset v0.0.0-20180617210344-2471d30d28b4/go.mod h1:qgYeAmZ5ZIpBWTGllZSQnw97Dj+woV0toclVaRGI8pc=
++github.com/rogpeppe/go-internal v1.10.0 h1:TMyTOH3F/DB16zRVcYyreMH6GnZZrwQVAoYjRBZyWFQ=
++github.com/rogpeppe/go-internal v1.10.0/go.mod h1:UQnix2H7Ngw/k4C5ijL5+65zddjncjaFoBhdsK/akog=
+ github.com/rogpeppe/go-internal v1.3.0/go.mod h1:M8bDsm7K2OlrFYOpmOWEs/qY81heoFRclV5y23lUDJ4=
+ github.com/rogpeppe/go-internal v1.9.0/go.mod h1:WtVeX8xhTBvf0smdhujwtBcq4Qrzq/fJaraNFVN+nFs=
+-github.com/rogpeppe/go-internal v1.10.0 h1:TMyTOH3F/DB16zRVcYyreMH6GnZZrwQVAoYjRBZyWFQ=
+-github.com/rogpeppe/go-internal v1.10.0/go.mod h1:UQnix2H7Ngw/k4C5ijL5+65zddjncjaFoBhdsK/akog=
+ github.com/rs/xid v1.2.1/go.mod h1:+uKXf+4Djp6Md1KODXJxgGQPKngRmWyn10oCKFzNHOQ=
+ github.com/rs/zerolog v1.13.0/go.mod h1:YbFCdg8HfsridGWAh22vktObvhZbQsZXe4/zB0OKkWU=
+ github.com/rs/zerolog v1.15.0/go.mod h1:xYTKnLHcpfU2225ny5qZjxnj9NvkumZYjJHlAThCjNc=
+@@ -467,9 +466,9 @@
+ go.uber.org/multierr v1.3.0/go.mod h1:VgVr7evmIr6uPjLBxg28wmKNXyqE9akIJ5XnfpiKl+4=
+ go.uber.org/multierr v1.5.0/go.mod h1:FeouvMocqHpRaaGuG9EjoKcStLC43Zu/fmqdUMPcKYU=
+ go.uber.org/tools v0.0.0-20190618225709-2cfd321de3ee/go.mod h1:vJERXedbb3MVM5f9Ejo0C68/HhF8uaILCdgjnY+goOA=
+-go.uber.org/zap v1.9.1/go.mod h1:vwi/ZaCAaUcBkycHslxD9B2zi4UTXhF60s6SWpuDF0Q=
+ go.uber.org/zap v1.10.0/go.mod h1:vwi/ZaCAaUcBkycHslxD9B2zi4UTXhF60s6SWpuDF0Q=
+ go.uber.org/zap v1.13.0/go.mod h1:zwrFLgMcdUuIBviXEYEH1YKNaOBnKXsx2IPda5bBwHM=
++go.uber.org/zap v1.9.1/go.mod h1:vwi/ZaCAaUcBkycHslxD9B2zi4UTXhF60s6SWpuDF0Q=
+ golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
+ golang.org/x/crypto v0.0.0-20190411191339-88737f569e3a/go.mod h1:WFFai1msRO1wXaEeE5yQxYXgSfI8pQAWXbQop6sCtWE=
+ golang.org/x/crypto v0.0.0-20190510104115-cbcb75029529/go.mod h1:yigFU9vqHzYiE8UmvKecakEJjdnWj3jj499lnFckfCI=
+@@ -483,7 +482,6 @@
+ golang.org/x/crypto v0.0.0-20210711020723-a769d52b0f97/go.mod h1:GvvjBRRGRdwPK5ydBHafDWAxML/pGHZbMvKqRZ5+Abc=
+ golang.org/x/crypto v0.0.0-20210921155107-089bfa567519/go.mod h1:GvvjBRRGRdwPK5ydBHafDWAxML/pGHZbMvKqRZ5+Abc=
+ golang.org/x/crypto v0.0.0-20220722155217-630584e8d5aa/go.mod h1:IxCIyHEi3zRg3s0A5j5BB6A9Jmi73HwBIUl50j+osU4=
+-golang.org/x/crypto v0.19.0/go.mod h1:Iy9bg/ha4yyC70EfRS8jz+B6ybOBKMaSxLj6P6oBDfU=
+ golang.org/x/crypto v0.31.0 h1:ihbySMvVjLAeSH1IbfcRTkD/iNscyz8rGzjF/E5hV6U=
+ golang.org/x/crypto v0.31.0/go.mod h1:kDsLvtWBEx7MV9tJOj9bnXsPbxwJQ6csT/x4KIN4Ssk=
+ golang.org/x/exp v0.0.0-20190121172915-509febef88a4/go.mod h1:CJ0aWSM057203Lf6IL+f9T1iT9GByDxfZKAQTCR3kQA=
+@@ -515,6 +513,9 @@
+ golang.org/x/mod v0.1.0/go.mod h1:0QHyrYULN0/3qlju5TqG8bIK38QM8yzMo5ekMj3DlcY=
+ golang.org/x/mod v0.1.1-0.20191105210325-c90efee705ee/go.mod h1:QqPTAvyqsEbceGzBzNggFXnrqF1CaUcvgkdR5Ot7KZg=
+ golang.org/x/mod v0.1.1-0.20191107180719-034126e5016b/go.mod h1:QqPTAvyqsEbceGzBzNggFXnrqF1CaUcvgkdR5Ot7KZg=
++golang.org/x/mod v0.10.0/go.mod h1:iBbtSCu2XBx23ZKBPSOrRkjjQPZFPuis4dIYUhu/chs=
++golang.org/x/mod v0.17.0 h1:zY54UmvipHiNd+pm+m0x9KhZ9hl1/7QNMyxXbc6ICqA=
++golang.org/x/mod v0.17.0/go.mod h1:hTbmBsO62+eylJbnUtE2MGJUyE7QWk4xUqPFrRgJ+7c=
+ golang.org/x/mod v0.2.0/go.mod h1:s0Qsj1ACt9ePp/hMypM3fl4fZqREWJwdYDEqhRiZZUA=
+ golang.org/x/mod v0.3.0/go.mod h1:s0Qsj1ACt9ePp/hMypM3fl4fZqREWJwdYDEqhRiZZUA=
+ golang.org/x/mod v0.4.0/go.mod h1:s0Qsj1ACt9ePp/hMypM3fl4fZqREWJwdYDEqhRiZZUA=
+@@ -522,9 +523,6 @@
+ golang.org/x/mod v0.4.2/go.mod h1:s0Qsj1ACt9ePp/hMypM3fl4fZqREWJwdYDEqhRiZZUA=
+ golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4/go.mod h1:jJ57K6gSWd91VN4djpZkiMVwK6gcyfeH4XE8wZrZaV4=
+ golang.org/x/mod v0.8.0/go.mod h1:iBbtSCu2XBx23ZKBPSOrRkjjQPZFPuis4dIYUhu/chs=
+-golang.org/x/mod v0.10.0/go.mod h1:iBbtSCu2XBx23ZKBPSOrRkjjQPZFPuis4dIYUhu/chs=
+-golang.org/x/mod v0.17.0 h1:zY54UmvipHiNd+pm+m0x9KhZ9hl1/7QNMyxXbc6ICqA=
+-golang.org/x/mod v0.17.0/go.mod h1:hTbmBsO62+eylJbnUtE2MGJUyE7QWk4xUqPFrRgJ+7c=
+ golang.org/x/net v0.0.0-20180724234803-3673e40ba225/go.mod h1:mL1N/T3taQHkDXs73rZJwtUhF3w3ftmwwsq0BUmARs4=
+ golang.org/x/net v0.0.0-20180826012351-8a410e7b638d/go.mod h1:mL1N/T3taQHkDXs73rZJwtUhF3w3ftmwwsq0BUmARs4=
+ golang.org/x/net v0.0.0-20190108225652-1e06a53dbb7e/go.mod h1:mL1N/T3taQHkDXs73rZJwtUhF3w3ftmwwsq0BUmARs4=
+@@ -562,11 +560,10 @@
+ golang.org/x/net v0.0.0-20220722155237-a158d28d115b/go.mod h1:XRhObCWvk6IyKnWLug+ECip1KBveYUHfp+8e9klMJ9c=
+ golang.org/x/net v0.0.0-20220826154423-83b083e8dc8b/go.mod h1:YDH+HFinaLZZlnHAfSS6ZXJJ9M9t4Dl22yv3iI2vPwk=
+ golang.org/x/net v0.0.0-20221002022538-bcab6841153b/go.mod h1:YDH+HFinaLZZlnHAfSS6ZXJJ9M9t4Dl22yv3iI2vPwk=
++golang.org/x/net v0.25.0 h1:d/OCCoBEUq33pjydKrGQhw7IlUPI2Oylr+8qLx49kac=
++golang.org/x/net v0.25.0/go.mod h1:JkAGAh7GEvH74S6FOH42FLoXpXbE/aqXSrIQjXgsiwM=
+ golang.org/x/net v0.6.0/go.mod h1:2Tu9+aMcznHK/AK1HMvgo6xiTLG5rD5rZLDS+rp2Bjs=
+ golang.org/x/net v0.9.0/go.mod h1:d48xBJpPfHeWQsugry2m+kC02ZBRGRgulfHnEXEuWns=
+-golang.org/x/net v0.10.0/go.mod h1:0qNGK6F8kojg2nk9dLZ2mShWaEBan6FAoqfSigmmuDg=
+-golang.org/x/net v0.25.0 h1:d/OCCoBEUq33pjydKrGQhw7IlUPI2Oylr+8qLx49kac=
+-golang.org/x/net v0.25.0/go.mod h1:JkAGAh7GEvH74S6FOH42FLoXpXbE/aqXSrIQjXgsiwM=
+ golang.org/x/oauth2 v0.0.0-20180821212333-d2e6202438be/go.mod h1:N/0e6XlmueqKjAGxoOufVs8QHGRruUQn6yWY3a++T0U=
+ golang.org/x/oauth2 v0.0.0-20190226205417-e64efc72b421/go.mod h1:gOpvHmFTYa4IltrdGE7lF6nIHvwfUNPOp7c8zoXwtLw=
+ golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45/go.mod h1:gOpvHmFTYa4IltrdGE7lF6nIHvwfUNPOp7c8zoXwtLw=
+@@ -644,21 +641,19 @@
+ golang.org/x/sys v0.0.0-20220722155257-8c9f86f7a55f/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+ golang.org/x/sys v0.0.0-20220728004956-3c1f35247d10/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+ golang.org/x/sys v0.0.0-20220908164124-27713097b956/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
++golang.org/x/sys v0.28.0 h1:Fksou7UEQUWlKvIdsqzJmUmCX3cZuD2+P3XyyzwMhlA=
++golang.org/x/sys v0.28.0/go.mod h1:/VUhepiaJMQUp4+oa/7Zr1D23ma6VTLIYjOOTFZPUcA=
+ golang.org/x/sys v0.5.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+ golang.org/x/sys v0.7.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+-golang.org/x/sys v0.8.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+-golang.org/x/sys v0.17.0/go.mod h1:/VUhepiaJMQUp4+oa/7Zr1D23ma6VTLIYjOOTFZPUcA=
+-golang.org/x/sys v0.28.0 h1:Fksou7UEQUWlKvIdsqzJmUmCX3cZuD2+P3XyyzwMhlA=
+-golang.org/x/sys v0.28.0/go.mod h1:/VUhepiaJMQUp4+oa/7Zr1D23ma6VTLIYjOOTFZPUcA=
+ golang.org/x/term v0.0.0-20201117132131-f5c789dd3221/go.mod h1:Nr5EML6q2oocZ2LXRh80K7BxOlk5/8JxuGnuhpl+muw=
+ golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1/go.mod h1:bj7SfCRtBDWHUb9snDiAeCFNEtKQo2Wmx5Cou7ajbmo=
+ golang.org/x/term v0.0.0-20210927222741-03fcf44c2211/go.mod h1:jbD1KX2456YbFQfuXm/mYQcufACuNUgVhRMnK/tPxf8=
+ golang.org/x/term v0.0.0-20220722155259-a9ba230a4035/go.mod h1:jbD1KX2456YbFQfuXm/mYQcufACuNUgVhRMnK/tPxf8=
+ golang.org/x/term v0.5.0/go.mod h1:jMB1sMXY+tzblOD4FWmEbocvup2/aLOaQEp7JmGp78k=
+ golang.org/x/term v0.7.0/go.mod h1:P32HKFT3hSsZrRxla30E9HqToFYAQPCMs/zFMBUFqPY=
+-golang.org/x/term v0.8.0/go.mod h1:xPskH00ivmX89bAKVGSKKtLOWNx2+17Eiy94tnKShWo=
+-golang.org/x/term v0.17.0/go.mod h1:lLRBjIVuehSbZlaOtGMbcMncT+aqLLLmKrsjNrUguwk=
+ golang.org/x/text v0.0.0-20170915032832-14c0d48ead0c/go.mod h1:NqM8EUOU14njkJ3fqMW+pc6Ldnwhi/IjpwHt7yyuwOQ=
++golang.org/x/text v0.21.0 h1:zyQAAkrwaneQ066sspRyJaG9VNi/YJ1NfzcGB3hZ/qo=
++golang.org/x/text v0.21.0/go.mod h1:4IBbMaMmOPCJ8SecivzSH54+73PCFmPWxNTLm+vZkEQ=
+ golang.org/x/text v0.3.0/go.mod h1:NqM8EUOU14njkJ3fqMW+pc6Ldnwhi/IjpwHt7yyuwOQ=
+ golang.org/x/text v0.3.1-0.20180807135948-17ff2d5776d2/go.mod h1:NqM8EUOU14njkJ3fqMW+pc6Ldnwhi/IjpwHt7yyuwOQ=
+ golang.org/x/text v0.3.2/go.mod h1:bEr9sfX3Q8Zfm5fL9x+3itogRgK3+ptLWKqgva+5dAk=
+@@ -669,9 +664,6 @@
+ golang.org/x/text v0.3.8/go.mod h1:E6s5w1FMmriuDzIBO73fBruAKo1PCIq6d2Q6DHfQ8WQ=
+ golang.org/x/text v0.7.0/go.mod h1:mrYo+phRRbMaCq/xk9113O4dZlRixOauAjOtrjsXDZ8=
+ golang.org/x/text v0.9.0/go.mod h1:e1OnstbJyHTd6l/uOt8jFFHp6TRDWZR/bV3emEE/zU8=
+-golang.org/x/text v0.14.0/go.mod h1:18ZOQIKpY8NJVqYksKHtTdi31H5itFRjB5/qKTNYzSU=
+-golang.org/x/text v0.21.0 h1:zyQAAkrwaneQ066sspRyJaG9VNi/YJ1NfzcGB3hZ/qo=
+-golang.org/x/text v0.21.0/go.mod h1:4IBbMaMmOPCJ8SecivzSH54+73PCFmPWxNTLm+vZkEQ=
+ golang.org/x/time v0.0.0-20181108054448-85acf8d2951c/go.mod h1:tRJNPiyCQ0inRvYxbN9jk5I+vvW/OXSQhTDSoE431IQ=
+ golang.org/x/time v0.0.0-20190308202827-9d24e82272b4/go.mod h1:tRJNPiyCQ0inRvYxbN9jk5I+vvW/OXSQhTDSoE431IQ=
+ golang.org/x/time v0.0.0-20191024005414-555d28b269f0/go.mod h1:tRJNPiyCQ0inRvYxbN9jk5I+vvW/OXSQhTDSoE431IQ=
+@@ -732,20 +724,16 @@
+ golang.org/x/tools v0.1.0/go.mod h1:xkSsbof2nBLbhDlRMhhhyNLN/zl3eTqcnHD5viDpcZ0=
+ golang.org/x/tools v0.1.1/go.mod h1:o0xws9oXOQQZyjljx8fwUC0k7L1pTE6eaCbjGeHmOkk=
+ golang.org/x/tools v0.1.12/go.mod h1:hNGJHUnrk76NpqgfD5Aqm5Crs+Hm0VOH/i9J2+nxYbc=
++golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d h1:vU5i/LfpvrRCpgM/VPfJLg5KjxD3E+hfT1SH+d9zLwg=
++golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d/go.mod h1:aiJjzUbINMkxbQROHiO6hDPo2LHcIPhhQsa9DLh0yGk=
+ golang.org/x/tools v0.6.0/go.mod h1:Xwgl3UAJ/d3gWutnCtw505GrjyAbvKui8lOU390QaIU=
+ golang.org/x/tools v0.8.0/go.mod h1:JxBZ99ISMI5ViVkT1tr6tdNmXeTrcpVSD3vZ1RsRdN4=
+-golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d h1:vU5i/LfpvrRCpgM/VPfJLg5KjxD3E+hfT1SH+d9zLwg=
+-golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d/go.mod h1:aiJjzUbINMkxbQROHiO6hDPo2LHcIPhhQsa9DLh0yGk=
+ golang.org/x/xerrors v0.0.0-20190410155217-1f06c39b4373/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
+ golang.org/x/xerrors v0.0.0-20190513163551-3ee3066db522/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
+ golang.org/x/xerrors v0.0.0-20190717185122-a985d3407aa7/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
+ golang.org/x/xerrors v0.0.0-20191011141410-1b5146add898/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
+ golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
+ golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
+-google.golang.org/api v0.4.0/go.mod h1:8k5glujaEP+g9n7WNsDg8QP6cUVNI86fCNMcbazEtwE=
+-google.golang.org/api v0.7.0/go.mod h1:WtwebWUNSVBH/HAw79HIFXZNqEvBhG+Ra+ax0hx3E3M=
+-google.golang.org/api v0.8.0/go.mod h1:o4eAsZoiT+ibD93RtjEohWalFOjRDx6CVaqeizhEnKg=
+-google.golang.org/api v0.9.0/go.mod h1:o4eAsZoiT+ibD93RtjEohWalFOjRDx6CVaqeizhEnKg=
+ google.golang.org/api v0.13.0/go.mod h1:iLdEw5Ide6rF15KTC1Kkl0iskquN2gFfn9o9XIsbkAI=
+ google.golang.org/api v0.14.0/go.mod h1:iLdEw5Ide6rF15KTC1Kkl0iskquN2gFfn9o9XIsbkAI=
+ google.golang.org/api v0.15.0/go.mod h1:iLdEw5Ide6rF15KTC1Kkl0iskquN2gFfn9o9XIsbkAI=
+@@ -760,7 +748,11 @@
+ google.golang.org/api v0.30.0/go.mod h1:QGmEvQ87FHZNiUVJkT14jQNYJ4ZJjdRF23ZXz5138Fc=
+ google.golang.org/api v0.35.0/go.mod h1:/XrVsuzM0rZmrsbjJutiuftIzeuTQcEeaYcSk/mQ1dg=
+ google.golang.org/api v0.36.0/go.mod h1:+z5ficQTmoYpPn8LCUNVpK5I7hwkpjbcgqA7I34qYtE=
++google.golang.org/api v0.4.0/go.mod h1:8k5glujaEP+g9n7WNsDg8QP6cUVNI86fCNMcbazEtwE=
+ google.golang.org/api v0.40.0/go.mod h1:fYKFpnQN0DsDSKRVRcQSDQNtqWPfM9i+zNPxepjRCQ8=
++google.golang.org/api v0.7.0/go.mod h1:WtwebWUNSVBH/HAw79HIFXZNqEvBhG+Ra+ax0hx3E3M=
++google.golang.org/api v0.8.0/go.mod h1:o4eAsZoiT+ibD93RtjEohWalFOjRDx6CVaqeizhEnKg=
++google.golang.org/api v0.9.0/go.mod h1:o4eAsZoiT+ibD93RtjEohWalFOjRDx6CVaqeizhEnKg=
+ google.golang.org/appengine v1.1.0/go.mod h1:EbEs0AVv82hx2wNQdGPgUI5lhzA/G0D9YwlJXL52JkM=
+ google.golang.org/appengine v1.4.0/go.mod h1:xpcJRLb0r/rnEns0DIKYYv+WjYCduHsrkT7/EB5XEv4=
+ google.golang.org/appengine v1.5.0/go.mod h1:xpcJRLb0r/rnEns0DIKYYv+WjYCduHsrkT7/EB5XEv4=
+--- a/handler/oauth2/flow_refresh.go
++++ b/handler/oauth2/flow_refresh.go
+@@ -216,14 +216,14 @@
+ 
+ 	if errors.Is(storageErr, fosite.ErrSerializationFailure) {
+ 		return errorsx.WithStack(fosite.ErrInvalidRequest.
+-			WithDebugf(storageErr.Error()).
++			WithDebugf("%s", storageErr.Error()).
+ 			WithWrap(storageErr).
+ 			WithHint("Failed to refresh token because of multiple concurrent requests using the same token. Please retry the request."))
+ 	}
+ 
+ 	if errors.Is(storageErr, fosite.ErrNotFound) || errors.Is(storageErr, fosite.ErrInactiveToken) {
+ 		return errorsx.WithStack(fosite.ErrInvalidRequest.
+-			WithDebugf(storageErr.Error()).
++			WithDebugf("%s", storageErr.Error()).
+ 			WithWrap(storageErr).
+ 			WithHint("Failed to refresh token. Please retry the request."))
+ 	}
+--- a/handler/rfc7523/handler.go
++++ b/handler/rfc7523/handler.go
+@@ -10,8 +10,8 @@
+ 
+ 	"github.com/ory/fosite/handler/oauth2"
+ 
+-	"github.com/go-jose/go-jose/v3"
+-	"github.com/go-jose/go-jose/v3/jwt"
++	"github.com/go-jose/go-jose/v4"
++	"github.com/go-jose/go-jose/v4/jwt"
+ 
+ 	"github.com/ory/fosite"
+ 	"github.com/ory/x/errorsx"
+@@ -51,7 +51,7 @@
+ 		return errorsx.WithStack(fosite.ErrInvalidRequest.WithHintf("The assertion request parameter must be set when using grant_type of '%s'.", grantTypeJWTBearer))
+ 	}
+ 
+-	token, err := jwt.ParseSigned(assertion)
++	token, err := jwt.ParseSigned(assertion, []jose.SignatureAlgorithm{jose.HS256, jose.HS384, jose.HS512, jose.RS256, jose.RS384, jose.RS512, jose.ES256, jose.ES384, jose.ES512, jose.PS256, jose.PS384, jose.PS512, jose.EdDSA, "none"})
+ 	if err != nil {
+ 		return errorsx.WithStack(fosite.ErrInvalidGrant.
+ 			WithHint("Unable to parse JSON Web Token passed in \"assertion\" request parameter.").
+--- a/handler/rfc7523/handler_test.go
++++ b/handler/rfc7523/handler_test.go
+@@ -18,8 +18,8 @@
+ 
+ 	"github.com/ory/fosite/handler/oauth2"
+ 
+-	"github.com/go-jose/go-jose/v3"
+-	"github.com/go-jose/go-jose/v3/jwt"
++	"github.com/go-jose/go-jose/v4"
++	"github.com/go-jose/go-jose/v4/jwt"
+ 	"github.com/golang/mock/gomock"
+ 	"github.com/stretchr/testify/suite"
+ 
+@@ -44,7 +44,7 @@
+ 
+ // Setup before each test in the suite.
+ func (s *AuthorizeJWTGrantRequestHandlerTestSuite) SetupSuite() {
+-	privateKey, err := rsa.GenerateKey(rand.Reader, 512) // fast RSA for testing
++	privateKey, err := rsa.GenerateKey(rand.Reader, 2048) // accepted by the Go 1.27 RSA minimum
+ 	if err != nil {
+ 		s.FailNowf("failed to setup test suite", "failed to generate RSA private key: %s", err.Error())
+ 	}
+@@ -760,7 +760,7 @@
+ 		s.FailNowf("failed to create test assertion", "failed to create signer: %s", err.Error())
+ 	}
+ 
+-	raw, err := jwt.Signed(sig).Claims(cl).CompactSerialize()
++	raw, err := jwt.Signed(sig).Claims(cl).Serialize()
+ 	if err != nil {
+ 		s.FailNowf("failed to create test assertion", "failed to sign assertion: %s", err.Error())
+ 	}
+--- a/handler/rfc7523/storage.go
++++ b/handler/rfc7523/storage.go
+@@ -7,7 +7,7 @@
+ 	"context"
+ 	"time"
+ 
+-	"github.com/go-jose/go-jose/v3"
++	"github.com/go-jose/go-jose/v4"
+ )
+ 
+ // RFC7523KeyStorage holds information needed to validate jwt assertion in authorization grants.
+--- a/integration/authorize_jwt_bearer_required_iat_test.go
++++ b/integration/authorize_jwt_bearer_required_iat_test.go
+@@ -11,7 +11,7 @@
+ 
+ 	"github.com/stretchr/testify/require"
+ 
+-	"github.com/go-jose/go-jose/v3/jwt"
++	"github.com/go-jose/go-jose/v4/jwt"
+ 	"github.com/google/uuid"
+ 	"github.com/stretchr/testify/assert"
+ 	"github.com/stretchr/testify/suite"
+--- a/integration/authorize_jwt_bearer_required_jti_test.go
++++ b/integration/authorize_jwt_bearer_required_jti_test.go
+@@ -9,7 +9,7 @@
+ 	"testing"
+ 	"time"
+ 
+-	"github.com/go-jose/go-jose/v3/jwt"
++	"github.com/go-jose/go-jose/v4/jwt"
+ 	"github.com/google/uuid"
+ 	"github.com/stretchr/testify/assert"
+ 	"github.com/stretchr/testify/suite"
+--- a/integration/authorize_jwt_bearer_test.go
++++ b/integration/authorize_jwt_bearer_test.go
+@@ -11,7 +11,7 @@
+ 
+ 	"github.com/stretchr/testify/require"
+ 
+-	"github.com/go-jose/go-jose/v3/jwt"
++	"github.com/go-jose/go-jose/v4/jwt"
+ 	"github.com/google/uuid"
+ 	"github.com/stretchr/testify/assert"
+ 	"github.com/stretchr/testify/suite"
+--- a/integration/clients/jwt_bearer.go
++++ b/integration/clients/jwt_bearer.go
+@@ -12,8 +12,8 @@
+ 	"net/url"
+ 	"strings"
+ 
+-	"github.com/go-jose/go-jose/v3"
+-	"github.com/go-jose/go-jose/v3/jwt"
++	"github.com/go-jose/go-jose/v4"
++	"github.com/go-jose/go-jose/v4/jwt"
+ )
+ 
+ // #nosec:gosec G101 - False Positive
+@@ -69,7 +69,7 @@
+ 		Claims(payloadData.Claims).
+ 		Claims(payloadData.PrivateClaims)
+ 
+-	assertion, err := builder.CompactSerialize()
++	assertion, err := builder.Serialize()
+ 	if err != nil {
+ 		return nil, err
+ 	}
+--- a/integration/helper_setup_test.go
++++ b/integration/helper_setup_test.go
+@@ -15,7 +15,7 @@
+ 	"github.com/ory/fosite/internal"
+ 	"github.com/ory/fosite/internal/gen"
+ 
+-	"github.com/go-jose/go-jose/v3"
++	"github.com/go-jose/go-jose/v4"
+ 	"github.com/gorilla/mux"
+ 	goauth "golang.org/x/oauth2"
+ 	"golang.org/x/oauth2/clientcredentials"
+--- a/integration/introspect_jwt_bearer_token_test.go
++++ b/integration/introspect_jwt_bearer_token_test.go
+@@ -12,7 +12,7 @@
+ 
+ 	"github.com/stretchr/testify/require"
+ 
+-	"github.com/go-jose/go-jose/v3/jwt"
++	"github.com/go-jose/go-jose/v4/jwt"
+ 	"github.com/stretchr/testify/assert"
+ 	"github.com/stretchr/testify/suite"
+ 
+--- a/internal/oauth2_auth_jwt_storage.go
++++ b/internal/oauth2_auth_jwt_storage.go
+@@ -12,7 +12,7 @@
+ 	reflect "reflect"
+ 	time "time"
+ 
+-	jose "github.com/go-jose/go-jose/v3"
++	jose "github.com/go-jose/go-jose/v4"
+ 	gomock "github.com/golang/mock/gomock"
+ )
+ 
+--- a/storage/memory.go
++++ b/storage/memory.go
+@@ -9,7 +9,7 @@
+ 	"sync"
+ 	"time"
+ 
+-	"github.com/go-jose/go-jose/v3"
++	"github.com/go-jose/go-jose/v4"
+ 	"github.com/google/uuid"
+ 
+ 	"github.com/ory/fosite"
+--- /dev/null
++++ b/token/jwt/jose4_security_test.go
+@@ -0,0 +1,274 @@
++// Copyright 2026 GoAuthy contributors and Iulita contributors
++// SPDX-License-Identifier: Apache-2.0
++
++package jwt
++
++import (
++	"crypto/ecdsa"
++	"crypto/ed25519"
++	"crypto/elliptic"
++	"crypto/rand"
++	"crypto/rsa"
++	"encoding/base64"
++	"encoding/json"
++	"errors"
++	"fmt"
++	"strings"
++	"testing"
++	"time"
++
++	jose "github.com/go-jose/go-jose/v4"
++)
++
++func TestJOSE4RejectsUnsafeEmbeddedKeysBeforeKeyfunc(t *testing.T) {
++	large := make([]byte, 2049)
++	large[0] = 128
++	huge := base64.RawURLEncoding.EncodeToString(large)
++	for _, header := range []string{
++		`{"alg":"RS256","jwk":{"kty":"RSA","n":"AQ","e":"AQAB","d":"AQ","p":"` + huge + `","q":"Aw"}}`,
++		`{"alg":"RS256","jwk":{"kty":"RSA","n":"` + huge + `","e":"AQAB"}}`,
++	} {
++		raw := base64.RawURLEncoding.EncodeToString([]byte(header)) + ".e30.eA"
++		called := false
++		_, err := ParseWithClaims(raw, MapClaims{}, func(*Token) (interface{}, error) { called = true; return nil, nil })
++		if err == nil || called {
++			t.Fatalf("unsafe key parsed: err=%v keyfunc=%v", err, called)
++		}
++		if !strings.Contains(err.Error(), "private parameters") && !strings.Contains(err.Error(), jose.ErrUnsupportedKeyType.Error()) {
++			t.Fatalf("unexpected rejection: %v", err)
++		}
++	}
++}
++
++func TestJOSE4RejectsTypedNilVerificationKeysWithoutPanicking(t *testing.T) {
++	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
++	if err != nil {
++		t.Fatal(err)
++	}
++	raw, err := NewWithClaims(jose.RS256, MapClaims{"sub": "typed-nil"}).SignedString(privateKey)
++	if err != nil {
++		t.Fatal(err)
++	}
++
++	var nilBytes *[]byte
++	var nilEd25519 *ed25519.PublicKey
++	for name, key := range map[string]interface{}{
++		"byte slice pointer":         nilBytes,
++		"Ed25519 public key pointer": nilEd25519,
++	} {
++		t.Run(name, func(t *testing.T) {
++			_, err := ParseWithClaims(raw, MapClaims{}, func(*Token) (interface{}, error) { return key, nil })
++			if err == nil {
++				t.Fatal("typed nil verification key unexpectedly accepted")
++			}
++		})
++	}
++}
++
++func TestJOSE4PreservesSignedAlgorithms(t *testing.T) {
++	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
++	if err != nil {
++		t.Fatal(err)
++	}
++	edPub, edKey, err := ed25519.GenerateKey(rand.Reader)
++	if err != nil {
++		t.Fatal(err)
++	}
++	cases := []struct {
++		alg          jose.SignatureAlgorithm
++		sign, verify interface{}
++	}{}
++	for _, alg := range []jose.SignatureAlgorithm{jose.RS256, jose.RS384, jose.RS512, jose.PS256, jose.PS384, jose.PS512} {
++		cases = append(cases, struct {
++			alg          jose.SignatureAlgorithm
++			sign, verify interface{}
++		}{alg, rsaKey, &rsaKey.PublicKey})
++	}
++	for _, alg := range []jose.SignatureAlgorithm{jose.HS256, jose.HS384, jose.HS512} {
++		key := []byte(strings.Repeat("test-only-key-", 8))
++		cases = append(cases, struct {
++			alg          jose.SignatureAlgorithm
++			sign, verify interface{}
++		}{alg, key, key})
++	}
++	for _, ec := range []struct {
++		alg   jose.SignatureAlgorithm
++		curve elliptic.Curve
++	}{{jose.ES256, elliptic.P256()}, {jose.ES384, elliptic.P384()}, {jose.ES512, elliptic.P521()}} {
++		key, err := ecdsa.GenerateKey(ec.curve, rand.Reader)
++		if err != nil {
++			t.Fatal(err)
++		}
++		cases = append(cases, struct {
++			alg          jose.SignatureAlgorithm
++			sign, verify interface{}
++		}{ec.alg, key, &key.PublicKey})
++	}
++	cases = append(cases, struct {
++		alg          jose.SignatureAlgorithm
++		sign, verify interface{}
++	}{jose.EdDSA, edKey, edPub})
++	for _, tc := range cases {
++		t.Run(string(tc.alg), func(t *testing.T) {
++			claims := MapClaims{"sub": "preserved", "exp": time.Now().Add(time.Minute).Unix()}
++			raw, err := NewWithClaims(tc.alg, claims).SignedString(tc.sign)
++			if err != nil {
++				t.Fatal(err)
++			}
++			parsed, err := ParseWithClaims(raw, MapClaims{}, func(token *Token) (interface{}, error) {
++				if token.Method != tc.alg {
++					t.Fatalf("algorithm changed: %s", token.Method)
++				}
++				return tc.verify, nil
++			})
++			if err != nil || !parsed.Valid() {
++				t.Fatalf("valid %s failed: %v", tc.alg, err)
++			}
++			_, err = ParseWithClaims(raw, MapClaims{}, func(*Token) (interface{}, error) { return []byte("wrong-key"), nil })
++			if err == nil {
++				t.Fatal("wrong key accepted")
++			}
++		})
++	}
++}
++
++func TestJOSE4RSAKeyRoundTrip(t *testing.T) {
++	for _, bits := range []int{2048, 4096} {
++		t.Run(fmt.Sprint(bits), func(t *testing.T) {
++			private, err := rsa.GenerateKey(rand.Reader, bits)
++			if err != nil {
++				t.Fatal(err)
++			}
++			for _, key := range []interface{}{private, &private.PublicKey} {
++				encoded, err := json.Marshal(jose.JSONWebKey{Key: key})
++				if err != nil {
++					t.Fatal(err)
++				}
++				var decoded jose.JSONWebKey
++				if err := json.Unmarshal(encoded, &decoded); err != nil {
++					t.Fatal(err)
++				}
++				if !decoded.Valid() || decoded.Public().Key.(*rsa.PublicKey).N.Cmp(private.N) != 0 {
++					t.Fatal("RSA key changed")
++				}
++			}
++		})
++	}
++}
++
++func TestJOSE4UnsafeRSAHeadersCompactAndJSON(t *testing.T) {
++	large := make([]byte, 2049)
++	large[0] = 128
++	huge := base64.RawURLEncoding.EncodeToString(large)
++	for _, field := range []string{"n", "p", "q", "d"} {
++		key := map[string]string{"kty": "RSA", "n": "Dw", "e": "AQAB"}
++		expected := "private parameters"
++		if field != "n" {
++			key["d"] = "Aw"
++			key["p"] = "Aw"
++			key["q"] = "BQ"
++			expected = "private parameters"
++		}
++		key[field] = huge
++		header, err := json.Marshal(map[string]interface{}{"alg": "RS256", "jwk": key})
++		if err != nil {
++			t.Fatal(err)
++		}
++		protected := base64.RawURLEncoding.EncodeToString(header)
++		for format, raw := range map[string]string{"compact": protected + ".e30.eA", "flattened": `{"protected":"` + protected + `","payload":"e30","signature":"eA"}`, "general-unprotected": `{"payload":"e30","signatures":[{"header":` + string(header) + `,"signature":"eA"}]}`} {
++			t.Run(field+"/"+format, func(t *testing.T) {
++				_, err := jose.ParseSigned(raw, []jose.SignatureAlgorithm{jose.RS256})
++				if err == nil || (field == "n" && !errors.Is(err, jose.ErrUnsupportedKeyType)) || (field != "n" && !strings.Contains(err.Error(), expected)) {
++					t.Fatalf("expected %s, got %v", expected, err)
++				}
++			})
++		}
++	}
++}
++
++func TestJOSE4PrivateHeaderErrorRedaction(t *testing.T) {
++	const sentinel = "private-key-input-must-not-appear-in-errors"
++	private := map[string]interface{}{"kty": "RSA", "n": "Dw", "e": "AQAB", "d": "Aw", "p": "Aw", "q": "BQ", "kid": sentinel}
++	assertError := func(t *testing.T, err error) {
++		t.Helper()
++		if err == nil {
++			t.Fatal("private key accepted")
++		}
++		if strings.Contains(err.Error(), sentinel) {
++			t.Fatalf("private input leaked: %v", err)
++		}
++	}
++	jwsHeader, _ := json.Marshal(map[string]interface{}{"alg": "RS256", "jwk": private})
++	protected := base64.RawURLEncoding.EncodeToString(jwsHeader)
++	for name, raw := range map[string]string{"compact": protected + ".e30.eA", "flattened": `{"protected":"` + protected + `","payload":"e30","signature":"eA"}`, "general": `{"payload":"e30","signatures":[{"header":` + string(jwsHeader) + `,"signature":"eA"}]}`} {
++		t.Run("JWS-JWK/"+name, func(t *testing.T) {
++			_, err := jose.ParseSigned(raw, []jose.SignatureAlgorithm{jose.RS256})
++			assertError(t, err)
++			if !strings.Contains(err.Error(), "private parameters") {
++				t.Fatalf("unexpected boundary: %v", err)
++			}
++		})
++	}
++	jweHeader, _ := json.Marshal(map[string]interface{}{"alg": "dir", "enc": "A256GCM", "jwk": private})
++	protected = base64.RawURLEncoding.EncodeToString(jweHeader)
++	for name, raw := range map[string]string{"compact": protected + "..eA.eA.eA", "flattened": `{"protected":"` + protected + `","iv":"eA","ciphertext":"eA","tag":"eA"}`, "general": `{"protected":"` + protected + `","recipients":[{}],"iv":"eA","ciphertext":"eA","tag":"eA"}`} {
++		t.Run("JWE-JWK/"+name, func(t *testing.T) {
++			_, err := jose.ParseEncrypted(raw, []jose.KeyAlgorithm{jose.DIRECT}, []jose.ContentEncryption{jose.A256GCM})
++			assertError(t, err)
++			if !strings.Contains(err.Error(), "private parameters") {
++				t.Fatalf("unexpected boundary: %v", err)
++			}
++		})
++	}
++	recipient, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
++	if err != nil {
++		t.Fatal(err)
++	}
++	encrypter, err := jose.NewEncrypter(jose.A256GCM, jose.Recipient{Algorithm: jose.ECDH_ES, Key: &recipient.PublicKey}, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	encrypted, err := encrypter.Encrypt([]byte("valid-public-epk"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	compact, err := encrypted.CompactSerialize()
++	if err != nil {
++		t.Fatal(err)
++	}
++	parsed, err := jose.ParseEncrypted(compact, []jose.KeyAlgorithm{jose.ECDH_ES}, []jose.ContentEncryption{jose.A256GCM})
++	if err != nil {
++		t.Fatal(err)
++	}
++	plaintext, err := parsed.Decrypt(recipient)
++	if err != nil || string(plaintext) != "valid-public-epk" {
++		t.Fatalf("valid EPK failed: %v", err)
++	}
++	parts := strings.Split(compact, ".")
++	decoded, err := base64.RawURLEncoding.DecodeString(parts[0])
++	if err != nil {
++		t.Fatal(err)
++	}
++	var header map[string]interface{}
++	if err := json.Unmarshal(decoded, &header); err != nil {
++		t.Fatal(err)
++	}
++	epk := header["epk"].(map[string]interface{})
++	epk["d"] = base64.RawURLEncoding.EncodeToString([]byte(sentinel))
++	epk["kid"] = sentinel
++	changed, _ := json.Marshal(header)
++	parts[0] = base64.RawURLEncoding.EncodeToString(changed)
++	for name, raw := range map[string]string{"compact": strings.Join(parts, "."), "flattened": `{"protected":"` + parts[0] + `","iv":"` + parts[2] + `","ciphertext":"` + parts[3] + `","tag":"` + parts[4] + `"}`, "general": `{"protected":"` + parts[0] + `","recipients":[{}],"iv":"` + parts[2] + `","ciphertext":"` + parts[3] + `","tag":"` + parts[4] + `"}`} {
++		t.Run("JWE-EPK/"+name, func(t *testing.T) {
++			parsed, err := jose.ParseEncrypted(raw, []jose.KeyAlgorithm{jose.ECDH_ES}, []jose.ContentEncryption{jose.A256GCM})
++			if err != nil {
++				t.Fatalf("EPK header did not reach decryption boundary: %v", err)
++			}
++			plaintext, err := parsed.Decrypt(recipient)
++			assertError(t, err)
++			if err != jose.ErrCryptoFailure || len(plaintext) != 0 {
++				t.Fatalf("unexpected private EPK result: payload=%q err=%v", plaintext, err)
++			}
++		})
++	}
++}
+--- a/token/jwt/jwt.go
++++ b/token/jwt/jwt.go
+@@ -14,7 +14,7 @@
+ 	"crypto/sha256"
+ 	"strings"
+ 
+-	"github.com/go-jose/go-jose/v3"
++	"github.com/go-jose/go-jose/v4"
+ 
+ 	"github.com/ory/x/errorsx"
+ 
+--- a/token/jwt/jwt_test.go
++++ b/token/jwt/jwt_test.go
+@@ -10,7 +10,7 @@
+ 	"testing"
+ 	"time"
+ 
+-	"github.com/go-jose/go-jose/v3"
++	"github.com/go-jose/go-jose/v4"
+ 
+ 	"github.com/ory/fosite/internal/gen"
+ 
+--- a/token/jwt/map_claims.go
++++ b/token/jwt/map_claims.go
+@@ -10,7 +10,7 @@
+ 	"errors"
+ 	"time"
+ 
+-	jjson "github.com/go-jose/go-jose/v3/json"
++	jjson "github.com/go-jose/go-jose/v4/json"
+ 
+ 	"github.com/ory/x/errorsx"
+ )
+--- a/token/jwt/token.go
++++ b/token/jwt/token.go
+@@ -4,13 +4,14 @@
+ package jwt
+ 
+ import (
++	"crypto/ed25519"
+ 	"encoding/base64"
+ 	"encoding/json"
+ 	"fmt"
+ 	"reflect"
+ 
+-	"github.com/go-jose/go-jose/v3"
+-	"github.com/go-jose/go-jose/v3/jwt"
++	"github.com/go-jose/go-jose/v4"
++	"github.com/go-jose/go-jose/v4/jwt"
+ 
+ 	"github.com/ory/x/errorsx"
+ )
+@@ -99,7 +100,7 @@
+ 	// go-jose CompactSerialize() only support explicit maps
+ 	// as claims or structs but not type aliases from maps.
+ 	claims := map[string]interface{}(t.Claims)
+-	rawToken, err = jwt.Signed(signer).Claims(claims).CompactSerialize()
++	rawToken, err = jwt.Signed(signer).Claims(claims).Serialize()
+ 	if err != nil {
+ 		err = &ValidationError{Errors: ValidationErrorClaimsInvalid, Inner: err}
+ 		return
+@@ -163,7 +164,7 @@
+ // If everything is kosher, err will be nil
+ func ParseWithClaims(rawToken string, claims MapClaims, keyFunc Keyfunc) (*Token, error) {
+ 	// Parse the token.
+-	parsedToken, err := jwt.ParseSigned(rawToken)
++	parsedToken, err := jwt.ParseSigned(rawToken, []jose.SignatureAlgorithm{jose.HS256, jose.HS384, jose.HS512, jose.RS256, jose.RS384, jose.RS512, jose.ES256, jose.ES384, jose.ES512, jose.PS256, jose.PS384, jose.PS512, jose.EdDSA, "none"})
+ 	if err != nil {
+ 		return &Token{}, &ValidationError{Errors: ValidationErrorMalformed, text: err.Error()}
+ 	}
+@@ -235,6 +236,21 @@
+ // if underline value of v is not a pointer
+ // it creates a pointer of it and returns it
+ func pointer(v interface{}) interface{} {
++	// JOSE v4 accepts symmetric and Ed25519 keys as slices, not pointers.
++	switch key := v.(type) {
++	case []byte, ed25519.PublicKey:
++		return key
++	case *[]byte:
++		if key == nil {
++			return v
++		}
++		return *key
++	case *ed25519.PublicKey:
++		if key == nil {
++			return v
++		}
++		return *key
++	}
+ 	if reflect.ValueOf(v).Kind() != reflect.Ptr {
+ 		value := reflect.New(reflect.ValueOf(v).Type())
+ 		value.Elem().Set(reflect.ValueOf(v))
+--- a/token/jwt/token_test.go
++++ b/token/jwt/token_test.go
+@@ -15,8 +15,8 @@
+ 
+ 	"github.com/ory/fosite/internal/gen"
+ 
+-	"github.com/go-jose/go-jose/v3"
+-	"github.com/go-jose/go-jose/v3/jwt"
++	"github.com/go-jose/go-jose/v4"
++	"github.com/go-jose/go-jose/v4/jwt"
+ 	"github.com/stretchr/testify/assert"
+ 	"github.com/stretchr/testify/require"
+ )
+@@ -54,7 +54,7 @@
+ 			parts := strings.Split(rawToken, ".")
+ 			require.Len(t, parts, 3)
+ 			require.Empty(t, parts[2])
+-			tk, err := jwt.ParseSigned(rawToken)
++			tk, err := jwt.ParseSigned(rawToken, []jose.SignatureAlgorithm{jose.HS256, jose.HS384, jose.HS512, jose.RS256, jose.RS384, jose.RS512, jose.ES256, jose.ES384, jose.ES512, jose.PS256, jose.PS384, jose.PS512, jose.EdDSA, "none"})
+ 			require.NoError(t, err)
+ 			require.Len(t, tk.Headers, 1)
+ 			require.Equal(t, tc.expectedType, tk.Headers[0].ExtraHeaders[jose.HeaderKey("typ")])
+@@ -82,7 +82,7 @@
+ 	for _, tc := range testCases {
+ 		t.Run(tc.name, func(t *testing.T) {
+ 			rawToken := makeSampleTokenWithCustomHeaders(nil, jose.RS256, tc.jwtHeaders, gen.MustRSAKey())
+-			tk, err := jwt.ParseSigned(rawToken)
++			tk, err := jwt.ParseSigned(rawToken, []jose.SignatureAlgorithm{jose.HS256, jose.HS384, jose.HS512, jose.RS256, jose.RS384, jose.RS512, jose.ES256, jose.ES384, jose.ES512, jose.PS256, jose.PS384, jose.PS512, jose.EdDSA, "none"})
+ 			require.NoError(t, err)
+ 			require.Len(t, tk.Headers, 1)
+ 			require.Equal(t, tk.Headers[0].Algorithm, "RS256")
