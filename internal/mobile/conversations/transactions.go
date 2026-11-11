@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"errors"
+	"sync"
 	"time"
 )
 
@@ -17,7 +18,9 @@ type repoRequest struct {
 }
 type repoTx struct {
 	*sql.Tx
-	owns bool
+	owns    bool
+	release func()
+	once    sync.Once
 }
 
 // Commit commits the transaction boundary owned by this operation.
@@ -25,6 +28,7 @@ func (t *repoTx) Commit() error {
 	if !t.owns {
 		return nil
 	}
+	defer t.once.Do(t.release)
 	return t.Tx.Commit()
 }
 
@@ -33,6 +37,7 @@ func (t *repoTx) Rollback() error {
 	if !t.owns {
 		return nil
 	}
+	defer t.once.Do(t.release)
 	return t.Tx.Rollback()
 }
 func (r *Repository) begin(ctx context.Context) (*repoTx, error) {
@@ -42,15 +47,46 @@ func (r *Repository) begin(ctx context.Context) (*repoTx, error) {
 		}
 		return &repoTx{Tx: root.tx}, nil
 	}
+	// Queue local writers before occupying pooled connections or SQLite's
+	// unfair busy handler. BEGIN IMMEDIATE remains the cross-process fence.
+	if err := r.writers.Acquire(ctx, 1); err != nil {
+		return nil, err
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
+		r.writers.Release(1)
 		return nil, err
 	}
+	owned := &repoTx{Tx: tx, owns: true, release: func() { r.writers.Release(1) }}
+	handedOff := false
+	defer func() {
+		if !handedOff {
+			owned.Rollback() //nolint:errcheck,gosec // Preserve verifier errors/panics, releasing the unreturned transaction.
+		}
+	}()
 	if err = verify(ctx); err != nil {
-		tx.Rollback() //nolint:errcheck,gosec // Cleanup only; preserve the operation result.
 		return nil, err
 	}
-	return &repoTx{tx, true}, nil
+	handedOff = true
+	return owned, nil
+}
+
+// execWriter queues a short internal metadata write without replaying it.
+// A request transaction must use its existing connection instead of reacquiring.
+func (r *Repository) execWriter(ctx context.Context, query string, args ...any) error {
+	if root, ok := ctx.Value(transactionKey{}).(*repoRequest); ok {
+		if root.repository != r || root.done {
+			return ErrConflict
+		}
+		_, err := root.tx.ExecContext(ctx, query, args...)
+		return err
+	}
+	if err := r.writers.Acquire(ctx, 1); err != nil {
+		return err
+	}
+	defer r.writers.Release(1)
+	_, err := r.db.ExecContext(ctx, query, args...)
+	return err
 }
 
 // Operation commits the mutation and its response in the SAME transaction.
@@ -63,15 +99,12 @@ func (r *Repository) Operation(ctx context.Context, owner, client, method, id st
 	if ctx.Value(transactionKey{}) != nil {
 		return nil, false, ErrConflict
 	}
-	tx, err := r.db.BeginTx(ctx, nil)
+	tx, err := r.begin(ctx)
 	if err != nil {
 		return nil, false, err
 	}
 	defer tx.Rollback() //nolint:errcheck // Cleanup only; preserve the operation result.
-	if checkErr1 := verify(ctx); checkErr1 != nil {
-		return nil, false, checkErr1
-	}
-	root := &repoRequest{repository: r, tx: tx}
+	root := &repoRequest{repository: r, tx: tx.Tx}
 	defer func() { root.done = true }()
 	digest := sha256.Sum256(payload)
 	// Bodies are a bounded cache; compact effect/digest tombstones never expire.

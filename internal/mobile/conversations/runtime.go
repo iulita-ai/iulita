@@ -107,7 +107,15 @@ func (r *Repository) AcquireRuntime(ctx context.Context) (Runtime, error) {
 
 // RenewRuntime renews the runtime lease only for its current generation.
 func (r *Repository) RenewRuntime(ctx context.Context, rt Runtime) error {
-	res, err := r.db.ExecContext(ctx, `UPDATE mobile_runtime SET expires_at=? WHERE id=1 AND instance=? AND epoch=? AND expires_at>?`, time.Now().Add(10*time.Second).UnixMilli(), rt.Instance, rt.Epoch, time.Now().UnixMilli())
+	tx, err := r.begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // Cleanup only; preserve the operation result.
+	// A writer may have waited in the local queue or BEGIN IMMEDIATE. Compute
+	// time only after admission so an expired coordinator can never be revived.
+	now := time.Now().UnixMilli()
+	res, err := tx.ExecContext(ctx, `UPDATE mobile_runtime SET expires_at=? WHERE id=1 AND instance=? AND epoch=? AND expires_at>?`, now+10000, rt.Instance, rt.Epoch, now)
 	if err != nil {
 		return err
 	}
@@ -118,13 +126,12 @@ func (r *Repository) RenewRuntime(ctx context.Context, rt Runtime) error {
 	if n != 1 {
 		return ErrFenced
 	}
-	return nil
+	return tx.Commit()
 }
 
 // ReleaseRuntime releases the current runtime lease.
 func (r *Repository) ReleaseRuntime(ctx context.Context, rt Runtime) error {
-	_, err := r.db.ExecContext(ctx, `UPDATE mobile_runtime SET expires_at=0 WHERE id=1 AND instance=? AND epoch=?`, rt.Instance, rt.Epoch)
-	return err
+	return r.execWriter(ctx, `UPDATE mobile_runtime SET expires_at=0 WHERE id=1 AND instance=? AND epoch=?`, rt.Instance, rt.Epoch)
 }
 func checkRuntime(ctx context.Context, tx *repoTx, rt Runtime) error {
 	var n int
