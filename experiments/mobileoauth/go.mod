@@ -2,6 +2,8 @@ module github.com/iulita-ai/iulita/experiments/mobileoauth
 
 go 1.26.0
 
+toolchain go1.27.4
+
 require (
 	github.com/ory/fosite v0.49.0
 	github.com/uptrace/bun/driver/sqliteshim v1.2.18
@@ -17,7 +19,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
-	github.com/go-jose/go-jose/v3 v3.0.5 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.9 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gobuffalo/pop/v6 v6.1.1 // indirect
@@ -90,3 +92,6 @@ require (
 	modernc.org/memory v1.11.0 // indirect
 	modernc.org/sqlite v1.46.1 // indirect
 )
+
+// Bounded JOSE v4 migration until an official compatible Fosite release; see third_party/README.md.
+replace github.com/ory/fosite => ../../third_party/fosite

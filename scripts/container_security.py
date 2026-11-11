@@ -44,6 +44,19 @@ def archive_config(path):
     return "sha256:" + hashlib.sha256(data).hexdigest(), json.loads(data)
 
 
+def check_jose_inventory(role, go_results):
+    packages = [pkg for result in go_results for pkg in result.get("Packages", [])]
+    require(not any(pkg.get("Name") == "github.com/go-jose/go-jose/v3" for pkg in packages),
+            "Vulnerable JOSE v3 remains in the shipped binary")
+    if role == "app":
+        app_results = [result for result in go_results
+                       if re.search(r"(^|/)iulita(?: \(.*\))?$", result.get("Target", ""))]
+        jose = [pkg for result in app_results for pkg in result.get("Packages", [])
+                if pkg.get("Name") == "github.com/go-jose/go-jose/v4"]
+        require(jose and all(pkg.get("Version") == "v4.1.9" for pkg in jose),
+                "Expected official JOSE v4.1.9 inventory is missing or outdated")
+
+
 def scan(role, arch, image, output):
     require((role, arch) in EXPECTED, "Unexpected image/platform")
     output = Path(output).resolve()
@@ -76,6 +89,9 @@ def scan(role, arch, image, output):
     results = report.get("Results", [])
     os_packages = [pkg for result in results if result.get("Class") == "os-pkgs" for pkg in result.get("Packages", [])]
     require(os_packages and any(pkg.get("Name") == "musl" for pkg in os_packages), "OS inventory is incomplete")
+    # Inspect every Go executable, including unexpected helpers and gateways.
+    # App v4 presence is independently tied to the named production executable.
+    check_jose_inventory(role, [result for result in results if result.get("Type") == "gobinary"])
     if role in ("app", "ssh-worker"):
         binary = "iulita" if role == "app" else "ssh-worker"
         go_results = [result for result in results if result.get("Type") == "gobinary"

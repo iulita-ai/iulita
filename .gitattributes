@@ -1,0 +1,2 @@
+# Unified-diff context needs its leading spaces, including before Go tabs.
+third_party/fosite.patch -whitespace

@@ -22,6 +22,21 @@
 1. `FiberMiddleware` — validates `Authorization: Bearer <token>`, stores claims in fiber locals
 2. `AdminOnly` — checks `role == admin`, returns 403 if not
 
+### Mobile OAuth JOSE dependency
+
+The mobile OAuth framework uses official go-jose **v4.1.9**, which includes the
+fix for [RSA JWK parsing denial of service](https://github.com/go-jose/go-jose/security/advisories/GHSA-mgcc-cww5-fp2q).
+Until Ory ships a compatible Fosite release, Iulita maintains a bounded migration
+of Fosite v0.49.0 in `third_party/fosite`, with canonical source provenance,
+license and all upstream Go tests. See the [migration and maintenance notes](https://github.com/iulita-ai/iulita/blob/main/third_party/README.md).
+
+CI checks the complete framework normal/race suites and resumes synthetic
+pre-upgrade code, access and refresh credentials against the same persisted
+state. Image checks reject JOSE v3 even if a scanner marks its advisory unfixed.
+Unused module-graph requirements are separate from linked binary dependencies.
+This update preserves the issuer, signing keys, token formats and database state;
+existing request allowlists and signature/refresh validation remain enforced.
+
 ## Secret Management
 
 ### Storage Layers
