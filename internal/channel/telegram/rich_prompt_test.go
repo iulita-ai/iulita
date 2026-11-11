@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -8,7 +9,43 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-telegram/bot/models"
+	"github.com/iulita-ai/iulita/internal/domain"
 )
+
+func TestForwardedPaymentEntitiesMaskBeforeProvenanceUTF16(t *testing.T) {
+	for _, kind := range []string{"text", "caption", "automatic"} {
+		t.Run(kind, func(t *testing.T) {
+			c, s, _ := memoryCommandFixture(t)
+			m, msg := memoryCommandMessage(t, c, 77)
+			body := "😀 card 1234567890123 end" // non-Luhn, must be masked by its entity
+			entities := []models.MessageEntity{{Type: models.MessageEntityTypeBankCardNumber, Offset: 8, Length: 13}}
+			m.Text = body
+			m.Entities = entities
+			m.ForwardOrigin = &models.MessageOrigin{}
+			if kind == "caption" {
+				m.Text = ""
+				m.Entities = nil
+				m.Caption = body
+				m.CaptionEntities = entities
+			}
+			if kind == "automatic" {
+				m.ForwardOrigin = nil
+				m.IsAutomaticForward = true
+			}
+			text, _ := normalizedTelegramContent(m)
+			if strings.Contains(text, "1234567890123") || !strings.HasPrefix(text, "[Forwarded source content") || !strings.HasSuffix(text, "😀 card •••• 0123 end") {
+				t.Fatalf("entity offsets shifted by framing: %q", text)
+			}
+			if err := s.SaveMessage(context.Background(), &domain.ChatMessage{ChatID: msg.ChatID, UserID: msg.ResolvedUserID, Role: domain.RoleUser, Content: text}); err != nil {
+				t.Fatal(err)
+			}
+			history, err := s.GetHistory(context.Background(), msg.ChatID, 1)
+			if err != nil || len(history) != 1 || history[0].Content != text {
+				t.Fatalf("masked ingress not preserved: %+v %v", history, err)
+			}
+		})
+	}
+}
 
 func TestRichNormalizationQuoteAndUTF16(t *testing.T) {
 	var m models.Message

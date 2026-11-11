@@ -71,6 +71,7 @@ type Repository interface {
 	GetRecentFactsByUser(ctx context.Context, userID string, limit int) ([]domain.Fact, error)
 	GetAllFacts(ctx context.Context, chatID string) ([]domain.Fact, error)
 	GetAllFactsByUser(ctx context.Context, userID string) ([]domain.Fact, error)
+	CountFactsByUser(ctx context.Context, userID string) (int, error)
 
 	// Embedding vectors
 	CreateVectorTables(ctx context.Context) error

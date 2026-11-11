@@ -47,7 +47,7 @@ func (b *OWMBackend) Fetch(ctx context.Context, location string, days int) (*Wea
 	}
 	req.Header.Set("User-Agent", userAgent)
 
-	resp, err := b.client.Do(req)
+	resp, err := doWeatherRequest(b.client, req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}

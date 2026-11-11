@@ -62,6 +62,9 @@ func (fc *fallbackChain) Name() string {
 func (fc *fallbackChain) Fetch(ctx context.Context, location string, days int) (*WeatherResult, error) {
 	var lastErr error
 	for _, b := range fc.backends {
+		if err := CheckCommandGuard(ctx); err != nil {
+			return nil, err
+		}
 		result, err := b.Fetch(ctx, location, days)
 		if err == nil && !usefulForecast(result) {
 			err = fmt.Errorf("empty forecast")

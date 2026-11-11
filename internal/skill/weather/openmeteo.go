@@ -274,7 +274,7 @@ func (b *OpenMeteoBackend) httpGet(ctx context.Context, rawURL string) ([]byte, 
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := b.client.Do(req)
+	resp, err := doWeatherRequest(b.client, req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}

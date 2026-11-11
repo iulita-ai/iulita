@@ -34,9 +34,11 @@ Individual previews: [weather, light](/screenshots/telegram/weather-light-en.png
 | `/compact` | Explicitly summarize context in the current private topic and report its new size. |
 | `/day` | Open the personal day card. |
 | `/day text` | Open the text/button version, including when the client cannot display widgets. |
+| `/status` | Account-wide facts and active insights, plus this conversation’s stored messages and pending reminders. |
 | `/weather London 4` | Current weather when available and four forecast days. |
 | `/weather text London 4` | Full human-readable text forecast. |
-| `/weather` | Four days for the application fallback city, Irkutsk; no IP-based location guessing. |
+| `/weather` | Four days for a place you explicitly stated/shared in this topic or your saved city; otherwise the labelled application default, Irkutsk. |
+| `/weather 7` or `/weather text 7` | Seven days for the same selected place, as cards or text. |
 
 The `/topic close` and `/topic reopen` compatibility aliases mean local pause/resume. They do not close or reopen a native private Telegram topic. A topic name is a single line of 1–128 characters and cannot contain a detected secret or payment identifier.
 
@@ -83,7 +85,17 @@ If delivery or a provider mutation has an **unknown outcome**, do not repeat it.
 
 In a group, `/day` offers a generic personal-response button. Its reply is private to the actor who pressed it. Open the bot privately and use `/day text` for actionable cards. Ordinary group messages cannot silently read personal memory or invoke personal tools.
 
+## Memory status
+
+`/status` shows two separate scopes. **Account memory** counts your saved facts and active, unexpired insights across your connected Telegram/web conversations (the isolated native-mobile memory namespace is excluded); these totals are the same in the root chat and in topics. **This chat / This topic** counts stored messages and pending reminders only in the current conversation. Stored messages are not the current model-context size; compaction can reduce this count. A failed counter is shown as **unavailable**, not zero. Personal counts are available only on your verified private route; global background-job totals are not included.
+
 ## Weather cards
+
+Without an explicit city, `/weather` checks your recent direct messages in this exact conversation before reading your account’s saved city. It accepts standalone English/Russian assertions such as `I am in Paris`, `Я сейчас в Москве`, `I live in Berlin`, or `Мой город: Москва`, and whole shared-location/place messages. The newest applicable message wins across text and pins. The window is the last 30 stored messages, checking at most five of your user turns within 24 hours; it does not search all topic history. A newer recognized retraction (`I am no longer in Paris`, `Я уже не в Москве`) or ambiguous location blocks older topic/memory places and produces the labelled application default instead.
+
+If the recent topic has no applicable assertion, the command checks up to 200 chronological location-related facts explicitly saved from your own statements. Temporary current-city facts expire for this selection after 24 hours; a saved home city does not imply you are there now. Quoted/third-person examples, newly received native forwards, documents, assistant replies and compacted assistant summaries do not establish location. After context compaction, only the retained raw user messages and saved facts are candidates; `/clear` removes the topic-context candidates while keeping account memory. Unsupported free-form prose may require `/weather CITY`. Older history saved without forward provenance cannot reliably distinguish a forwarded statement from your own.
+
+The text and card caption identify whether the place came from this conversation, a shared place, saved information, or the Irkutsk application default. A city in `/weather CITY` always wins; a country qualifier is retained. Only a bounded city or decimal coordinate pair is sent to the existing weather provider, never whole messages/facts. Sensitive or malformed place input is rejected. A memory/provider failure does not silently switch cities, and server IP is never used. Shared-location labels describe what you supplied; they do not claim current GPS tracking.
 
 Weather works through ordinary language requests and `/weather`. The direct command accepts 1–16 days, defaults to four, and respects the disabled/enabled state of the weather skill. All actually returned days are retained across cards of up to four rows; a fallback provider's shorter horizon is labelled.
 

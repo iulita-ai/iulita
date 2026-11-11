@@ -130,6 +130,20 @@ func (s *Store) GetAllFactsByUser(ctx context.Context, userID string) ([]domain.
 	return facts, nil
 }
 
+// CountFactsByUser counts account memory without loading private fact contents.
+// Unlike aggregate dashboard queries, this owner-only counter fails closed.
+func (s *Store) CountFactsByUser(ctx context.Context, userID string) (int, error) {
+	if userID == "" {
+		return 0, fmt.Errorf("fact count requires an owner")
+	}
+	count, err := s.db.NewSelect().Model((*domain.Fact)(nil)).
+		Where(legacyChatPredicate).Where("user_id = ?", userID).Count(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("counting facts by user: %w", err)
+	}
+	return count, nil
+}
+
 // --- Insights (user-scoped) ---
 
 func (s *Store) GetRecentInsightsByUser(ctx context.Context, userID string, limit int) ([]domain.Insight, error) {
