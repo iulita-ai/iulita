@@ -91,6 +91,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/skill/websearch"
 	"github.com/iulita-ai/iulita/internal/skillmgr"
 	"github.com/iulita-ai/iulita/internal/storage/sqlite"
+	"github.com/iulita-ai/iulita/internal/telegrambusiness"
 	"github.com/iulita-ai/iulita/internal/transcription"
 	"github.com/iulita-ai/iulita/internal/translation"
 	"github.com/iulita-ai/iulita/internal/version"
@@ -1749,6 +1750,7 @@ func main() {
 		}
 	}
 
+	var wg sync.WaitGroup
 	mgr := channelmgr.New(channelmgr.Config{
 		Store:                 store,
 		CfgStore:              cfgStore,
@@ -1767,6 +1769,80 @@ func main() {
 		Bus:                   bus,
 		Logger:                logger,
 	})
+
+	// Connected accounts use isolated encrypted storage and a tool-free pinned
+	// provider. Discovery is available after upgrades; no grant enables actions.
+	if schemaErr := store.EnsureTelegramBusiness(ctx); schemaErr != nil {
+		logger.Fatal("failed to initialize Telegram account storage", zap.Error(schemaErr))
+	}
+	businessRepo := sqlite.NewTelegramBusinessRepository(store, cfgStore)
+	var businessMedia *telegrambusiness.MediaVault
+	if cfgStore.EncryptionEnabled() {
+		businessMedia, err = telegrambusiness.NewMediaVault(filepath.Join(filepath.Dir(cfg.Storage.Path), "telegram-business-media"), cfgStore)
+		if err != nil {
+			logger.Warn("Telegram account media unavailable")
+		}
+	}
+	if businessMedia != nil {
+		defer func() {
+			if closeErr := businessMedia.Close(); closeErr != nil {
+				logger.Warn("Telegram account media shutdown failed")
+			}
+		}()
+	}
+	businessGenerator := telegrambusiness.NewProfileGenerator(businessRepo, routingProvider.AcquireProfileSnapshot, mgr)
+	restoreGeneration := cfg.Telegram.BusinessRestoreGeneration
+	if restoreGeneration == "" {
+		restoreGeneration = "initial"
+	}
+	var businessObserver telegrambusiness.Observer
+	if promMetrics != nil {
+		businessObserver = metrics.NewTelegramBusinessObserver(nil)
+	}
+	businessService := telegrambusiness.New(businessRepo, mgr, businessGenerator, telegrambusiness.Options{
+		LiveWrites: cfg.Telegram.BusinessLiveWrites, RestoreGeneration: restoreGeneration, Budget: businessRepo,
+		Media:           businessMedia,
+		Observer:        businessObserver,
+		FinancialLimits: telegrambusiness.FinancialLimits{DailyOperations: cfg.Telegram.BusinessDailyFinancialOperations, DailyStars: cfg.Telegram.BusinessDailyStars},
+	})
+	var businessPoll telegrambusiness.PollRepository
+	if cfgStore.EncryptionEnabled() {
+		businessPoll = businessRepo
+	}
+	mgr.SetTelegramBusiness(businessService, businessPoll)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		tick := time.NewTicker(time.Hour)
+		defer tick.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-tick.C:
+				started := time.Now()
+				outcome := "ok"
+				if err := businessRepo.PurgeTelegramBusiness(ctx, time.Now().UTC()); err != nil {
+					outcome = "unavailable"
+					logger.Warn("Telegram account retention sweep failed")
+				}
+				if businessObserver != nil {
+					businessObserver.ObserveBusiness(telegrambusiness.Observation{Operation: "retention", Kind: "database", Outcome: outcome, Duration: time.Since(started)})
+				}
+				if businessMedia != nil {
+					started = time.Now()
+					outcome = "ok"
+					if err := businessMedia.PurgeExpired(ctx); err != nil {
+						outcome = "unavailable"
+						logger.Warn("Telegram account media retention sweep failed")
+					}
+					if businessObserver != nil {
+						businessObserver.ObserveBusiness(telegrambusiness.Observation{Operation: "retention", Kind: "upload", Outcome: outcome, Duration: time.Since(started)})
+					}
+				}
+			}
+		}
+	}()
 
 	// Subscribe channelmgr to credential changes for hot-reload.
 	if remoteAccessService != nil {
@@ -1981,7 +2057,6 @@ func main() {
 	mgr.SetBookmarkService(bookmarkSvc)
 
 	// Background services tracked by WaitGroup for graceful shutdown.
-	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() { defer wg.Done(); store.RunDayMaintenance(ctx) }()
 
@@ -2216,7 +2291,13 @@ func main() {
 			Embedder:       embedder,
 			HTTPArtifacts:  httpArtifactStore, // nil unless downloads enabled + auth wired
 			StandingGrants: store,
-			ModelManager:   modelManager, ModelHTTPClient: llmHTTPClient, LegacyModelSettings: legacySettings, LegacyClassifierActive: legacyClassifierActive,
+
+			TelegramBusiness:          businessService,
+			BusinessProfile:           businessGenerator.Descriptor,
+			BusinessMedia:             businessMedia,
+			BusinessSources:           mgr,
+			BusinessEncryptionEnabled: cfgStore.EncryptionEnabled(),
+			ModelManager:              modelManager, ModelHTTPClient: llmHTTPClient, LegacyModelSettings: legacySettings, LegacyClassifierActive: legacyClassifierActive,
 		})
 		wg.Add(1)
 		go func() {

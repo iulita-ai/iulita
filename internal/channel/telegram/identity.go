@@ -19,11 +19,14 @@ func (c *Channel) ConfigureAliases(ctx context.Context, aliases []string, prefer
 	}
 	// Username-based getChat is documented for groups/channels. Resolve our
 	// numeric bot identity and accept only its reported active usernames.
-	info, err := c.bot.GetChat(ctx, &bot.GetChatParams{ChatID: c.botID})
-	if err != nil || info.ID != c.botID {
-		return fmt.Errorf("bot aliases could not be verified")
+	known := append([]string{c.fullInfo.Username}, c.fullInfo.ActiveUsernames...)
+	if c.fullInfo.ID != c.botID {
+		info, err := c.bot.GetChat(ctx, &bot.GetChatParams{ChatID: c.botID})
+		if err != nil || info.ID != c.botID {
+			return fmt.Errorf("bot aliases could not be verified")
+		}
+		known = append([]string{info.Username}, info.ActiveUsernames...)
 	}
-	known := append([]string{info.Username}, info.ActiveUsernames...)
 	verified := make([]string, 0, len(known))
 	seen := map[string]bool{}
 	for _, name := range known {

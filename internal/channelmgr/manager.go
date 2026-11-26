@@ -28,6 +28,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/ratelimit"
 	"github.com/iulita-ai/iulita/internal/skill/interact"
 	"github.com/iulita-ai/iulita/internal/storage"
+	"github.com/iulita-ai/iulita/internal/telegrambusiness"
 )
 
 // DiscordInstanceConfig is the JSON stored in channel_instances.config for Discord channels.
@@ -85,6 +86,8 @@ type ManagedChannel struct {
 	slack    *slackch.Channel   // non-nil for Slack instances
 	cancel   context.CancelFunc
 	done     chan struct{} // closed when Start() returns
+
+	runtimeContext context.Context
 }
 
 // cryptoProvider decrypts dashboard-sourced channel configs.
@@ -163,6 +166,8 @@ type Manager struct {
 	transcriber     telegram.TranscriptionProvider
 	testEnvironment bool
 	draftStreaming  bool
+	business        *telegrambusiness.Service
+	businessPoll    telegrambusiness.PollRepository
 
 	bookmarkSvc       bookmark.Service       // nil = no bookmark feature
 	commandRegistrar  CommandRegistrar       // set via SetCommandRegistrar
@@ -755,9 +760,10 @@ func (m *Manager) startInstance(parentCtx context.Context, instance domain.Chann
 	instanceCtx, cancel := context.WithCancel(parentCtx)
 	done := make(chan struct{})
 	mc := &ManagedChannel{
-		Instance: instance,
-		cancel:   cancel,
-		done:     done,
+		Instance:       instance,
+		cancel:         cancel,
+		done:           done,
+		runtimeContext: instanceCtx,
 	}
 
 	var startFn func(context.Context, channel.MessageHandler) error
@@ -772,6 +778,13 @@ func (m *Manager) startInstance(parentCtx context.Context, instance domain.Chann
 		tg.SetInstanceID(instance.ID)
 		tg.SetUserResolver(m.userResolver)
 		tg.SetStore(m.store)
+		tg.SetBusinessService(m.business)
+		tg.SetBusinessPollRepository(m.businessPoll)
+		tg.SetBusinessRuntimeGuard(m.BusinessGeneration)
+		if err := tg.FenceBusinessRuntime(instanceCtx); err != nil {
+			cancel()
+			return fmt.Errorf("fencing Telegram account runtime: %w", err)
+		}
 		if m.transcriber != nil {
 			tg.SetTranscriber(m.transcriber)
 		}
@@ -843,6 +856,15 @@ func (m *Manager) startInstance(parentCtx context.Context, instance domain.Chann
 	}
 
 	m.mu.Lock()
+	if mc.tg != nil && mc.tg.SecretaryPollingEnabled() {
+		for _, existing := range m.running {
+			if existing.tg != nil && existing.tg.SecretaryPollingEnabled() && existing.tg.BusinessBotID() == mc.tg.BusinessBotID() {
+				m.mu.Unlock()
+				cancel()
+				return fmt.Errorf("telegram bot already has an active update consumer")
+			}
+		}
+	}
 	m.running[instance.ID] = mc
 	m.mu.Unlock()
 	m.recomputeSlackWrite() // a newly-started Slack instance may enable posting
@@ -850,6 +872,7 @@ func (m *Manager) startInstance(parentCtx context.Context, instance domain.Chann
 	m.wg.Add(1)
 	go func() {
 		defer m.wg.Done()
+		defer cancel()
 		defer close(done)
 		m.logger.Info("channel instance starting",
 			zap.String("id", instance.ID), zap.String("type", instance.Type))

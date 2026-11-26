@@ -167,7 +167,7 @@ func classifyBounded(ctx context.Context, message string, classifier Provider, t
 // Structured profile/hint/role and a user prefix precede classification. The
 // selector runs only at an ambiguous top-level text request, never a tool loop.
 func (p *ClassifyingProvider) shouldClassify(req Request) bool {
-	if req.ProfileID != "" || req.Role != "" || req.RouteHint != "" || strings.HasPrefix(req.Message, "hint:") || len(req.ToolExchanges) > 0 || len(req.Images) > 0 || len(req.Documents) > 0 || strings.TrimSpace(req.Message) == "" {
+	if req.SingleAttempt || req.ProfileID != "" || req.Role != "" || req.RouteHint != "" || strings.HasPrefix(req.Message, "hint:") || len(req.ToolExchanges) > 0 || len(req.Images) > 0 || len(req.Documents) > 0 || strings.TrimSpace(req.Message) == "" {
 		return false
 	}
 	s := req.RoutingSnapshot

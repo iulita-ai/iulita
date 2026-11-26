@@ -23,6 +23,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/skill"
 	slackskill "github.com/iulita-ai/iulita/internal/skill/slack"
 	"github.com/iulita-ai/iulita/internal/storage"
+	"github.com/iulita-ai/iulita/internal/telegrambusiness"
 )
 
 // ChannelLifecycle is the subset of channelmgr.Manager needed by the dashboard.
@@ -172,6 +173,14 @@ type Config struct {
 	LegacyClassifierActive bool
 	HTTPArtifacts          HTTPArtifactStore      // nil = artifact delivery unavailable; requires auth
 	StandingGrants         HTTPStandingGrantStore // nil = standing approvals unmanaged
+
+	TelegramBusiness          *telegrambusiness.Service
+	BusinessProvider          string
+	BusinessProviderAvailable bool
+	BusinessProfile           func() (string, bool)
+	BusinessMedia             *telegrambusiness.MediaVault
+	BusinessSources           telegrambusiness.SourceProcessor
+	BusinessEncryptionEnabled bool
 }
 
 // Server serves the dashboard API and embedded SPA.
@@ -206,6 +215,14 @@ type Server struct {
 	httpArtifacts          HTTPArtifactStore // nil = artifact delivery unavailable
 	standingGrants         HTTPStandingGrantStore
 	tickets                *ticketRegistry
+
+	telegramBusiness          *telegrambusiness.Service
+	businessProvider          string
+	businessProviderAvailable bool
+	businessProfileFn         func() (string, bool)
+	businessMedia             *telegrambusiness.MediaVault
+	businessSources           telegrambusiness.SourceProcessor
+	businessEncryptionEnabled bool
 }
 
 // New creates a new dashboard server.
@@ -239,6 +256,14 @@ func New(cfg Config) *Server {
 		httpArtifacts:          cfg.HTTPArtifacts,
 		standingGrants:         cfg.StandingGrants,
 		tickets:                newTicketRegistry(),
+
+		telegramBusiness:          cfg.TelegramBusiness,
+		businessProvider:          cfg.BusinessProvider,
+		businessProviderAvailable: cfg.BusinessProviderAvailable,
+		businessProfileFn:         cfg.BusinessProfile,
+		businessMedia:             cfg.BusinessMedia,
+		businessSources:           cfg.BusinessSources,
+		businessEncryptionEnabled: cfg.BusinessEncryptionEnabled,
 	}
 
 	app := fiber.New(fiber.Config{
@@ -340,6 +365,9 @@ func New(cfg Config) *Server {
 
 	if s.mcp != nil && s.authService != nil {
 		s.registerMCP(api)
+	}
+	if s.telegramBusiness != nil && s.authService != nil {
+		s.registerTelegramBusiness(api)
 	}
 
 	// Owner-scoped artifact management (authenticated users only).

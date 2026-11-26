@@ -31,7 +31,13 @@ var directFormats = map[string]bool{
 // Transcribe converts the audio to mp3 when needed and delegates to the
 // wrapped provider.
 func (t *transcoding) Transcribe(ctx context.Context, audio []byte, format string) (string, error) {
-	if format == "" || directFormats[format] || t.ffmpeg == "" {
+	if err := checkRequestGuard(ctx); err != nil {
+		return "", err
+	}
+	if hasRequestGuard(ctx) && t.ffmpeg == "" {
+		return "", errGuardedTranscription
+	}
+	if !hasRequestGuard(ctx) && (format == "" || directFormats[format] || t.ffmpeg == "") {
 		return t.inner.Transcribe(ctx, audio, format)
 	}
 
@@ -43,6 +49,26 @@ func (t *transcoding) Transcribe(ctx context.Context, audio []byte, format strin
 		"-ar", "16000", "-ac", "1", "-b:a", "48k",
 		"-f", "mp3", "pipe:1",
 	)
+	if hasRequestGuard(ctx) {
+		// A 121-second sentinel detects oversized source audio. Reject it before
+		// upload instead of silently sending a truncated first 120 seconds.
+		cmd.Args = []string{t.ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-protocol_whitelist", "pipe", "-i", "pipe:0", "-t", "121", "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", "-f", "wav", "pipe:1"}
+		cmd.Env = []string{"LANG=C", "LC_ALL=C"}
+		out := &boundedAudioOutput{limit: (121 * 16000 * 2) + 65536}
+		diagnostics := &boundedAudioOutput{limit: 4096}
+		cmd.Stdin = bytes.NewReader(audio)
+		cmd.Stdout, cmd.Stderr = out, diagnostics
+		if err := cmd.Run(); err != nil || out.exceeded || diagnostics.exceeded {
+			return "", errGuardedTranscription
+		}
+		if !validBusinessWAV(out.data) {
+			return "", errGuardedTranscription
+		}
+		if err := checkRequestGuard(ctx); err != nil {
+			return "", err
+		}
+		return t.inner.Transcribe(ctx, out.data, "wav")
+	}
 	var out, errBuf bytes.Buffer
 	cmd.Stdin = bytes.NewReader(audio)
 	cmd.Stdout = &out

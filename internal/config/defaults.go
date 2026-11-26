@@ -126,6 +126,10 @@ func DefaultConfig(paths *Paths) *Config {
 			ModelDir: paths.ModelsDir(),
 		},
 		Telegram: TelegramConfig{
+			BusinessDailyFinancialOperations: 10,
+			BusinessDailyStars:               100,
+			BusinessRestoreGeneration:        "initial",
+
 			DayWidgets:     true,
 			DayActions:     true,
 			DebounceWindow: "1.5s",

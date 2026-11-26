@@ -61,6 +61,15 @@ type DocumentAttachment struct {
 // Request is the input to an LLM provider.
 type Request struct {
 	PinnedProfile bool // engine-selected profile, never an explicit user override
+	// MaxOutputTokens is an optional hard per-request output ceiling, including
+	// reasoning. Zero preserves the provider/profile default; negative is invalid.
+	MaxOutputTokens int64
+	// SingleAttempt prohibits retries, classification and cross-provider fallback
+	// when one pre-reserved budget and one provider consent cover this invocation.
+	SingleAttempt bool
+	// BeforeRequest is trusted local authority revalidation immediately before
+	// each HTTP transport admission. It is never serialized to a provider.
+	BeforeRequest func(context.Context) error `json:"-"`
 	// StaticSystemPrompt contains the stable portion of the system prompt
 	// (base instructions, skill system prompts) that is eligible for
 	// provider-side caching. Claude uses cache_control: ephemeral on this

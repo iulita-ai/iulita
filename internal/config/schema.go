@@ -141,6 +141,10 @@ func CoreConfigSchema() []ConfigSection {
 				{Key: "telegram.token", Label: "Bot Token", Description: "Telegram bot token from @BotFather", Type: FieldSecret, Secret: true, Section: "telegram", WizardOrder: 1},
 				{Key: "telegram.day_widgets", Label: "Day Cards", Description: "Show My Day in Telegram. Enabled by default; restart after changes.", Type: FieldBool, Default: "true", Section: "telegram", RestartRequired: true},
 				{Key: "telegram.day_actions", Label: "Day Card Actions", Description: "Allow task and reminder actions with owner checks and confirmation. Enabled by default; restart after changes.", Type: FieldBool, Default: "true", Section: "telegram", RestartRequired: true},
+				{Key: "telegram.business_live_writes", Label: "Secretary Account Actions", Description: "Server interlock for Telegram account actions. Off by default. Owner policy and exact approval are also required. Restart after changes.", Type: FieldBool, Default: "false", Section: "telegram", RestartRequired: true},
+				{Key: "telegram.business_daily_financial_operations", Label: "Secretary Daily Asset Operations", Description: "Per-connection UTC-day limit including unknown outcomes. Zero disables value-changing operations. Exact owner approval and Telegram rights are also required.", Type: FieldInt, Default: "10", Section: "telegram", RestartRequired: true},
+				{Key: "telegram.business_daily_stars", Label: "Secretary Daily Stars", Description: "Maximum Stars reserved per connection per UTC day. Unknown outcomes remain charged to the limit. Zero disables financial operations.", Type: FieldInt, Default: "100", Section: "telegram", RestartRequired: true},
+				{Key: "telegram.business_restore_generation", Label: "Secretary Restore Generation", Description: "Change before starting with a restored database. Restored conversation content remains quarantined until explicitly reset.", Type: FieldString, Default: "initial", Section: "telegram", RestartRequired: true},
 			},
 		},
 		{

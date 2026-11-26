@@ -20,6 +20,7 @@ import (
 	"github.com/iulita-ai/iulita/internal/ratelimit"
 	"github.com/iulita-ai/iulita/internal/security"
 	"github.com/iulita-ai/iulita/internal/storage"
+	"github.com/iulita-ai/iulita/internal/telegrambusiness"
 	"github.com/iulita-ai/iulita/internal/transcription"
 )
 
@@ -58,14 +59,15 @@ type Channel struct {
 	userResolver       channel.UserResolver  // nil = no user resolution (backward compat)
 	store              storage.Repository    // nil = no locale lookup
 	transcriber        TranscriptionProvider // nil = voice messages ignored
-	prompts            *promptState          // interactive skill prompts
-	rememberSvc        bookmark.Service      // nil = no bookmark feature
-	remembers          *rememberState        // pending bookmark buttons
-	statusMsgs         *statusState          // live status messages per chat
-	sentMsgs           *sentTracker          // recent sent texts (🔖 reactions, /clear deletes)
-	draftStreaming     bool                  // experimental sendMessageDraft streaming
-	locLimiter         *ratelimit.Limiter    // outbound location sends: 10/hour/chat (set in New)
-	confirms           *confirmState         // identity-bound security confirmations
+	transcriberMu      sync.RWMutex
+	prompts            *promptState       // interactive skill prompts
+	rememberSvc        bookmark.Service   // nil = no bookmark feature
+	remembers          *rememberState     // pending bookmark buttons
+	statusMsgs         *statusState       // live status messages per chat
+	sentMsgs           *sentTracker       // recent sent texts (🔖 reactions, /clear deletes)
+	draftStreaming     bool               // experimental sendMessageDraft streaming
+	locLimiter         *ratelimit.Limiter // outbound location sends: 10/hour/chat (set in New)
+	confirms           *confirmState      // identity-bound security confirmations
 	confirmSendersMu   sync.Mutex
 	confirmSenders     map[string]int64 // chatID → Telegram user who started the turn
 	logger             *zap.Logger
@@ -74,6 +76,12 @@ type Channel struct {
 	topicSyncMu        sync.Mutex
 	topicSyncCursor    string
 	topicProbeDisabled atomic.Bool
+	business           *telegrambusiness.Service
+	businessGeneration string
+	businessPoll       telegrambusiness.PollRepository
+	businessWork       *businessWorkQueue
+	businessRuntime    func(telegrambusiness.Scope) string
+	fullInfo           BotFullInfo
 	wg                 sync.WaitGroup // tracks in-flight message processing
 }
 
@@ -97,7 +105,15 @@ func (c *Channel) SetCompactFunc(fn func(context.Context, string) (string, error
 
 // SetTranscriber attaches a voice message transcription provider.
 func (c *Channel) SetTranscriber(t TranscriptionProvider) {
+	c.transcriberMu.Lock()
+	defer c.transcriberMu.Unlock()
 	c.transcriber = t
+}
+
+func (c *Channel) transcriberSnapshot() TranscriptionProvider {
+	c.transcriberMu.RLock()
+	defer c.transcriberMu.RUnlock()
+	return c.transcriber
 }
 
 // SetInstanceID sets the channel instance ID for this Telegram bot.
@@ -161,7 +177,7 @@ func newChannel(token string, allowedIDs []int64, clearFn ClearFunc, debounceWin
 
 	logger.Info("telegram bot authorized", zap.String("username", me.Username))
 
-	return &Channel{
+	result := &Channel{
 		bot:             b,
 		testEnvironment: test,
 		topicsEnabled:   me.HasTopicsEnabled,
@@ -180,10 +196,20 @@ func newChannel(token string, allowedIDs []int64, clearFn ClearFunc, debounceWin
 		sentMsgs:        newSentTracker(),
 		locLimiter:      ratelimit.New(MaxLocationSendsPerHour, time.Hour),
 		logger:          logger,
-	}, nil
+	}
+	identityCtx, cancelIdentity := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelIdentity()
+	var identity BotFullInfo
+	if result.businessCall(identityCtx, "getMe", nil, &identity) == nil && identity.ID == result.botID {
+		result.fullInfo = identity
+	}
+	return result, nil
 }
 
 func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) error {
+	if err := c.reconcileBusinessRuntime(ctx); err != nil {
+		c.logger.Warn("Telegram account runtime reconciliation unavailable")
+	}
 	// Register commands in Telegram's menu (the "/" button).
 	{
 		allCmds := append([]models.BotCommand{
@@ -318,6 +344,15 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 	// dispatch processes one update. Reaction updates are handled inline; the
 	// library's long-poll loop owns fetching and offset management.
 	dispatch := func(update models.Update) {
+		if handled, businessErr := c.handleBusinessUpdate(ctx, &update); handled {
+			if businessErr != nil && c.logger != nil {
+				c.logger.Warn("Telegram account ingress rejected")
+			}
+			return
+		}
+		if update.Message != nil && c.handleBusinessManage(ctx, update.Message) {
+			return
+		}
 		if c.handleUnavailableWidgetSurface(ctx, &update) {
 			return
 		}
@@ -557,6 +592,7 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 
 		// Download and transcribe voice/audio if present.
 		if hasVoice || hasAudio {
+			transcriber := c.transcriberSnapshot()
 			var fileID string
 			var duration int
 			var fileSize int64
@@ -575,16 +611,16 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 			}
 
 			switch {
-			case c.transcriber != nil && fileSize > transcription.MaxAudioBytes:
+			case transcriber != nil && fileSize > transcription.MaxAudioBytes:
 				c.logger.Warn("voice/audio too large for transcription, skipping",
 					zap.Int64("size", fileSize),
 					zap.String("chat_id", chatID))
-			case c.transcriber != nil:
+			case transcriber != nil:
 				data, err := c.downloadFile(ctx, fileID)
 				if err != nil {
 					c.logger.Error("failed to download voice message", zap.Error(err), zap.String("chat_id", chatID))
 				} else {
-					transcribed, terr := c.transcriber.Transcribe(ctx, data, audioFormat(mime))
+					transcribed, terr := transcriber.Transcribe(ctx, data, audioFormat(mime))
 					if terr != nil {
 						c.logger.Error("failed to transcribe voice message", zap.Error(terr), zap.String("chat_id", chatID))
 					} else if transcribed != "" {
@@ -659,7 +695,15 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 
 	// Long-polling loop owned by the library (Bot API 10.3 models decode all
 	// update types natively, including message_reaction).
-	c.bot.Start(ctx)
+	var pollingErr error
+	if c.business != nil && c.businessPoll != nil && !c.testEnvironment {
+		pollingErr = c.pollBusinessUpdates(ctx, dispatch)
+		if pollingErr != nil && ctx.Err() == nil {
+			c.logger.Error("Telegram durable ingestion stopped")
+		}
+	} else {
+		c.bot.Start(ctx)
+	}
 	stopTopicSync()
 	<-topicSyncDone
 
@@ -668,6 +712,9 @@ func (c *Channel) Start(ctx context.Context, handler channel.MessageHandler) err
 	c.logger.Info("shutdown: waiting for in-flight message processing to finish")
 	c.wg.Wait()
 	c.logger.Info("shutdown: all message processing complete")
+	if pollingErr != nil {
+		return pollingErr
+	}
 	return ctx.Err()
 }
 

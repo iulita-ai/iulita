@@ -222,6 +222,11 @@ type ProxyConfig struct {
 }
 
 type TelegramConfig struct {
+	BusinessLiveWrites               bool   `koanf:"business_live_writes"` // default off; explicit server interlock for account actions
+	BusinessDailyFinancialOperations int    `koanf:"business_daily_financial_operations"`
+	BusinessDailyStars               int64  `koanf:"business_daily_stars"`
+	BusinessRestoreGeneration        string `koanf:"business_restore_generation"` // rotate before activating a restored database
+
 	Aliases           []string `koanf:"aliases"`
 	PreferredUsername string   `koanf:"preferred_username"`
 	TestEnvironment   bool     `koanf:"test_environment"` // isolated Telegram test server; requires dedicated test credentials
@@ -515,6 +520,14 @@ func Load(path string, paths *Paths) (*Config, *koanf.Koanf, bool, error) {
 			return "telegram.day_widgets"
 		case "IULITA_TELEGRAM_DAY_ACTIONS":
 			return "telegram.day_actions"
+		case "IULITA_TELEGRAM_BUSINESS_LIVE_WRITES":
+			return "telegram.business_live_writes"
+		case "IULITA_TELEGRAM_BUSINESS_DAILY_FINANCIAL_OPERATIONS":
+			return "telegram.business_daily_financial_operations"
+		case "IULITA_TELEGRAM_BUSINESS_DAILY_STARS":
+			return "telegram.business_daily_stars"
+		case "IULITA_TELEGRAM_BUSINESS_RESTORE_GENERATION":
+			return "telegram.business_restore_generation"
 		}
 		// Native backend and infrastructure leaves contain underscores. Preserve their complete koanf key;
 		// the legacy underscore-to-dot mapping otherwise produces chat.enabled.
@@ -686,6 +699,10 @@ func structToMap(cfg *Config) map[string]interface{} {
 	m["telegram.test_environment"] = cfg.Telegram.TestEnvironment
 	m["telegram.day_widgets"] = cfg.Telegram.DayWidgets
 	m["telegram.day_actions"] = cfg.Telegram.DayActions
+	m["telegram.business_live_writes"] = cfg.Telegram.BusinessLiveWrites
+	m["telegram.business_daily_financial_operations"] = cfg.Telegram.BusinessDailyFinancialOperations
+	m["telegram.business_daily_stars"] = cfg.Telegram.BusinessDailyStars
+	m["telegram.business_restore_generation"] = cfg.Telegram.BusinessRestoreGeneration
 	m["telegram.debounce_window"] = cfg.Telegram.DebounceWindow
 	m["telegram.rate_window"] = cfg.Telegram.RateWindow
 

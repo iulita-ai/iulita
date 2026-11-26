@@ -22,10 +22,17 @@ type chatRequest struct {
 	Model    string        `json:"model"`
 	Messages []chatMessage `json:"messages"`
 	Stream   bool          `json:"stream"`
+	Options  *chatOptions  `json:"options,omitempty"`
+}
+
+type chatOptions struct {
+	NumPredict int64 `json:"num_predict"`
 }
 
 type chatResponse struct {
-	Message chatMessage `json:"message"`
+	Message    chatMessage `json:"message"`
+	Done       bool        `json:"done"`
+	DoneReason string      `json:"done_reason"`
 }
 
 // Provider implements llm.Provider using Ollama's /api/chat endpoint.
@@ -85,6 +92,10 @@ func New(url, model string, httpClient *http.Client) *Provider {
 }
 
 func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response, error) {
+	maxTokens, err := req.OutputTokenLimit(0)
+	if err != nil {
+		return llm.Response{}, err
+	}
 	if len(req.Tools) > 0 {
 		return llm.Response{}, fmt.Errorf("ollama provider does not support tools")
 	}
@@ -107,10 +118,15 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 		msgs = append(msgs, chatMessage{Role: "user", Content: req.Message})
 	}
 
+	var options *chatOptions
+	if maxTokens > 0 {
+		options = &chatOptions{NumPredict: maxTokens}
+	}
 	body, err := json.Marshal(chatRequest{
 		Model:    p.model,
 		Messages: msgs,
 		Stream:   false,
+		Options:  options,
 	})
 	if err != nil {
 		return llm.Response{}, fmt.Errorf("marshaling request: %w", err)
@@ -122,7 +138,7 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	resp, err := p.httpClient.Do(httpReq)
+	resp, err := llm.RequestHTTPClient(p.httpClient, req).Do(httpReq)
 	if err != nil {
 		return llm.Response{}, fmt.Errorf("ollama request: %w", err)
 	}
@@ -137,5 +153,11 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 		return llm.Response{}, fmt.Errorf("decoding response: %w", err)
 	}
 
-	return llm.Response{Content: chatResp.Message.Content}, nil
+	finishReason := chatResp.DoneReason
+	if !chatResp.Done {
+		finishReason = "incomplete"
+	} else if finishReason == "" {
+		finishReason = "stop"
+	}
+	return llm.Response{Content: chatResp.Message.Content, FinishReason: finishReason}, nil
 }

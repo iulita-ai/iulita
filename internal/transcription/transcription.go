@@ -83,18 +83,28 @@ func (o *OpenAI) Transcribe(ctx context.Context, audio []byte, format string) (s
 	req.Header.Set("Authorization", "Bearer "+o.apiKey)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := requestClient(o.httpClient, ctx).Do(req)
 	if err != nil {
 		return "", fmt.Errorf("transcription request: %w", err)
 	}
 	defer resp.Body.Close() //nolint:errcheck // read-only body
 
-	respBody, err := io.ReadAll(resp.Body)
+	var reader io.Reader = resp.Body
+	if hasRequestGuard(ctx) {
+		reader = io.LimitReader(resp.Body, (1<<20)+1)
+	}
+	respBody, err := io.ReadAll(reader)
+	if hasRequestGuard(ctx) && len(respBody) > 1<<20 {
+		return "", errGuardedTranscription
+	}
 	if err != nil {
 		return "", fmt.Errorf("reading response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		if hasRequestGuard(ctx) {
+			return "", errGuardedTranscription
+		}
 		return "", fmt.Errorf("transcription API error %d: %s", resp.StatusCode, string(respBody))
 	}
 

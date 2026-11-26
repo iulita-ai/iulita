@@ -54,8 +54,9 @@ func responseCacheKey(req Request) string {
 		Version                                                 int
 		Scope, Identity, Profile, Hint, Static, System, Message string
 		Thinking                                                int64
-	}{2, req.CacheScope, req.CacheIdentity, req.ProfileID, req.RouteHint,
-		req.StaticSystemPrompt, req.SystemPrompt, req.Message, req.ThinkingBudget})
+		MaxOutputTokens                                         int64
+	}{3, req.CacheScope, req.CacheIdentity, req.ProfileID, req.RouteHint,
+		req.StaticSystemPrompt, req.SystemPrompt, req.Message, req.ThinkingBudget, req.MaxOutputTokens})
 	if err != nil {
 		return "" // a serialization failure must never create a shared cache key
 	}

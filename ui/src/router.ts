@@ -94,6 +94,12 @@ const router = createRouter({
       meta: { admin: true },
     },
     {
+      path: '/secretary',
+      name: 'secretary',
+      component: () => import('./views/Secretary.vue'),
+      // Every authenticated owner sees only their own Business connections.
+    },
+    {
       path: '/files',
       name: 'files',
       component: () => import('./views/Files.vue'),
