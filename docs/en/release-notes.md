@@ -1,16 +1,40 @@
 # Release guide
 
-This guide summarizes the public releases from v0.38.0 through v0.55.3. Follow the linked release for its
+This guide summarizes the public releases from v0.38.0 through v0.56.4 and separately marks upcoming work. Follow the linked release for its
 exact changelog. A source feature is not automatically available in an older
 container or binary.
 
 
 
-## Unreleased: Telegram topics and Bot API 10.4 cards
+## Upcoming v0.57.0: Telegram Secretary
 
-Private topic conversations now have full persisted context, explicit `/clear` and `/compact`, committed compression-size notices, confirmed lifecycle operations and scoped cleanup of bound reminders/background work. Day and weather cards share a theme-aware visual system; actions retain exact owner confirmation and durable uncertain-outcome handling. Verified extra usernames, rich quotes, private callback replies and read-only identity checks complete the integration.
+[PR #44](https://github.com/iulita-ai/iulita/pull/44) adds an owner-only `/secretary` workspace for observed connected-account conversations, private manual/model drafts, exact approval and separate Telegram execution. Twenty-seven typed operations cover fourteen Telegram rights; Telegram grants and local account/chat policies remain independent. Optional automatic text replies require explicit rules and consent at both scopes.
 
-Day widgets/actions default on when upgrading configs that omit the keys; explicit false remains effective. Ordinary replies are buffered for final privacy classification. Production widgets are private-only; inline/shared/public exports remain test-server-only. See the [Telegram guide](telegram.md) for commands, setup, compatibility limits, deletion scope and English previews. This entry describes source work, not a released tag or deployment.
+Processing is opt-in and requires encrypted storage. External account writes default **off**. Media analysis has separate consent and finite image/PDF/text/audio limits; outgoing uploads are encrypted and scope-bound. Retained context stays separate from personal memory/tools, supports compaction and follows source edits/deletions. There is no import or search of the whole Telegram account, and incoming video analysis is unsupported. See the [Secretary guide](telegram-secretary.md) for setup, rights, budgets, retention and restore controls.
+
+This is a **planned release**, not a published tag or deployment. CI, image publication and rollout must be verified separately. Bounded development tests covered one explicitly approved API text reply and one incoming-greeting auto-reply; dashboard approval-button clicks and the other native action methods were not live-validated.
+
+## v0.56.4: Telegram memory and weather fixes
+
+[v0.56.4](https://github.com/iulita-ai/iulita/releases/tag/v0.56.4) separates account-wide facts/active insights from current-chat message/reminder counts in `/status`; unavailable counters are no longer reported as zero. `/weather` prefers an explicit city, then a recent direct place assertion/shared place in this topic, then saved account location, with a labelled application default. Newer retractions and ambiguous places block stale location reuse. Context/location selection is bounded, not a full-history search; existing card styling and text fallback remain unchanged. See the [Telegram guide](telegram.md).
+
+## v0.56.3: official JOSE v4 and credential continuity
+
+[v0.56.3](https://github.com/iulita-ai/iulita/releases/tag/v0.56.3) moves the shipped application to official go-jose v4.1.9 and rejects JOSE v3 in executable/image inventories. A narrowly maintained canonical Fosite migration preserves provenance, licensing and upstream tests. Cross-version synthetic credential tests cover existing code/PKCE, RS256 access/refresh credentials and revocation with the same stored keys/SQLite. Issuer, signing keys and token formats are preserved; full scan findings remain available rather than a blanket vulnerability-free claim. See the [security guide](security.md).
+
+## v0.56.2: checked container publication and mobile write admission
+
+[v0.56.2](https://github.com/iulita-ai/iulita/releases/tag/v0.56.2) refreshes app/worker system packages and Go, plus the mobile gateway runtime. Release publication requires exact-image runtime checks, vulnerability scans and SBOMs for five image/platform combinations, then publishes the same checked archives. Mobile SQLite writes use cancellable admission without replaying transaction callbacks/external effects or reviving expired leases. Existing users, paths and TLS/HMAC/OAuth contracts are preserved. Separately pinned worker/gateway deployments require their own image updates.
+
+## v0.56.1: complete topic context under concurrent writes
+
+[v0.56.1](https://github.com/iulita-ai/iulita/releases/tag/v0.56.1) retains both sides of a Telegram topic turn when concurrent background SQLite writes occur. Short lifecycle-fenced writes reserve write authority before deletion checks; cancellation and owner/deletion safeguards remain enforced. Model/Telegram/provider requests are not repeated as database retries. Previously missing history is not reconstructed or replayed; no new schema migration is introduced.
+
+## v0.56.0: Telegram topics and Bot API 10.4 cards
+
+[v0.56.0](https://github.com/iulita-ai/iulita/releases/tag/v0.56.0) adds full persisted private-topic context, explicit `/clear` and `/compact`, committed compression-size notices, confirmed lifecycle operations and scoped cleanup of bound reminders/background work. Day and weather cards share a theme-aware visual system; actions retain exact owner confirmation and durable uncertain-outcome handling. Verified extra usernames, rich quotes, private callback replies and read-only identity checks complete the integration.
+
+Day widgets/actions default on when upgrading configs that omit the keys; explicit false remains effective. Ordinary replies are buffered for final privacy classification. Production widgets are private-only; inline/shared/public exports remain test-server-only. See the [Telegram guide](telegram.md) for commands, setup, compatibility limits, deletion scope and English previews.
 
 ## v0.55.1–v0.55.3: MCP chat fixes and private attachments
 
