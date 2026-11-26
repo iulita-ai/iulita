@@ -1,18 +1,20 @@
 # Release guide
 
-This guide summarizes the public releases from v0.38.0 through v0.56.4 and separately marks upcoming work. Follow the linked release for its
+This guide summarizes versions v0.38.0 through v0.57.0. Follow the linked release for its
 exact changelog. A source feature is not automatically available in an older
 container or binary.
 
 
 
-## Upcoming v0.57.0: Telegram Secretary
+## v0.57.0: Telegram Secretary
 
 [PR #44](https://github.com/iulita-ai/iulita/pull/44) adds an owner-only `/secretary` workspace for observed connected-account conversations, private manual/model drafts, exact approval and separate Telegram execution. Twenty-seven typed operations cover fourteen Telegram rights; Telegram grants and local account/chat policies remain independent. Optional automatic text replies require explicit rules and consent at both scopes.
 
 Processing is opt-in and requires encrypted storage. External account writes default **off**. Media analysis has separate consent and finite image/PDF/text/audio limits; outgoing uploads are encrypted and scope-bound. Retained context stays separate from personal memory/tools, supports compaction and follows source edits/deletions. There is no import or search of the whole Telegram account, and incoming video analysis is unsupported. See the [Secretary guide](telegram-secretary.md) for setup, rights, budgets, retention and restore controls.
 
-This is a **planned release**, not a published tag or deployment. CI, image publication and rollout must be verified separately. Bounded development tests covered one explicitly approved API text reply and one incoming-greeting auto-reply; dashboard approval-button clicks and the other native action methods were not live-validated.
+The [v0.57.0 release](https://github.com/iulita-ai/iulita/releases/tag/v0.57.0) provides the versioned artifacts; image publication and deployment have separate verification. Bounded development tests covered one explicitly approved API text reply and one incoming-greeting auto-reply; dashboard approval-button clicks and the other native action methods were not live-validated.
+
+The mobile gateway pins official unprivileged NGINX 1.30.8 by its multi-architecture image digest, preserving UID 101 and the existing security gates. See the [NGINX advisories](https://nginx.org/en/security_advisories.html).
 
 ## v0.56.4: Telegram memory and weather fixes
 
