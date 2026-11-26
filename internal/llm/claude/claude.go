@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -17,10 +18,11 @@ import (
 
 // Provider implements llm.Provider using the Anthropic Claude API.
 type Provider struct {
-	client    anthropic.Client
-	model     string
-	maxTokens int
-	mu        sync.RWMutex
+	client     anthropic.Client
+	httpClient *http.Client
+	model      string
+	maxTokens  int
+	mu         sync.RWMutex
 }
 
 // New creates a new Claude provider.
@@ -37,9 +39,10 @@ func New(apiKey, model string, maxTokens int, baseURL string, httpClient *http.C
 	}
 	client := anthropic.NewClient(opts...)
 	return &Provider{
-		client:    client,
-		model:     model,
-		maxTokens: maxTokens,
+		client:     client,
+		httpClient: httpClient,
+		model:      model,
+		maxTokens:  maxTokens,
 	}
 }
 
@@ -62,6 +65,24 @@ func (p *Provider) getParams() (string, int) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.model, p.maxTokens
+}
+
+func outputLimit(req llm.Request, configured int) (int64, error) {
+	limit := int64(configured)
+	if req.ThinkingBudget > 0 {
+		if limit > math.MaxInt64-req.ThinkingBudget {
+			return 0, fmt.Errorf("invalid thinking token limit")
+		}
+		limit += req.ThinkingBudget
+	}
+	limit, err := req.OutputTokenLimit(limit)
+	if err != nil {
+		return 0, err
+	}
+	if req.ThinkingBudget > 0 && req.ThinkingBudget >= limit {
+		return 0, fmt.Errorf("thinking budget exceeds output token limit")
+	}
+	return limit, nil
 }
 
 func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response, error) {
@@ -146,7 +167,10 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 	}
 
 	model, maxTok := p.getParams()
-	maxTokens := int64(maxTok)
+	maxTokens, limitErr := outputLimit(req, maxTok)
+	if limitErr != nil {
+		return llm.Response{}, limitErr
+	}
 	params := anthropic.MessageNewParams{
 		Model:    anthropic.Model(model),
 		Messages: messages,
@@ -154,7 +178,6 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 
 	if req.ThinkingBudget > 0 {
 		params.Thinking = anthropic.ThinkingConfigParamOfEnabled(req.ThinkingBudget)
-		maxTokens += req.ThinkingBudget
 	}
 	params.MaxTokens = maxTokens
 
@@ -197,7 +220,11 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 		}
 	}
 
-	resp, err := p.client.Messages.New(ctx, params)
+	var requestOptions []option.RequestOption
+	if req.SingleAttempt || req.BeforeRequest != nil {
+		requestOptions = append(requestOptions, option.WithHTTPClient(llm.RequestHTTPClient(p.httpClient, req)))
+	}
+	resp, err := p.client.Messages.New(ctx, params, requestOptions...)
 	if err != nil {
 		if isContextOverflowError(err) {
 			return llm.Response{}, fmt.Errorf("claude completion: %w", llm.ErrContextTooLarge)
@@ -300,14 +327,16 @@ func (p *Provider) CompleteStream(ctx context.Context, req llm.Request, callback
 	}
 
 	model, maxTok := p.getParams()
-	maxTokens := int64(maxTok)
+	maxTokens, limitErr := outputLimit(req, maxTok)
+	if limitErr != nil {
+		return llm.Response{}, limitErr
+	}
 	params := anthropic.MessageNewParams{
 		Model:    anthropic.Model(model),
 		Messages: messages,
 	}
 	if req.ThinkingBudget > 0 {
 		params.Thinking = anthropic.ThinkingConfigParamOfEnabled(req.ThinkingBudget)
-		maxTokens += req.ThinkingBudget
 	}
 	params.MaxTokens = maxTokens
 
@@ -315,7 +344,11 @@ func (p *Provider) CompleteStream(ctx context.Context, req llm.Request, callback
 		params.System = sysBlocks
 	}
 
-	stream := p.client.Messages.NewStreaming(ctx, params)
+	var requestOptions []option.RequestOption
+	if req.SingleAttempt || req.BeforeRequest != nil {
+		requestOptions = append(requestOptions, option.WithHTTPClient(llm.RequestHTTPClient(p.httpClient, req)))
+	}
+	stream := p.client.Messages.NewStreaming(ctx, params, requestOptions...)
 	defer stream.Close()
 
 	response := llm.Response{RequestedModel: model, Provider: "claude"}

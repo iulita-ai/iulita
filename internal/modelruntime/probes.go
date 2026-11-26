@@ -326,7 +326,7 @@ func (m *Manager) runProbe(ctx context.Context, r probeRecord, profile models.Pr
 	case "tools":
 		nonce := randomID()[:12]
 		tool := llm.ToolDefinition{Name: "probe_echo", Description: "A pure synthetic echo, with no external actions.", InputSchema: json.RawMessage(`{"type":"object","properties":{"nonce":{"type":"string"}},"required":["nonce"],"additionalProperties":false}`)}
-		request := llm.Request{SystemPrompt: "Use probe_echo with the provided nonce. After receiving its result, return only JSON containing that nonce. Do not invent tool results.", Message: "Call probe_echo with nonce " + nonce, Tools: []llm.ToolDefinition{tool}}
+		request := llm.Request{SystemPrompt: "On the first turn, call probe_echo exactly once using the nonce provided by the user. Once its actual result is present, do not call any tool again. Return exactly one JSON object with only the key \"nonce\" and the value from the actual tool result. Do not include Markdown, code fences, commentary, or extra keys. Never invent tool results.", Message: "Call probe_echo with nonce " + nonce, Tools: []llm.ToolDefinition{tool}}
 		response, err := call(request)
 		if err == nil && len(response.ToolCalls) == 1 && response.ToolCalls[0].Name == "probe_echo" && response.ToolCalls[0].ID != "" && matchesNonce(string(response.ToolCalls[0].Input), nonce) {
 			// The nonce is hexadecimal, so this fixed JSON needs no escaping.

@@ -169,3 +169,6 @@ If topics are unavailable, verify their BotFather configuration and the reported
 Telegram responses are buffered until final classification instead of exposing unchecked streamed fragments. Suspected credentials or payment details use recipient-specific ephemeral delivery, without bookmark/copy controls; failure produces a neutral notice, not an ordinary-message fallback containing the sensitive text. Callbacks, prompts and mutations retain their captured actor and topic ownership.
 
 Detected payment entities, card/TON text and secrets are redacted before model/history/bookmark use where supported. This is best-effort text/entity handling, not a guarantee for OCR, binary attachments or obfuscated secrets. Model output is never executable widget HTML. Consult the [security guide](security.md#telegram-security).
+
+
+[Telegram Secretary: connected accounts, drafts and account actions](telegram-secretary.md).

@@ -23,9 +23,10 @@ var (
 
 // Claims represents the JWT payload.
 type Claims struct {
-	UserID   string          `json:"user_id"`
-	Username string          `json:"username"`
-	Role     domain.UserRole `json:"role"`
+	UserID        string          `json:"user_id"`
+	Username      string          `json:"username"`
+	Role          domain.UserRole `json:"role"`
+	SecurityEpoch uint64          `json:"security_epoch,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -88,7 +89,14 @@ func (s *Service) RefreshToken(ctx context.Context, tokenStr string) (string, er
 	if err != nil || user == nil || user.Disabled {
 		return "", ErrUserNotFound
 	}
-	return s.createToken(user, s.tokenTTL)
+	if claims.SecurityEpoch != 0 && claims.SecurityEpoch != user.SecurityEpoch {
+		return "", ErrInvalidCredentials
+	}
+	// Refresh cannot upgrade a legacy/revoked session into a new account
+	// capability. Only a fresh password login stamps the current epoch.
+	refreshed := *user
+	refreshed.SecurityEpoch = claims.SecurityEpoch
+	return s.createToken(&refreshed, s.tokenTTL)
 }
 
 // ValidateToken parses and validates a JWT token, returning the claims.
@@ -139,9 +147,10 @@ func (s *Service) ChangePassword(ctx context.Context, userID, oldPass, newPass s
 func (s *Service) createToken(user *domain.User, ttl time.Duration) (string, error) {
 	now := time.Now()
 	claims := Claims{
-		UserID:   user.ID,
-		Username: user.Username,
-		Role:     user.Role,
+		UserID:        user.ID,
+		Username:      user.Username,
+		Role:          user.Role,
+		SecurityEpoch: user.SecurityEpoch,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
 			IssuedAt:  jwt.NewNumericDate(now),

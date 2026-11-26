@@ -21,11 +21,12 @@ type chatMessage struct {
 type chatRequest struct {
 	Model     string        `json:"model"`
 	Messages  []chatMessage `json:"messages"`
-	MaxTokens int           `json:"max_tokens,omitempty"`
+	MaxTokens int64         `json:"max_tokens,omitempty"`
 }
 
 type chatChoice struct {
-	Message chatMessage `json:"message"`
+	Message      chatMessage `json:"message"`
+	FinishReason string      `json:"finish_reason"`
 }
 
 type chatUsage struct {
@@ -111,6 +112,10 @@ func New(apiKey, model string, maxTokens int, baseURL string, httpClient *http.C
 }
 
 func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response, error) {
+	maxTokens, err := req.OutputTokenLimit(int64(p.maxTokens))
+	if err != nil {
+		return llm.Response{}, err
+	}
 	if len(req.Tools) > 0 {
 		return llm.Response{}, fmt.Errorf("openai provider does not support tool use")
 	}
@@ -136,7 +141,7 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 	body, err := json.Marshal(chatRequest{
 		Model:     p.model,
 		Messages:  msgs,
-		MaxTokens: p.maxTokens,
+		MaxTokens: maxTokens,
 	})
 	if err != nil {
 		return llm.Response{}, fmt.Errorf("marshaling request: %w", err)
@@ -149,7 +154,7 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
 
-	resp, err := p.httpClient.Do(httpReq)
+	resp, err := llm.RequestHTTPClient(p.httpClient, req).Do(httpReq)
 	if err != nil {
 		return llm.Response{}, fmt.Errorf("openai request: %w", err)
 	}
@@ -164,13 +169,15 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 		return llm.Response{}, fmt.Errorf("decoding response: %w", err)
 	}
 
-	var content string
+	var content, finishReason string
 	if len(chatResp.Choices) > 0 {
 		content = chatResp.Choices[0].Message.Content
+		finishReason = chatResp.Choices[0].FinishReason
 	}
 
 	return llm.Response{
-		Content: content,
+		Content:      content,
+		FinishReason: finishReason,
 		Usage: llm.Usage{
 			InputTokens:  chatResp.Usage.PromptTokens,
 			OutputTokens: chatResp.Usage.CompletionTokens,

@@ -236,7 +236,7 @@ type streamOptions struct {
 type chatRequest struct {
 	Model         string         `json:"model"`
 	Messages      []chatMessage  `json:"messages"`
-	MaxTokens     int            `json:"max_tokens,omitempty"`
+	MaxTokens     int64          `json:"max_tokens,omitempty"`
 	Tools         []toolDef      `json:"tools,omitempty"`
 	ToolChoice    any            `json:"tool_choice,omitempty"`
 	Stream        bool           `json:"stream,omitempty"`
@@ -308,7 +308,7 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 		return llm.Response{}, &llm.UnsentRequestError{Cause: err}
 	}
 
-	resp, err := p.httpClient.Do(httpReq)
+	resp, err := llm.RequestHTTPClient(p.httpClient, req).Do(httpReq)
 	if err != nil {
 		return llm.Response{}, safeTransportError(ctx, p.options.ProviderName, err)
 	}
@@ -385,7 +385,7 @@ func (p *Provider) CompleteStream(ctx context.Context, req llm.Request, callback
 		return llm.Response{}, &llm.UnsentRequestError{Cause: err}
 	}
 
-	resp, err := p.httpClient.Do(httpReq)
+	resp, err := llm.RequestHTTPClient(p.httpClient, req).Do(httpReq)
 	if err != nil {
 		return llm.Response{}, safeTransportError(ctx, p.options.ProviderName, err)
 	}
@@ -513,6 +513,10 @@ func (p *Provider) newHTTPRequest(ctx context.Context, body []byte) (*http.Reque
 // requestBody validates capability, real image bytes and protocol before any
 // network admission. Attachments are never silently removed.
 func (p *Provider) requestBody(req llm.Request, model string, maxTok int, stream bool) ([]byte, error) {
+	maxTokens, limitErr := req.OutputTokenLimit(int64(maxTok))
+	if limitErr != nil {
+		return nil, limitErr
+	}
 	o := p.options
 	// Legacy scalar model hot reload also must not opt the new Flash alias into
 	// thinking, whose durable-history replay has not passed the live gate.
@@ -624,7 +628,7 @@ func (p *Provider) requestBody(req llm.Request, model string, maxTok int, stream
 	} else if o.Thinking == "disabled" && req.ForceTool != "" {
 		choice = map[string]any{"type": "function", "function": map[string]any{"name": req.ForceTool}}
 	}
-	cr := chatRequest{Model: model, Messages: msgs, MaxTokens: maxTok, Tools: buildToolDefs(req.Tools), ToolChoice: choice, Stream: stream, ReasoningEffort: o.ReasoningEffort}
+	cr := chatRequest{Model: model, Messages: msgs, MaxTokens: maxTokens, Tools: buildToolDefs(req.Tools), ToolChoice: choice, Stream: stream, ReasoningEffort: o.ReasoningEffort}
 	if stream {
 		cr.StreamOptions = &streamOptions{IncludeUsage: true}
 	}

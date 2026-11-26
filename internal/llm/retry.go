@@ -46,6 +46,9 @@ func NewRetryProvider(inner Provider, config RetryConfig) *RetryProvider {
 }
 
 func (p *RetryProvider) Complete(ctx context.Context, req Request) (Response, error) {
+	if req.SingleAttempt {
+		return p.inner.Complete(ctx, req)
+	}
 	var lastErr error
 	for attempt := range p.config.MaxAttempts {
 		resp, err := p.inner.Complete(ctx, req)

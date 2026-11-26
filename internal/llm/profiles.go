@@ -128,6 +128,16 @@ func (s *ProfileSnapshot) ResolvePinned(id string) (ProfileBinding, error) {
 	}
 	return s.profiles[id], nil
 }
+
+// ResolveOperation selects one locally eligible role binding from this immutable
+// snapshot. It does not classify, invoke a provider or follow a fallback chain.
+func (s *ProfileSnapshot) ResolveOperation(role string) (ProfileBinding, error) {
+	if s == nil {
+		return ProfileBinding{}, fmt.Errorf("model profiles unavailable")
+	}
+	binding, _, _, err := s.resolve(Request{Role: role, SingleAttempt: true})
+	return binding, err
+}
 func (s *ProfileSnapshot) eligible(id string) error {
 	b, ok := s.profiles[id]
 	if !ok {
@@ -150,7 +160,7 @@ func (s *ProfileSnapshot) eligible(id string) error {
 // legacyVisibleHandoff retains the existing Claude-to-Haiku cheap synthesis
 // exception. New profiles, explicit overrides and opaque reasoning never switch.
 func (s *ProfileSnapshot) legacyVisibleHandoff(req Request) (Request, bool) {
-	if !req.PinnedProfile || req.ProfileID == "" || req.RouteHint != RouteHintCheap || len(req.ToolExchanges) == 0 || req.ThinkingBudget != 0 {
+	if req.SingleAttempt || !req.PinnedProfile || req.ProfileID == "" || req.RouteHint != RouteHintCheap || len(req.ToolExchanges) == 0 || req.ThinkingBudget != 0 {
 		return req, false
 	}
 	source, ok := s.profiles[req.ProfileID]
@@ -306,7 +316,7 @@ func (p *RoutingProvider) completeProfile(ctx context.Context, req Request, call
 		}
 		return Response{}, false, nil
 	}
-	allowFallback := req.ProfileID == "" && req.Operation != "classifier" && len(req.ToolExchanges) == 0 && len(req.Documents) == 0
+	allowFallback := !req.SingleAttempt && req.ProfileID == "" && req.Operation != "classifier" && len(req.ToolExchanges) == 0 && len(req.Documents) == 0
 	if s.policy.LegacyProfileHints[req.RouteHint] != "" {
 		allowFallback = false
 	}

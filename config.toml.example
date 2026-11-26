@@ -61,6 +61,14 @@ quota_user_bytes = 1000000000
 # Set false to disable cards or their confirmed task/reminder actions separately.
 day_widgets = true
 day_actions = true
+# Connected-account Secretary: keep account mutations disabled during evaluation.
+# Telegram grants, account/chat consent and exact owner approvals are separate.
+business_live_writes = false
+# Finite UTC-day limits; zero disables financial operations.
+business_daily_financial_operations = 10
+business_daily_stars = 100
+# Rotate outside the database before restoring a backup; see Telegram Secretary docs.
+business_restore_generation = "initial"
 # Set via IULITA_TELEGRAM_TOKEN env var
 token = ""
 # Telegram user IDs allowed to use the bot (empty = allow all)

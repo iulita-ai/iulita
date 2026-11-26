@@ -312,6 +312,11 @@ func (s *Store) isKnownKey(key string) bool {
 
 // restartOnlyKeys are keys that cannot be hot-reloaded and require a restart.
 var restartOnlyKeys = map[string]bool{
+	"telegram.business_live_writes":                true,
+	"telegram.business_daily_financial_operations": true,
+	"telegram.business_daily_stars":                true,
+	"telegram.business_restore_generation":         true,
+
 	"telegram.day_widgets":                true,
 	"telegram.day_actions":                true,
 	"mobile.chat_enabled":                 true,
